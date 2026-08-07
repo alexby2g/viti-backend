@@ -2,11 +2,10 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{Conversacion,Mensaje,Usuario};
+use App\Models\{Cliente,Conversacion,Mensaje,Usuario};
 use App\Support\{Audit,FirebasePush};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 class BuzonController extends Controller
 {
@@ -15,6 +14,7 @@ class BuzonController extends Controller
         $user = $request->user();
         $query = Mensaje::query()
             ->whereNull('leido_at')
+            ->whereHas('conversacion', fn ($q) => $q->where('canal_principal', true))
             ->with([
                 'usuario:id,nombre,apellido,rol',
                 'conversacion:id,cliente_id,asunto',
@@ -40,7 +40,7 @@ class BuzonController extends Controller
                 'titulo' => $isClient
                     ? 'Nueva respuesta del equipo VITI'
                     : 'Nuevo mensaje de '.($mensaje->conversacion?->cliente?->nombre ?: $senderName),
-                'asunto' => $mensaje->conversacion?->asunto,
+                'asunto' => 'Atención VITI',
                 'mensaje' => str($mensaje->mensaje)->limit(95)->toString(),
                 'created_at' => $mensaje->created_at,
             ];
@@ -52,7 +52,9 @@ class BuzonController extends Controller
     public function markAllRead(Request $request): JsonResponse
     {
         $user = $request->user();
-        $query = Mensaje::query()->whereNull('leido_at');
+        $query = Mensaje::query()
+            ->whereNull('leido_at')
+            ->whereHas('conversacion', fn ($q) => $q->where('canal_principal', true));
 
         if ($user->rol === 'cliente') {
             $query
@@ -72,148 +74,93 @@ class BuzonController extends Controller
 
     public function adminIndex(Request $request): JsonResponse
     {
-        $query = Conversacion::with([
-            'cliente:id,nombre,telefono,foto_path',
-            'solicitud:id,codigo,titulo',
-            'proyecto:id,codigo,nombre',
-            'mensajes' => fn ($q) => $q->with('usuario:id,nombre,apellido,rol')->latest()->limit(1),
-        ])->withCount([
-            'mensajes as no_leidos' => fn ($q) => $q
-                ->whereNull('leido_at')
-                ->whereHas('usuario', fn ($u) => $u->where('rol', 'cliente')),
-        ])->latest('ultimo_mensaje_at');
+        $this->ensureAllClientChannels();
 
-        if ($request->filled('estado')) {
-            $query->where('estado', $request->string('estado'));
-        }
-
-        return response()->json($query->paginate(30));
-    }
-
-    public function adminShow(Conversacion $conversacion): JsonResponse
-    {
-        $this->markConversationRead($conversacion, false);
-
-        return response()->json(['data' => $conversacion->load([
-            'cliente:id,nombre,telefono,whatsapp,foto_path',
-            'solicitud:id,codigo,titulo,estado',
-            'proyecto:id,codigo,nombre,fase,progreso',
-            'mensajes.usuario:id,nombre,apellido,rol',
-        ])->setAttribute('no_leidos', 0)]);
-    }
-
-    public function adminSend(Request $request, Conversacion $conversacion): JsonResponse
-    {
-        return $this->send($request, $conversacion);
-    }
-
-    public function adminState(Request $request, Conversacion $conversacion): JsonResponse
-    {
-        $data = $request->validate(['estado' => ['required', 'in:abierta,cerrada']]);
-        $conversacion->update($data);
-
-        return response()->json(['data' => $conversacion]);
-    }
-
-    public function clientIndex(Request $request): JsonResponse
-    {
-        $clienteId = (int) $request->user()->cliente_id;
-        $items = Conversacion::where('cliente_id', $clienteId)
+        $query = Conversacion::query()
+            ->where('canal_principal', true)
             ->with([
-                'solicitud:id,codigo,titulo',
-                'proyecto:id,codigo,nombre',
+                'cliente:id,nombre,telefono,foto_path',
+                'responsable:id,nombre,apellido,rol,foto_path',
                 'mensajes' => fn ($q) => $q->with('usuario:id,nombre,apellido,rol')->latest()->limit(1),
             ])
             ->withCount([
                 'mensajes as no_leidos' => fn ($q) => $q
                     ->whereNull('leido_at')
-                    ->whereHas('usuario', fn ($u) => $u->where('rol', '!=', 'cliente')),
+                    ->whereHas('usuario', fn ($u) => $u->where('rol', 'cliente')),
             ])
             ->latest('ultimo_mensaje_at')
-            ->get();
+            ->latest('id');
 
-        return response()->json(['data' => $items]);
+        return response()->json($query->paginate(100));
+    }
+
+    public function adminShow(Conversacion $conversacion): JsonResponse
+    {
+        abort_unless($conversacion->canal_principal, 404, 'Este canal de atención ya no está activo.');
+        $this->markConversationRead($conversacion, false);
+
+        return response()->json(['data' => $this->loadChannel($conversacion)->setAttribute('no_leidos', 0)]);
+    }
+
+    public function adminSend(Request $request, Conversacion $conversacion): JsonResponse
+    {
+        abort_unless($conversacion->canal_principal, 404, 'Este canal de atención ya no está activo.');
+        return $this->send($request, $conversacion);
+    }
+
+    public function adminState(Request $request, Conversacion $conversacion): JsonResponse
+    {
+        abort_unless($conversacion->canal_principal, 404, 'Este canal de atención ya no está activo.');
+        $data = $request->validate(['estado' => ['required', 'in:abierta,cerrada']]);
+        $conversacion->update($data);
+        return response()->json(['data' => $conversacion]);
+    }
+
+    public function clientIndex(Request $request): JsonResponse
+    {
+        $channel = $this->ensurePrimaryChannel((int) $request->user()->cliente_id);
+        $this->markConversationRead($channel, true);
+        return response()->json(['data' => [$this->loadChannel($channel)->setAttribute('no_leidos', 0)]]);
     }
 
     public function clientShow(Request $request, Conversacion $conversacion): JsonResponse
     {
         abort_unless(
-            (int) $conversacion->cliente_id === (int) $request->user()->cliente_id,
+            $conversacion->canal_principal && (int) $conversacion->cliente_id === (int) $request->user()->cliente_id,
             403,
-            'No tienes permiso para acceder a esta conversación.'
+            'No tienes permiso para acceder a este canal de atención.'
         );
 
         $this->markConversationRead($conversacion, true);
-
-        return response()->json(['data' => $conversacion->load([
-            'solicitud:id,codigo,titulo',
-            'proyecto:id,codigo,nombre',
-            'mensajes.usuario:id,nombre,apellido,rol',
-        ])->setAttribute('no_leidos', 0)]);
+        return response()->json(['data' => $this->loadChannel($conversacion)->setAttribute('no_leidos', 0)]);
     }
 
     public function clientStart(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'asunto' => ['required', 'string', 'max:180'],
             'mensaje' => ['required', 'string', 'max:5000'],
-            'solicitud_id' => ['nullable', 'integer', 'exists:solicitudes_sistema,id'],
-            'proyecto_id' => ['nullable', 'integer', 'exists:proyectos,id'],
+            'asunto' => ['nullable', 'string', 'max:180'],
         ]);
-        $clienteId = (int) $request->user()->cliente_id;
+        $channel = $this->ensurePrimaryChannel((int) $request->user()->cliente_id);
 
-        if (!empty($data['solicitud_id'])) {
-            abort_unless(
-                \App\Models\SolicitudSistema::whereKey($data['solicitud_id'])->where('cliente_id', $clienteId)->exists(),
-                403,
-                'No tienes permiso para usar esa solicitud.'
-            );
-        }
+        $message = Mensaje::create([
+            'conversacion_id' => $channel->id,
+            'usuario_id' => $request->user()->id,
+            'mensaje' => $data['mensaje'],
+        ]);
+        $channel->update(['ultimo_mensaje_at' => now(), 'estado' => 'abierta']);
+        Audit::log($request, 'mensaje_enviado', $channel, 'El cliente envió un mensaje a Atención VITI.');
+        $this->pushMessage($request, $channel, $data['mensaje']);
 
-        if (!empty($data['proyecto_id'])) {
-            abort_unless(
-                \App\Models\Proyecto::whereKey($data['proyecto_id'])->where('cliente_id', $clienteId)->exists(),
-                403,
-                'No tienes permiso para usar ese proyecto.'
-            );
-        }
-
-        $conversation = DB::transaction(function () use ($data, $clienteId, $request) {
-            $c = Conversacion::create([
-                'cliente_id' => $clienteId,
-                'solicitud_id' => $data['solicitud_id'] ?? null,
-                'proyecto_id' => $data['proyecto_id'] ?? null,
-                'asunto' => $data['asunto'],
-                'estado' => 'abierta',
-                'ultimo_mensaje_at' => now(),
-            ]);
-            $c->mensajes()->create(['usuario_id' => $request->user()->id, 'mensaje' => $data['mensaje']]);
-
-            return $c;
-        });
-
-        $clientName = $request->user()->nombre ?: 'Cliente';
-        $adminIds = Usuario::query()
-            ->where('estado', 'activo')
-            ->where('rol', '!=', 'cliente')
-            ->pluck('id')
-            ->all();
-        FirebasePush::sendToUsers(
-            $adminIds,
-            'Nuevo mensaje de '.$clientName,
-            str($data['mensaje'])->limit(120)->toString(),
-            ['type' => 'buzon', 'conversation_id' => $conversation->id, 'path' => '/buzon?c='.$conversation->id]
-        );
-
-        return response()->json(['data' => $conversation->load('mensajes.usuario')], 201);
+        return response()->json(['data' => $this->loadChannel($channel->fresh())], 201);
     }
 
     public function clientSend(Request $request, Conversacion $conversacion): JsonResponse
     {
         abort_unless(
-            (int) $conversacion->cliente_id === (int) $request->user()->cliente_id,
+            $conversacion->canal_principal && (int) $conversacion->cliente_id === (int) $request->user()->cliente_id,
             403,
-            'No tienes permiso para acceder a esta conversación.'
+            'No tienes permiso para acceder a este canal de atención.'
         );
 
         return $this->send($request, $conversacion);
@@ -221,7 +168,7 @@ class BuzonController extends Controller
 
     private function send(Request $request, Conversacion $conversacion): JsonResponse
     {
-        abort_if($conversacion->estado === 'cerrada', 422, 'La conversación está cerrada.');
+        if ($conversacion->estado === 'cerrada') $conversacion->update(['estado' => 'abierta']);
         $data = $request->validate(['mensaje' => ['required', 'string', 'max:5000']]);
         $mensaje = Mensaje::create([
             'conversacion_id' => $conversacion->id,
@@ -229,47 +176,88 @@ class BuzonController extends Controller
             'mensaje' => $data['mensaje'],
         ]);
         $conversacion->update(['ultimo_mensaje_at' => now()]);
-        Audit::log($request, 'mensaje_enviado', $conversacion, 'Se envió un mensaje en el buzón de VITI.');
+        Audit::log($request, 'mensaje_enviado', $conversacion, 'Se envió un mensaje en Atención VITI.');
+        $this->pushMessage($request, $conversacion, $data['mensaje']);
 
+        return response()->json(['data' => $mensaje->load('usuario:id,nombre,apellido,rol')], 201);
+    }
+
+    private function pushMessage(Request $request, Conversacion $conversation, string $text): void
+    {
         if ($request->user()->rol === 'cliente') {
-            $targetIds = Usuario::query()
-                ->where('estado', 'activo')
-                ->where('rol', '!=', 'cliente')
-                ->pluck('id')
-                ->all();
+            $targetIds = $conversation->responsable_usuario_id
+                ? [$conversation->responsable_usuario_id]
+                : Usuario::where('estado','activo')->where('rol','!=','cliente')->pluck('id')->all();
             $title = 'Nuevo mensaje de '.($request->user()->nombre ?: 'Cliente');
-            $path = '/buzon?c='.$conversacion->id;
+            $path = '/buzon?c='.$conversation->id;
         } else {
-            $targetIds = Usuario::query()
-                ->where('estado', 'activo')
-                ->where('rol', 'cliente')
-                ->where('cliente_id', $conversacion->cliente_id)
-                ->pluck('id')
-                ->all();
-            $title = 'Nueva respuesta del equipo VITI';
-            $path = '/mi-buzon?c='.$conversacion->id;
+            $targetIds = Usuario::where('estado','activo')
+                ->where('rol','cliente')
+                ->where('cliente_id',$conversation->cliente_id)
+                ->pluck('id')->all();
+            $title = 'Nueva respuesta de Atención VITI';
+            $path = '/mi-buzon?c='.$conversation->id;
         }
 
         FirebasePush::sendToUsers(
             $targetIds,
             $title,
-            str($data['mensaje'])->limit(120)->toString(),
-            ['type' => 'buzon', 'conversation_id' => $conversacion->id, 'path' => $path]
+            str($text)->limit(120)->toString(),
+            ['type'=>'buzon','conversation_id'=>$conversation->id,'path'=>$path]
         );
+    }
 
-        return response()->json(['data' => $mensaje->load('usuario:id,nombre,apellido,rol')], 201);
+    private function ensureAllClientChannels(): void
+    {
+        Cliente::query()->select('id')->orderBy('id')->chunkById(100, function ($clients): void {
+            foreach ($clients as $client) $this->ensurePrimaryChannel((int) $client->id);
+        });
+    }
+
+    private function ensurePrimaryChannel(int $clientId): Conversacion
+    {
+        $channel = Conversacion::where('cliente_id',$clientId)->where('canal_principal',true)->first();
+        if ($channel) return $channel;
+
+        $adminId = Usuario::where('estado','activo')->where('rol','superadmin')->orderBy('id')->value('id');
+        $channel = Conversacion::where('cliente_id',$clientId)->latest('ultimo_mensaje_at')->latest('id')->first();
+
+        if ($channel) {
+            Conversacion::where('cliente_id',$clientId)->update(['canal_principal'=>false]);
+            $channel->update([
+                'canal_principal'=>true,
+                'responsable_usuario_id'=>$adminId,
+                'asunto'=>'Atención VITI',
+                'estado'=>'abierta',
+            ]);
+            return $channel->fresh();
+        }
+
+        return Conversacion::create([
+            'cliente_id'=>$clientId,
+            'responsable_usuario_id'=>$adminId,
+            'asunto'=>'Atención VITI',
+            'estado'=>'abierta',
+            'canal_principal'=>true,
+        ]);
+    }
+
+    private function loadChannel(Conversacion $conversation): Conversacion
+    {
+        return $conversation->load([
+            'cliente:id,nombre,telefono,whatsapp,foto_path',
+            'responsable:id,nombre,apellido,rol,foto_path',
+            'solicitud:id,codigo,titulo,estado',
+            'proyecto:id,codigo,nombre,fase,progreso',
+            'mensajes.usuario:id,nombre,apellido,rol',
+        ]);
     }
 
     private function markConversationRead(Conversacion $conversacion, bool $forClient): void
     {
         $query = $conversacion->mensajes()->whereNull('leido_at');
-
-        if ($forClient) {
-            $query->whereHas('usuario', fn ($q) => $q->where('rol', '!=', 'cliente'));
-        } else {
-            $query->whereHas('usuario', fn ($q) => $q->where('rol', 'cliente'));
-        }
-
+        if ($forClient) $query->whereHas('usuario', fn ($q) => $q->where('rol', '!=', 'cliente'));
+        else $query->whereHas('usuario', fn ($q) => $q->where('rol', 'cliente'));
         $query->update(['leido_at' => now()]);
     }
 }
