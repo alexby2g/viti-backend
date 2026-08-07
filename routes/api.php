@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{AplicacionController,ArchivoController,AuditoriaController,AuthController,BuzonController,ClientAuthController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,EmpresaController,MantenimientoController,MobileAuthController,ProyectoController,ReporteController,SetupController,SolicitudController,PublicSolicitudController};
+use App\Http\Controllers\{AplicacionController,ArchivoController,AuditoriaController,AuthController,BuzonController,ClientAuthController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,EmpresaController,MantenimientoController,MobileAuthController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,PublicSolicitudController};
 use Illuminate\Support\Facades\Route;
 
 Route::get('health', fn () => ['status'=>'ok','service'=>'VITI Core API','time'=>now()->toIso8601String()]);
@@ -20,7 +20,6 @@ Route::prefix('v1')->group(function (): void {
         Route::middleware('auth:sanctum')->post('logout', [MobileAuthController::class,'logout']);
     });
 
-
     Route::prefix('publico/solicitudes')->middleware('throttle:api')->group(function (): void {
         Route::get('{token}', [PublicSolicitudController::class,'show']);
         Route::put('{token}', [PublicSolicitudController::class,'save']);
@@ -32,6 +31,8 @@ Route::prefix('v1')->group(function (): void {
         Route::post('auth/logout', [AuthController::class,'logout']);
         Route::get('notificaciones/buzon', [BuzonController::class,'notifications']);
         Route::post('notificaciones/buzon/leer-todo', [BuzonController::class,'markAllRead']);
+        Route::post('push/dispositivo', [PushDeviceController::class,'store']);
+        Route::delete('push/dispositivo', [PushDeviceController::class,'destroy']);
 
         Route::middleware('cliente')->prefix('mi')->group(function (): void {
             Route::get('perfil', [ClientPortalController::class,'profile']);
