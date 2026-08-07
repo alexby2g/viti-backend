@@ -1,11 +1,11 @@
 FROM composer:2 AS vendor
 WORKDIR /app
-COPY composer.json ./
+COPY composer.json composer.lock ./
 RUN composer install --no-dev --prefer-dist --no-interaction --no-progress --no-scripts
 COPY . .
 RUN composer dump-autoload --optimize --no-dev --no-interaction
 
-FROM php:8.3-apache
+FROM php:8.4-apache
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libicu-dev libzip-dev libonig-dev libpq-dev unzip \
