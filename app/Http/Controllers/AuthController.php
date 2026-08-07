@@ -7,6 +7,7 @@ use App\Support\Audit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 
 class AuthController extends Controller
 {
@@ -57,6 +58,24 @@ class AuthController extends Controller
     public function me(Request $request): JsonResponse
     {
         return response()->json(['usuario'=>$request->user()->loadMissing('cliente')]);
+    }
+
+    public function uploadPhoto(Request $request): JsonResponse
+    {
+        abort_unless($request->user()?->isSuperAdmin(), 403, 'Solo el superadministrador puede cambiar esta fotografía.');
+        $request->validate(['foto'=>['required','image','mimes:jpg,jpeg,png,webp','max:3072']], [
+            'foto.required'=>'Selecciona una fotografía.',
+            'foto.image'=>'El archivo debe ser una imagen.',
+            'foto.max'=>'La fotografía no puede superar 3 MB.',
+        ]);
+
+        $usuario = $request->user();
+        if ($usuario->foto_path) Storage::disk('public')->delete($usuario->foto_path);
+        $path = $request->file('foto')->store('usuarios/fotos','public');
+        $usuario->update(['foto_path'=>$path]);
+        Audit::log($request, 'foto_perfil_actualizada', $usuario, 'El superadministrador actualizó su fotografía de perfil.');
+
+        return response()->json(['usuario'=>$usuario->fresh()->loadMissing('cliente')]);
     }
 
     public function logout(Request $request): JsonResponse
