@@ -28,6 +28,10 @@ services:
         value: require
       - key: SESSION_DRIVER
         value: database
+      - key: SESSION_LIFETIME
+        value: "43200"
+      - key: SESSION_EXPIRE_ON_CLOSE
+        value: "false"
       - key: SESSION_SECURE_COOKIE
         value: "true"
       - key: SESSION_SAME_SITE
@@ -53,4 +57,8 @@ services:
       - key: VITI_SETUP_SECRET
         sync: false
       - key: VITI_ADMIN_SECRET
+        sync: false
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
         sync: false
