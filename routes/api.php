@@ -28,6 +28,7 @@ Route::prefix('v1')->group(function (): void {
 
     Route::middleware(['auth:sanctum','throttle:api'])->group(function (): void {
         Route::get('auth/me', [AuthController::class,'me']);
+        Route::post('auth/perfil/foto', [AuthController::class,'uploadPhoto']);
         Route::post('auth/logout', [AuthController::class,'logout']);
         Route::get('notificaciones/buzon', [BuzonController::class,'notifications']);
         Route::post('notificaciones/buzon/leer-todo', [BuzonController::class,'markAllRead']);
