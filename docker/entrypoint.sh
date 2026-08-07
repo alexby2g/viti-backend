@@ -8,6 +8,10 @@ sed -ri "s/<VirtualHost \*:[0-9]+>/<VirtualHost *:${PORT}>/" /etc/apache2/sites-
 php artisan config:clear
 php artisan view:clear
 
+# Garantiza que /public/storage apunte al disco público de Laravel.
+# En contenedores nuevos el enlace puede no existir todavía.
+php artisan storage:link || true
+
 if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
   php artisan migrate --force
 fi
