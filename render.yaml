@@ -45,11 +45,11 @@ services:
       - key: APP_URL
         sync: false
       - key: SANCTUM_STATEFUL_DOMAINS
-        sync: false
+        value: viti-frontend.vercel.app
       - key: FRONTEND_URLS
-        sync: false
+        value: https://viti-frontend.vercel.app
       - key: FRONTEND_APP_URL
-        sync: false
+        value: https://viti-frontend.vercel.app
       - key: VITI_SETUP_SECRET
         sync: false
       - key: VITI_ADMIN_SECRET
