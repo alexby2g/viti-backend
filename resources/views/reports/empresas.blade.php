@@ -1,0 +1,5 @@
+<!doctype html><html><head><meta charset="utf-8">@include('reports._style')</head><body>
+<div class="brand"><h1>VITI Core</h1><div class="muted">Reporte de empresas · {{ now()->format('d/m/Y H:i') }}</div></div>
+<table class="grid"><thead><tr><th>Código</th><th>Empresa</th><th>Responsable</th><th>Actividad</th><th>Teléfono</th><th>Ciudad</th><th>Solicitudes</th><th>Proyectos</th><th>Aplicaciones</th><th>Estado</th></tr></thead><tbody>
+@forelse($empresas as $empresa)<tr><td>{{ $empresa->codigo }}</td><td>{{ $empresa->nombre_comercial }}</td><td>{{ $empresa->cliente?->nombre }}</td><td>{{ $empresa->actividad }}</td><td>{{ $empresa->telefono }}</td><td>{{ $empresa->ciudad }}</td><td>{{ $empresa->solicitudes_count }}</td><td>{{ $empresa->proyectos_count }}</td><td>{{ $empresa->aplicaciones_count }}</td><td>{{ $empresa->estado }}</td></tr>@empty<tr><td colspan="10">No existen empresas registradas.</td></tr>@endforelse
+</tbody></table><div class="footer">VITI · Plataforma de gestión de proyectos de software</div></body></html>

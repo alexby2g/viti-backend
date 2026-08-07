@@ -1,0 +1,965 @@
+{
+  "nombre": "Cuestionario para Definir un Sistema",
+  "version": "1.0",
+  "descripcion": "Cuestionario base para conocer la idea, necesidades y expectativas del cliente antes de diseñar su sistema.",
+  "secciones": [
+    {
+      "numero": 1,
+      "titulo": "Información general",
+      "orden": 1
+    },
+    {
+      "numero": 2,
+      "titulo": "Idea principal del sistema",
+      "orden": 2
+    },
+    {
+      "numero": 3,
+      "titulo": "Personas que utilizarán el sistema",
+      "orden": 3
+    },
+    {
+      "numero": 4,
+      "titulo": "Funciones o módulos",
+      "orden": 4
+    },
+    {
+      "numero": 5,
+      "titulo": "Estados y procesos",
+      "orden": 5
+    },
+    {
+      "numero": 6,
+      "titulo": "Búsquedas y reportes",
+      "orden": 6
+    },
+    {
+      "numero": 7,
+      "titulo": "Pagos y facturación",
+      "orden": 7
+    },
+    {
+      "numero": 8,
+      "titulo": "Notificaciones e integraciones",
+      "orden": 8
+    },
+    {
+      "numero": 9,
+      "titulo": "Tipo de sistema",
+      "orden": 9
+    },
+    {
+      "numero": 10,
+      "titulo": "Diseño del sistema",
+      "orden": 10
+    },
+    {
+      "numero": 11,
+      "titulo": "Seguridad",
+      "orden": 11
+    },
+    {
+      "numero": 12,
+      "titulo": "Crecimiento del sistema",
+      "orden": 12
+    },
+    {
+      "numero": 13,
+      "titulo": "Tiempo y presupuesto",
+      "orden": 13
+    },
+    {
+      "numero": 14,
+      "titulo": "Aprobación y observaciones",
+      "orden": 14
+    }
+  ],
+  "preguntas": [
+    {
+      "numero": 1,
+      "seccion": 1,
+      "pregunta": "Si ya tiene una empresa, microempresa o negocio, escriba su nombre.",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": "Si todavía no tiene un negocio definido, escriba: No aplica.",
+      "obligatoria": true
+    },
+    {
+      "numero": 2,
+      "seccion": 1,
+      "pregunta": "Nombre de la persona responsable del proyecto:",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": null,
+      "obligatoria": true
+    },
+    {
+      "numero": 3,
+      "seccion": 1,
+      "pregunta": "Número de teléfono o WhatsApp de contacto:",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": "VITI utiliza principalmente el teléfono para comunicarse con usted.",
+      "obligatoria": true
+    },
+    {
+      "numero": 4,
+      "seccion": 1,
+      "pregunta": "¿A qué actividad se dedica su empresa o negocio?",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": null,
+      "obligatoria": true
+    },
+    {
+      "numero": 5,
+      "seccion": 1,
+      "pregunta": "¿Actualmente utiliza algún sistema para realizar su trabajo?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Sí",
+        "No",
+        "Solo utiliza Excel",
+        "Utiliza cuadernos o registros manuales",
+        "Utiliza WhatsApp",
+        "Otro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 6,
+      "seccion": 1,
+      "pregunta": "Si ya utiliza un sistema, ¿qué problemas tiene actualmente?",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 7,
+      "seccion": 2,
+      "pregunta": "Explique con sus propias palabras qué sistema necesita.",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": null,
+      "obligatoria": true
+    },
+    {
+      "numero": 8,
+      "seccion": 2,
+      "pregunta": "¿Cuál sería el objetivo principal del sistema?",
+      "tipo": "seleccion_multiple",
+      "opciones": [
+        "Registrar información",
+        "Organizar clientes",
+        "Controlar productos o inventario",
+        "Registrar ventas",
+        "Controlar pagos",
+        "Gestionar servicios",
+        "Controlar personal",
+        "Generar reportes",
+        "Automatizar procesos",
+        "Otro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 9,
+      "seccion": 2,
+      "pregunta": "¿Qué problema desea resolver con el sistema?",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": null,
+      "obligatoria": true
+    },
+    {
+      "numero": 10,
+      "seccion": 2,
+      "pregunta": "¿Qué actividades realiza actualmente de forma manual y desea digitalizar?",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 11,
+      "seccion": 2,
+      "pregunta": "¿Qué beneficios espera obtener con el sistema?",
+      "tipo": "seleccion_multiple",
+      "opciones": [
+        "Ahorrar tiempo",
+        "Evitar errores",
+        "Tener información organizada",
+        "Controlar mejor el negocio",
+        "Atender mejor a los clientes",
+        "Generar reportes automáticamente",
+        "Evitar pérdida de información",
+        "Otro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 12,
+      "seccion": 3,
+      "pregunta": "¿Quiénes utilizarán el sistema?",
+      "tipo": "seleccion_multiple",
+      "opciones": [
+        "Propietario",
+        "Administrador",
+        "Secretaria",
+        "Vendedores",
+        "Técnicos",
+        "Trabajadores",
+        "Clientes",
+        "Proveedores",
+        "Otro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 13,
+      "seccion": 3,
+      "pregunta": "¿Cuántas personas utilizarán aproximadamente el sistema?",
+      "tipo": "numero",
+      "opciones": null,
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 14,
+      "seccion": 3,
+      "pregunta": "¿Todos los usuarios podrán ver y modificar la misma información?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Sí",
+        "No",
+        "No estoy seguro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 15,
+      "seccion": 3,
+      "pregunta": "¿Necesita diferentes tipos de usuarios o roles?",
+      "tipo": "seleccion_multiple",
+      "opciones": [
+        "Administrador",
+        "Encargado",
+        "Trabajador",
+        "Vendedor",
+        "Técnico",
+        "Cliente",
+        "Otro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 16,
+      "seccion": 3,
+      "pregunta": "¿Qué funciones debería tener permitido realizar cada usuario?",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 17,
+      "seccion": 4,
+      "pregunta": "Seleccione las funciones que podría necesitar el sistema:",
+      "tipo": "seleccion_multiple",
+      "opciones": [
+        "Inicio de sesión",
+        "Registro de usuarios",
+        "Registro de clientes",
+        "Registro de proveedores",
+        "Registro de trabajadores",
+        "Registro de productos",
+        "Registro de servicios",
+        "Inventario",
+        "Compras",
+        "Ventas",
+        "Cotizaciones",
+        "Pedidos",
+        "Reservas o citas",
+        "Órdenes de trabajo",
+        "Control de pagos",
+        "Cuentas por cobrar",
+        "Cuentas por pagar",
+        "Facturación",
+        "Garantías",
+        "Historial de clientes",
+        "Reportes",
+        "Notificaciones",
+        "Agenda o calendario",
+        "Archivos y documentos",
+        "Fotografías",
+        "Otro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 18,
+      "seccion": 4,
+      "pregunta": "¿Cuál sería la función más importante del sistema?",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": null,
+      "obligatoria": true
+    },
+    {
+      "numero": 19,
+      "seccion": 4,
+      "pregunta": "Describa paso a paso cómo se realiza actualmente el trabajo principal.",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": "Ejemplo: El cliente solicita el servicio, se registran sus datos, se genera una orden, se realiza el trabajo y posteriormente se registra el pago.",
+      "obligatoria": true
+    },
+    {
+      "numero": 20,
+      "seccion": 4,
+      "pregunta": "¿Qué información se debe registrar obligatoriamente?",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": "Ejemplo: nombre, teléfono, dirección, producto, fecha, precio, estado, observaciones, fotografías, documentos, etc.",
+      "obligatoria": false
+    },
+    {
+      "numero": 21,
+      "seccion": 4,
+      "pregunta": "¿Qué información debería poder editarse o eliminarse?",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 22,
+      "seccion": 4,
+      "pregunta": "¿El sistema debe guardar un historial de cambios o movimientos?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Sí",
+        "No",
+        "No estoy seguro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 23,
+      "seccion": 5,
+      "pregunta": "¿La información pasará por diferentes estados?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Sí",
+        "No"
+      ],
+      "ayuda": "Ejemplo: pendiente, aprobado, en proceso, terminado, entregado o cancelado.",
+      "obligatoria": false
+    },
+    {
+      "numero": 24,
+      "seccion": 5,
+      "pregunta": "Indique los estados que necesitaría utilizar:",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 25,
+      "seccion": 5,
+      "pregunta": "¿Quién podrá cambiar cada estado?",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 26,
+      "seccion": 5,
+      "pregunta": "¿El sistema debe avisar cuando una actividad cambie de estado?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Sí",
+        "No"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 27,
+      "seccion": 6,
+      "pregunta": "¿Qué información necesita buscar rápidamente?",
+      "tipo": "seleccion_multiple",
+      "opciones": [
+        "Clientes",
+        "Productos",
+        "Servicios",
+        "Ventas",
+        "Pagos",
+        "Órdenes",
+        "Fechas",
+        "Trabajadores",
+        "Otro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 28,
+      "seccion": 6,
+      "pregunta": "¿Qué reportes necesita obtener?",
+      "tipo": "seleccion_multiple",
+      "opciones": [
+        "Reporte diario",
+        "Reporte semanal",
+        "Reporte mensual",
+        "Reporte anual",
+        "Reporte de ventas",
+        "Reporte de pagos",
+        "Reporte de clientes",
+        "Reporte de inventario",
+        "Reporte de servicios",
+        "Reporte de trabajadores",
+        "Otro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 29,
+      "seccion": 6,
+      "pregunta": "¿Los reportes deben descargarse o imprimirse?",
+      "tipo": "seleccion_multiple",
+      "opciones": [
+        "PDF",
+        "Excel",
+        "Impresión directa",
+        "Solo visualizar en pantalla",
+        "Otro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 30,
+      "seccion": 6,
+      "pregunta": "¿Qué datos deben aparecer en los reportes?",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 31,
+      "seccion": 7,
+      "pregunta": "¿El sistema manejará precios o montos de dinero?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Sí",
+        "No"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 32,
+      "seccion": 7,
+      "pregunta": "¿Qué métodos de pago utiliza?",
+      "tipo": "seleccion_multiple",
+      "opciones": [
+        "Efectivo",
+        "Transferencia bancaria",
+        "Código QR",
+        "Tarjeta",
+        "Pago a crédito",
+        "Otro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 33,
+      "seccion": 7,
+      "pregunta": "¿Se permitirán pagos parciales o por cuotas?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Sí",
+        "No"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 34,
+      "seccion": 7,
+      "pregunta": "¿El sistema debe generar recibos, comprobantes o facturas?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Sí",
+        "No"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 35,
+      "seccion": 7,
+      "pregunta": "¿Necesita controlar deudas o saldos pendientes?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Sí",
+        "No"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 36,
+      "seccion": 8,
+      "pregunta": "¿El sistema debe enviar notificaciones?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Sí",
+        "No"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 37,
+      "seccion": 8,
+      "pregunta": "¿Por qué medio deben enviarse?",
+      "tipo": "seleccion_multiple",
+      "opciones": [
+        "Dentro del sistema",
+        "Correo electrónico",
+        "WhatsApp",
+        "Notificación al celular",
+        "Mensaje de texto",
+        "Otro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 38,
+      "seccion": 8,
+      "pregunta": "¿En qué situaciones debería enviar una notificación?",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": "Ejemplo: nuevo pedido, pago pendiente, cita próxima, trabajo terminado o producto con poco stock.",
+      "obligatoria": false
+    },
+    {
+      "numero": 39,
+      "seccion": 8,
+      "pregunta": "¿Necesita conectar el sistema con alguna plataforma?",
+      "tipo": "seleccion_multiple",
+      "opciones": [
+        "WhatsApp",
+        "Google Maps",
+        "Google Calendar",
+        "Facebook",
+        "Instagram",
+        "Sistema de facturación",
+        "Banco o pagos QR",
+        "Otro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 40,
+      "seccion": 9,
+      "pregunta": "¿Desde qué dispositivo desea utilizar el sistema?",
+      "tipo": "seleccion_multiple",
+      "opciones": [
+        "Computadora",
+        "Teléfono celular",
+        "Tablet",
+        "Todos los anteriores"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 41,
+      "seccion": 9,
+      "pregunta": "¿Qué tipo de sistema prefiere?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Página web",
+        "Aplicación para Android",
+        "Programa para computadora",
+        "Sistema web y aplicación móvil",
+        "No estoy seguro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 42,
+      "seccion": 9,
+      "pregunta": "¿El sistema debe funcionar sin conexión a internet?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Sí",
+        "No",
+        "En algunas funciones",
+        "No estoy seguro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 43,
+      "seccion": 9,
+      "pregunta": "¿El sistema será utilizado en un solo negocio o en varias sucursales?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Un solo negocio",
+        "Varias sucursales",
+        "Varias empresas",
+        "No estoy seguro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 44,
+      "seccion": 10,
+      "pregunta": "¿Cómo desea que se vea el sistema?",
+      "tipo": "seleccion_multiple",
+      "opciones": [
+        "Sencillo y fácil de usar",
+        "Moderno",
+        "Elegante",
+        "Colorido",
+        "Corporativo",
+        "Similar a otro sistema",
+        "Otro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 45,
+      "seccion": 10,
+      "pregunta": "¿Tiene logotipo y colores definidos para el sistema?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Sí",
+        "No"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 46,
+      "seccion": 10,
+      "pregunta": "Indique los colores que le gustaría utilizar:",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 47,
+      "seccion": 10,
+      "pregunta": "¿Tiene algún sistema, página o aplicación que le guste como referencia?",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 48,
+      "seccion": 10,
+      "pregunta": "¿Necesita modo oscuro y modo claro?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Sí",
+        "No"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 49,
+      "seccion": 10,
+      "pregunta": "¿Necesita opciones de accesibilidad?",
+      "tipo": "seleccion_multiple",
+      "opciones": [
+        "Letras grandes",
+        "Alto contraste",
+        "Modo para personas con daltonismo",
+        "Lectura sencilla",
+        "No necesita",
+        "Otro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 50,
+      "seccion": 11,
+      "pregunta": "¿Cada usuario deberá ingresar con nombre de usuario y contraseña?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Sí",
+        "No"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 51,
+      "seccion": 11,
+      "pregunta": "¿El sistema manejará información privada o confidencial?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Sí",
+        "No"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 52,
+      "seccion": 11,
+      "pregunta": "¿Necesita copias de seguridad de la información?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Diarias",
+        "Semanales",
+        "Mensuales",
+        "No estoy seguro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 53,
+      "seccion": 11,
+      "pregunta": "¿Desea registrar quién creó, modificó o eliminó información?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Sí",
+        "No"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 54,
+      "seccion": 11,
+      "pregunta": "¿Algunos usuarios tendrán información restringida?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Sí",
+        "No"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 55,
+      "seccion": 12,
+      "pregunta": "¿El sistema podría necesitar nuevas funciones en el futuro?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Sí",
+        "No",
+        "No estoy seguro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 56,
+      "seccion": 12,
+      "pregunta": "¿Cuántos clientes, registros, productos o movimientos calcula que tendrá por mes?",
+      "tipo": "numero",
+      "opciones": null,
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 57,
+      "seccion": 12,
+      "pregunta": "¿Desea empezar con una versión básica y agregar funciones después?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Sí",
+        "No",
+        "Prefiero desarrollar todas las funciones desde el inicio"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 58,
+      "seccion": 12,
+      "pregunta": "¿Cuáles serían las funciones indispensables para la primera versión?",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 59,
+      "seccion": 12,
+      "pregunta": "¿Qué funciones podrían dejarse para una segunda versión?",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 60,
+      "seccion": 13,
+      "pregunta": "¿Existe una fecha límite para entregar el sistema?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Sí",
+        "No"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 61,
+      "seccion": 13,
+      "pregunta": "¿Tiene un presupuesto aproximado para el proyecto?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Menos de Bs 2.000",
+        "Entre Bs 2.000 y Bs 5.000",
+        "Entre Bs 5.000 y Bs 10.000",
+        "Más de Bs 10.000",
+        "Deseo recibir una cotización",
+        "Prefiero no indicarlo todavía"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 62,
+      "seccion": 13,
+      "pregunta": "¿El presupuesto incluye mantenimiento y soporte técnico?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Sí",
+        "No",
+        "No estoy seguro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 63,
+      "seccion": 13,
+      "pregunta": "¿Necesitará capacitación para aprender a utilizar el sistema?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Sí",
+        "No"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 64,
+      "seccion": 13,
+      "pregunta": "¿Quién se encargará de cargar la información inicial al sistema?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "El cliente",
+        "El desarrollador",
+        "Ambos",
+        "No está definido"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 65,
+      "seccion": 14,
+      "pregunta": "¿Quién aprobará el diseño y las funciones del sistema?",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 66,
+      "seccion": 14,
+      "pregunta": "¿Con qué frecuencia desea revisar los avances?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Cada semana",
+        "Cada dos semanas",
+        "Una vez al mes",
+        "Al terminar cada módulo",
+        "Solo al finalizar"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 67,
+      "seccion": 14,
+      "pregunta": "¿Qué aspecto considera más importante?",
+      "tipo": "seleccion_unica",
+      "opciones": [
+        "Facilidad de uso",
+        "Seguridad",
+        "Rapidez",
+        "Diseño",
+        "Cantidad de funciones",
+        "Precio",
+        "Tiempo de entrega",
+        "Otro"
+      ],
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 68,
+      "seccion": 14,
+      "pregunta": "¿Qué cosa no debería faltar por ningún motivo en el sistema?",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 69,
+      "seccion": 14,
+      "pregunta": "¿Qué cosa no desea que tenga el sistema?",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": null,
+      "obligatoria": false
+    },
+    {
+      "numero": 70,
+      "seccion": 14,
+      "pregunta": "Agregue cualquier detalle, ejemplo o comentario adicional sobre su idea:",
+      "tipo": "texto",
+      "opciones": null,
+      "ayuda": null,
+      "obligatoria": false
+    }
+  ]
+}

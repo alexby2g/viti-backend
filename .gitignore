@@ -1,0 +1,11 @@
+/vendor/
+.env
+.phpunit.result.cache
+/storage/*.key
+/storage/logs/*.log
+/storage/framework/cache/data/
+/storage/framework/sessions/*
+/storage/framework/views/*
+/storage/app/public/clientes/fotos/*
+/storage/app/public/empresas/logos/*
+/public/storage

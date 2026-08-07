@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 280" role="img" aria-labelledby="title desc">
+  <title id="title">VITI</title>
+  <desc id="desc">Árbol tecnológico de soluciones digitales</desc>
+  <defs>
+    <linearGradient id="trunk" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1565C0"/><stop offset="1" stop-color="#0D47A1"/>
+    </linearGradient>
+  </defs>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M130 215V83M130 132L82 92M130 151L178 109M112 160L65 132M148 165L198 140M112 110L91 59M148 111L171 64" stroke="url(#trunk)" stroke-width="11"/>
+    <path d="M130 215L101 242M130 215L159 242M130 215V246" stroke="#0D47A1" stroke-width="12"/>
+    <path d="M130 151L111 130M130 151L149 130" stroke="#43A047" stroke-width="7"/>
+    <path d="M82 92L61 73M178 109L201 87" stroke="#43A047" stroke-width="7"/>
+    <path d="M148 111L171 64" stroke="#FB8C00" stroke-width="7"/>
+  </g>
+  <g stroke-width="5" fill="#fff">
+    <circle cx="91" cy="46" r="28" stroke="#1565C0"/>
+    <circle cx="171" cy="48" r="28" stroke="#FB8C00"/>
+    <circle cx="50" cy="65" r="27" stroke="#43A047"/>
+    <circle cx="210" cy="78" r="27" stroke="#1565C0"/>
+    <circle cx="42" cy="131" r="27" stroke="#1565C0"/>
+    <circle cx="216" cy="139" r="27" stroke="#43A047"/>
+    <circle cx="130" cy="74" r="29" stroke="#0D47A1"/>
+  </g>
+  <g fill="none" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M76 46h30M83 36h16M81 50v10M101 50v10M81 60h20" stroke="#1565C0"/>
+    <path d="M166 31l-8 18h11l-6 17 17-23h-11l7-12" stroke="#FB8C00"/>
+    <path d="M36 68l8-8 12 12 11-11M39 80l25-25" stroke="#43A047"/>
+    <path d="M197 67h26v18h-26zM204 89h12" stroke="#1565C0"/>
+    <path d="M28 129h28M32 119h20v20H32z" stroke="#1565C0"/>
+    <path d="M207 127a15 15 0 1 0 18 22M216 119v11M216 149v11M195 139h11M226 139h11" stroke="#43A047"/>
+    <path d="M116 62l11 11M145 48l-12 12M117 47l28 28M140 46l-28 28" stroke="#0D47A1"/>
+  </g>
+</svg>

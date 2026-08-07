@@ -1,0 +1,68 @@
+services:
+  - type: web
+    name: viti-core-api-alexby2g
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: APP_TIMEZONE
+        value: America/La_Paz
+      - key: LOG_CHANNEL
+        value: stderr
+      - key: LOG_LEVEL
+        value: info
+      - key: RUN_MIGRATIONS
+        value: "true"
+      - key: RUN_SEEDER
+        value: "true"
+      - key: APP_KEY
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        sync: false
+      - key: DB_DATABASE
+        sync: false
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_SSL_CA
+        value: /etc/secrets/ca.pem
+      - key: SANCTUM_STATEFUL_DOMAINS
+        sync: false
+      - key: FRONTEND_URLS
+        sync: false
+      - key: FRONTEND_APP_URL
+        sync: false
+      - key: PUBLIC_FILESYSTEM_DRIVER
+        value: s3
+      - key: PRIVATE_FILESYSTEM_DRIVER
+        value: s3
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_DEFAULT_REGION
+        value: auto
+      - key: AWS_PUBLIC_BUCKET
+        sync: false
+      - key: AWS_PRIVATE_BUCKET
+        sync: false
+      - key: AWS_ENDPOINT
+        sync: false
+      - key: AWS_PUBLIC_URL
+        sync: false
+      - key: AWS_USE_PATH_STYLE_ENDPOINT
+        value: "true"
+      - key: VITI_SETUP_SECRET
+        sync: false
+      - key: VITI_ADMIN_SECRET
+        sync: false
