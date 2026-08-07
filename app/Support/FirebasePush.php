@@ -15,7 +15,7 @@ class FirebasePush
         $userIds = array_values(array_unique(array_filter(array_map('intval', $userIds))));
         if (!$userIds) return;
 
-        $projectId = trim((string) env('FIREBASE_PROJECT_ID', ''));
+        $projectId = trim((string) config('firebase.project_id', ''));
         $serviceAccount = self::serviceAccount();
         if ($projectId === '' || !$serviceAccount) return;
 
@@ -74,7 +74,7 @@ class FirebasePush
 
     private static function serviceAccount(): ?array
     {
-        $raw = trim((string) env('FIREBASE_SERVICE_ACCOUNT_JSON', ''));
+        $raw = trim((string) config('firebase.service_account_json', ''));
         if ($raw === '') return null;
 
         if (!str_starts_with($raw, '{')) {
