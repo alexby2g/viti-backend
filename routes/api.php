@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{AplicacionController,ArchivoController,AuditoriaController,AuthController,BuzonController,ClientAuthController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,EmpresaController,MantenimientoController,MobileAuthController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,PublicSolicitudController};
+use App\Http\Controllers\{AplicacionController,ArchivoController,AuditoriaController,AuthController,BuzonController,ClientAuthController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,PublicSolicitudController};
 use Illuminate\Support\Facades\Route;
 
 Route::get('health', fn () => ['status'=>'ok','service'=>'VITI Core API','time'=>now()->toIso8601String()]);
@@ -34,6 +34,14 @@ Route::prefix('v1')->group(function (): void {
         Route::post('notificaciones/buzon/leer-todo', [BuzonController::class,'markAllRead']);
         Route::post('push/dispositivo', [PushDeviceController::class,'store']);
         Route::delete('push/dispositivo', [PushDeviceController::class,'destroy']);
+
+        Route::get('llamadas/entrante', [LlamadaController::class,'incoming']);
+        Route::post('llamadas', [LlamadaController::class,'store']);
+        Route::get('llamadas/{llamada}', [LlamadaController::class,'show']);
+        Route::post('llamadas/{llamada}/contestar', [LlamadaController::class,'answer']);
+        Route::post('llamadas/{llamada}/senal', [LlamadaController::class,'signal']);
+        Route::get('llamadas/{llamada}/senales', [LlamadaController::class,'signals']);
+        Route::post('llamadas/{llamada}/finalizar', [LlamadaController::class,'finish']);
 
         Route::middleware('cliente')->prefix('mi')->group(function (): void {
             Route::get('perfil', [ClientPortalController::class,'profile']);
