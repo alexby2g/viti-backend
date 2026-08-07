@@ -2,6 +2,7 @@ services:
   - type: web
     name: viti-core-api-alexby2g
     runtime: docker
+    plan: free
     region: ohio
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/health
