@@ -8,8 +8,8 @@ RUN composer dump-autoload --optimize --no-dev --no-interaction
 FROM php:8.3-apache
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libicu-dev libzip-dev libonig-dev unzip \
-    && docker-php-ext-install pdo_mysql mbstring intl zip opcache \
+    libicu-dev libzip-dev libonig-dev libpq-dev unzip \
+    && docker-php-ext-install pdo_mysql pdo_pgsql mbstring intl zip opcache \
     && a2enmod rewrite headers expires \
     && rm -rf /var/lib/apt/lists/*
 
