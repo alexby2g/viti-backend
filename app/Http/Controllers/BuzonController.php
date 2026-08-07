@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{Conversacion,Mensaje};
-use App\Support\Audit;
+use App\Models\{Conversacion,Mensaje,Usuario};
+use App\Support\{Audit,FirebasePush};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -192,6 +192,19 @@ class BuzonController extends Controller
             return $c;
         });
 
+        $clientName = $request->user()->nombre ?: 'Cliente';
+        $adminIds = Usuario::query()
+            ->where('estado', 'activo')
+            ->where('rol', '!=', 'cliente')
+            ->pluck('id')
+            ->all();
+        FirebasePush::sendToUsers(
+            $adminIds,
+            'Nuevo mensaje de '.$clientName,
+            str($data['mensaje'])->limit(120)->toString(),
+            ['type' => 'buzon', 'conversation_id' => $conversation->id, 'path' => '/buzon?c='.$conversation->id]
+        );
+
         return response()->json(['data' => $conversation->load('mensajes.usuario')], 201);
     }
 
@@ -217,6 +230,32 @@ class BuzonController extends Controller
         ]);
         $conversacion->update(['ultimo_mensaje_at' => now()]);
         Audit::log($request, 'mensaje_enviado', $conversacion, 'Se envió un mensaje en el buzón de VITI.');
+
+        if ($request->user()->rol === 'cliente') {
+            $targetIds = Usuario::query()
+                ->where('estado', 'activo')
+                ->where('rol', '!=', 'cliente')
+                ->pluck('id')
+                ->all();
+            $title = 'Nuevo mensaje de '.($request->user()->nombre ?: 'Cliente');
+            $path = '/buzon?c='.$conversacion->id;
+        } else {
+            $targetIds = Usuario::query()
+                ->where('estado', 'activo')
+                ->where('rol', 'cliente')
+                ->where('cliente_id', $conversacion->cliente_id)
+                ->pluck('id')
+                ->all();
+            $title = 'Nueva respuesta del equipo VITI';
+            $path = '/mi-buzon?c='.$conversacion->id;
+        }
+
+        FirebasePush::sendToUsers(
+            $targetIds,
+            $title,
+            str($data['mensaje'])->limit(120)->toString(),
+            ['type' => 'buzon', 'conversation_id' => $conversacion->id, 'path' => $path]
+        );
 
         return response()->json(['data' => $mensaje->load('usuario:id,nombre,apellido,rol')], 201);
     }
