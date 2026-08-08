@@ -8,6 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Throwable;
 
 class AuthController extends Controller
 {
@@ -65,17 +66,38 @@ class AuthController extends Controller
         abort_unless($request->user()?->isSuperAdmin(), 403, 'Solo el superadministrador puede cambiar esta fotografía.');
         $request->validate(['foto'=>['required','image','mimes:jpg,jpeg,png,webp','max:3072']], [
             'foto.required'=>'Selecciona una fotografía.',
-            'foto.image'=>'El archivo debe ser una imagen.',
+            'foto.image'=>'El archivo debe ser una imagen válida.',
+            'foto.mimes'=>'La fotografía debe ser JPG, PNG o WEBP.',
             'foto.max'=>'La fotografía no puede superar 3 MB.',
         ]);
 
         $usuario = $request->user();
-        if ($usuario->foto_path) Storage::disk('public')->delete($usuario->foto_path);
-        $path = $request->file('foto')->store('usuarios/fotos','public');
-        $usuario->update(['foto_path'=>$path]);
-        Audit::log($request, 'foto_perfil_actualizada', $usuario, 'El superadministrador actualizó su fotografía de perfil.');
+        $disk = Storage::disk('public');
+        $oldPath = $usuario->foto_path;
 
-        return response()->json(['usuario'=>$usuario->fresh()->loadMissing('cliente')]);
+        try {
+            $path = $request->file('foto')->store('usuarios/fotos','public');
+            if (!$path || !$disk->exists($path)) {
+                throw new \RuntimeException('R2 no confirmó la fotografía del superadministrador.');
+            }
+
+            $usuario->update(['foto_path'=>$path]);
+
+            if ($oldPath && $oldPath !== $path) {
+                try { $disk->delete($oldPath); } catch (Throwable) {}
+            }
+
+            Audit::log($request, 'foto_perfil_actualizada', $usuario, 'El superadministrador actualizó su fotografía de perfil.');
+            return response()->json([
+                'message'=>'Fotografía actualizada correctamente.',
+                'usuario'=>$usuario->fresh()->loadMissing('cliente'),
+            ]);
+        } catch (Throwable $e) {
+            report($e);
+            return response()->json([
+                'message'=>'No pudimos guardar tu fotografía en el almacenamiento permanente. Revisa Administración → Almacenamiento.',
+            ], 503);
+        }
     }
 
     public function logout(Request $request): JsonResponse
