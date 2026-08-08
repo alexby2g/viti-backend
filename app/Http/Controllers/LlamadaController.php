@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{Conversacion,Llamada,LlamadaSenal,Usuario};
+use App\Models\{AtencionSesion,Conversacion,Llamada,LlamadaSenal,Usuario};
 use App\Support\FirebasePush;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,9 +19,32 @@ class LlamadaController extends Controller
 
         $user = $request->user();
         $conversation = Conversacion::with(['cliente','responsable'])->findOrFail($data['conversacion_id']);
+        $authorizedSession = null;
 
         if ($user->rol === 'cliente') {
             abort_unless((int) $conversation->cliente_id === (int) $user->cliente_id, 403, 'No tienes permiso para llamar desde este canal.');
+
+            $authorizedSession = AtencionSesion::query()
+                ->where('conversacion_id', $conversation->id)
+                ->where('cliente_id', (int)$user->cliente_id)
+                ->habilitadaAhora()
+                ->where(function ($q) use ($data): void {
+                    if ($data['tipo'] === 'audio') {
+                        $q->whereIn('modalidad', ['audio','video','pantalla']);
+                    } else {
+                        $q->whereIn('modalidad', ['video','pantalla']);
+                    }
+                })
+                ->latest('id')
+                ->first();
+
+            if (!$authorizedSession) {
+                return response()->json([
+                    'message'=>'La llamada todavía no está habilitada. Solicita una sesión de atención o espera la hora programada.',
+                    'code'=>'CALL_NOT_AUTHORIZED',
+                ], 403);
+            }
+
             $target = $conversation->responsable;
             if (!$target || $target->estado !== 'activo') {
                 $target = Usuario::where('estado','activo')->where('rol','superadmin')->orderBy('id')->first();
@@ -31,6 +54,12 @@ class LlamadaController extends Controller
                 ->where('rol','cliente')
                 ->where('cliente_id',$conversation->cliente_id)
                 ->orderBy('id')
+                ->first();
+
+            $authorizedSession = AtencionSesion::query()
+                ->where('conversacion_id', $conversation->id)
+                ->habilitadaAhora()
+                ->latest('id')
                 ->first();
         }
 
@@ -46,6 +75,7 @@ class LlamadaController extends Controller
         $call = Llamada::create([
             'conversacion_id' => $conversation->id,
             'cliente_id' => $conversation->cliente_id,
+            'atencion_sesion_id' => $authorizedSession?->id,
             'iniciada_por_usuario_id' => $user->id,
             'receptor_usuario_id' => $target->id,
             'tipo' => $data['tipo'],
@@ -185,12 +215,14 @@ class LlamadaController extends Controller
             'cliente:id,nombre,telefono,foto_path',
             'iniciador:id,nombre,apellido,rol,foto_path',
             'receptor:id,nombre,apellido,rol,foto_path',
+            'sesionAtencion:id,modalidad,estado,programada_para,habilitada_desde,habilitada_hasta',
         ]);
 
         return [
             'id'=>$call->id,
             'conversacion_id'=>$call->conversacion_id,
             'cliente_id'=>$call->cliente_id,
+            'atencion_sesion_id'=>$call->atencion_sesion_id,
             'tipo'=>$call->tipo,
             'estado'=>$call->estado,
             'offer_sdp'=>$this->normalizeSdp($call->offer_sdp),
@@ -203,21 +235,18 @@ class LlamadaController extends Controller
             'cliente'=>$call->cliente,
             'iniciador'=>$call->iniciador,
             'receptor'=>$call->receptor,
+            'sesion_atencion'=>$call->sesionAtencion,
         ];
     }
 
     private function normalizeSdp(?string $sdp): ?string
     {
         if ($sdp === null || $sdp === '') return $sdp;
-
-        // Algunos navegadores/WebViews son estrictos con CRLF. PostgreSQL conserva el
-        // texto, pero normalizamos siempre antes de guardar y antes de responder.
         $sdp = str_replace(["\\r\\n", "\\n", "\\r"], ["\n", "\n", "\n"], $sdp);
         $sdp = str_replace(["\r\n", "\r"], "\n", $sdp);
         $lines = explode("\n", $sdp);
         $lines = array_map(static fn ($line) => rtrim($line, " \t"), $lines);
         while ($lines && end($lines) === '') array_pop($lines);
-
         return implode("\r\n", $lines)."\r\n";
     }
 }
