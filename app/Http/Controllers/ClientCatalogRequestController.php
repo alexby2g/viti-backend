@@ -15,10 +15,10 @@ class ClientCatalogRequestController extends Controller
     public function store(Request $request, CatalogoAplicacion $catalogoAplicacion, TenantContext $tenants): JsonResponse
     {
         abort_unless($catalogoAplicacion->activo && $catalogoAplicacion->solicitable,422,'Esta aplicación no está disponible para solicitud.');
-        abort_unless($request->user()->cliente_id,422,'La solicitud comercial debe realizarla el titular principal de la cuenta VITI.');
         $empresa = $tenants->resolve($request);
         $tenants->assertCanManage($request->user(),$empresa);
-        $cliente = $request->user()->cliente;
+        $cliente = $empresa->cliente;
+        abort_unless($cliente,422,'Este negocio todavía no tiene un cliente titular asociado para crear solicitudes comerciales.');
 
         $existing = SolicitudSistema::query()
             ->where('cliente_id',$cliente->id)->where('empresa_id',$empresa->id)
@@ -34,7 +34,7 @@ class ClientCatalogRequestController extends Controller
         abort_unless($questionnaire,422,'No hay un cuestionario activo disponible.');
 
         $solicitud = DB::transaction(function () use ($cliente,$empresa,$catalogoAplicacion,$questionnaire): SolicitudSistema {
-            $request = SolicitudSistema::create([
+            $item = SolicitudSistema::create([
                 'empresa_id'=>$empresa->id,
                 'cliente_id'=>$cliente->id,
                 'cuestionario_id'=>$questionnaire->id,
@@ -51,15 +51,15 @@ class ClientCatalogRequestController extends Controller
             foreach ($questionnaire->secciones()->with('preguntas')->get()->flatMap->preguntas as $pregunta) {
                 if (array_key_exists($pregunta->numero,$map) && filled($map[$pregunta->numero])) {
                     SolicitudRespuesta::updateOrCreate(
-                        ['solicitud_id'=>$request->id,'pregunta_id'=>$pregunta->id],
+                        ['solicitud_id'=>$item->id,'pregunta_id'=>$pregunta->id],
                         ['respuesta_texto'=>(string)$map[$pregunta->numero]]
                     );
                 }
             }
-            return $request;
+            return $item;
         });
 
-        Audit::log($request,'app_catalogo_solicitada',$solicitud,'El cliente solicitó '.$catalogoAplicacion->nombre.' desde el catálogo VITI.',['catalogo_id'=>$catalogoAplicacion->id]);
+        Audit::log($request,'app_catalogo_solicitada',$solicitud,'El negocio solicitó '.$catalogoAplicacion->nombre.' desde el catálogo VITI.',['catalogo_id'=>$catalogoAplicacion->id]);
         return response()->json(['data'=>[
             'solicitud'=>$solicitud,
             'enlace_publico'=>'/solicitar/'.$solicitud->public_token,
