@@ -7,6 +7,8 @@ use Illuminate\Support\Carbon;
 
 class SaasAlertService
 {
+    public function __construct(private SubscriptionAccessService $subscriptions) {}
+
     public function syncFor(Usuario $user): void
     {
         if ($user->isSuperAdmin()) $this->syncAdmin($user);
@@ -19,7 +21,9 @@ class SaasAlertService
             $this->ensure($user,'entrega_'.$app->id,'entrega','Aplicación lista para entregar',($app->empresa?->nombre_comercial ?: 'Negocio').' · '.$app->nombre,'/aplicaciones',$app->empresa_id,$app->id);
         });
 
-        Suscripcion::query()->with(['empresa:id,nombre_comercial','aplicacion:id,nombre'])->whereIn('estado',['gracia','suspendida'])->get()->each(function (Suscripcion $s) use ($user): void {
+        Suscripcion::query()->with(['empresa:id,nombre_comercial','aplicacion:id,nombre'])->get()->each(function (Suscripcion $subscription) use ($user): void {
+            $s = $this->subscriptions->refresh($subscription);
+            if (!in_array($s->estado,['gracia','suspendida'],true)) return;
             $this->ensure($user,'sus_'.$s->id.'_'.$s->estado,'pago','Suscripción '.($s->estado==='gracia'?'en gracia':'suspendida'),($s->empresa?->nombre_comercial ?: 'Negocio').' · '.($s->aplicacion?->nombre ?: 'Aplicación'),'/pagos',$s->empresa_id,$s->aplicacion_id);
         });
     }
@@ -30,9 +34,9 @@ class SaasAlertService
         if ($businessIds->isEmpty()) return;
 
         Suscripcion::query()->with(['empresa:id,nombre_comercial','aplicacion:id,nombre'])
-            ->whereIn('empresa_id',$businessIds)
-            ->get()
-            ->each(function (Suscripcion $s) use ($user): void {
+            ->whereIn('empresa_id',$businessIds)->get()
+            ->each(function (Suscripcion $subscription) use ($user): void {
+                $s = $this->subscriptions->refresh($subscription);
                 $today = Carbon::today();
                 $due = Carbon::parse($s->fecha_vencimiento);
                 $days = $today->diffInDays($due,false);
