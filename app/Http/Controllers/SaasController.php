@@ -16,9 +16,7 @@ class SaasController extends Controller
     {
         $apps = Aplicacion::query()->with(['empresa:id,nombre_comercial','suscripcion'])->latest()->limit(100)->get();
         $states = $apps->map(fn(Aplicacion $app) => ['app'=>$app,'ciclo'=>$lifecycle->status($app)]);
-
-        $attention = $states->filter(fn($row) => in_array($row['ciclo']['estado'],['lista_entrega','gracia','suspendida'],true))
-            ->take(10)->values();
+        $attention = $states->filter(fn($row) => in_array($row['ciclo']['estado'],['lista_entrega','gracia','suspendida'],true))->take(10)->values();
 
         return response()->json(['data'=>[
             'resumen'=>[
@@ -33,7 +31,7 @@ class SaasController extends Controller
             ],
             'atencion'=>$attention,
             'catalogo'=>CatalogoAplicacion::where('activo',true)->orderBy('orden')->get(),
-            'planes'=>PlanViti::where('activo',true)->orderBy('id')->get(),
+            'planes'=>PlanViti::orderBy('id')->get(),
         ]]);
     }
 
@@ -51,60 +49,38 @@ class SaasController extends Controller
             'version'=>['nullable','string','max:40'],
             'notas'=>['nullable','string','max:3000'],
         ]);
-
         $empresa = Empresa::with('planViti')->findOrFail($data['empresa_id']);
         $tenants->assertAppLimit($empresa);
-
-        if (!empty($data['proyecto_id'])) {
-            abort_unless(Proyecto::whereKey($data['proyecto_id'])->where('empresa_id',$empresa->id)->exists(),422,'El proyecto no pertenece a este negocio.');
-        }
-
+        if (!empty($data['proyecto_id'])) abort_unless(Proyecto::whereKey($data['proyecto_id'])->where('empresa_id',$empresa->id)->exists(),422,'El proyecto no pertenecece a este negocio.');
         abort_if(Aplicacion::where('empresa_id',$empresa->id)->where('catalogo_aplicacion_id',$catalogoAplicacion->id)->whereNotIn('estado',['retirado'])->exists(),422,'Este negocio ya tiene una instancia activa de esta aplicación.');
 
         $app = Aplicacion::create([
-            'empresa_id'=>$empresa->id,
-            'proyecto_id'=>$data['proyecto_id'] ?? null,
-            'catalogo_aplicacion_id'=>$catalogoAplicacion->id,
+            'empresa_id'=>$empresa->id,'proyecto_id'=>$data['proyecto_id'] ?? null,'catalogo_aplicacion_id'=>$catalogoAplicacion->id,
             'nombre'=>$catalogoAplicacion->nombre.' · '.$empresa->nombre_comercial,
             'slug'=>Str::slug($catalogoAplicacion->clave.'-'.$empresa->codigo.'-'.Str::lower(Str::random(4))),
-            'version'=>$data['version'] ?? '1.0.0',
-            'tipo'=>$catalogoAplicacion->tipo,
-            'entorno'=>'desarrollo',
-            'estado'=>'en_pruebas',
-            'acceso_cliente'=>false,
-            'provisionado_at'=>now(),
-            'notas'=>$data['notas'] ?? null,
+            'version'=>$data['version'] ?? '1.0.0','tipo'=>$catalogoAplicacion->tipo,'entorno'=>'desarrollo','estado'=>'en_pruebas','acceso_cliente'=>false,
+            'provisionado_at'=>now(),'notas'=>$data['notas'] ?? null,
         ]);
-
         Audit::log($request,'app_provisionada',$app,'Se creó una instancia de '.$catalogoAplicacion->nombre.' para '.$empresa->nombre_comercial.'.');
         return response()->json(['data'=>$app->load(['empresa','catalogo','proyecto'])],201);
     }
 
-    public function planes(): JsonResponse
-    {
-        return response()->json(['data'=>PlanViti::orderBy('id')->get()]);
-    }
+    public function planes(): JsonResponse { return response()->json(['data'=>PlanViti::orderBy('id')->get()]); }
 
     public function guardarPlan(Request $request, ?PlanViti $plan = null): JsonResponse
     {
         $data = $request->validate([
-            'codigo'=>['required','string','max:60',Rule::unique('planes_viti','codigo')->ignore($plan?->id)],
-            'nombre'=>['required','string','max:100'],
-            'descripcion'=>['nullable','string','max:2000'],
-            'max_usuarios'=>['nullable','integer','min:1','max:10000'],
-            'max_aplicaciones'=>['nullable','integer','min:1','max:10000'],
-            'activo'=>['sometimes','boolean'],
+            'codigo'=>['required','string','max:60',Rule::unique('planes_viti','codigo')->ignore($plan?->id)],'nombre'=>['required','string','max:100'],
+            'descripcion'=>['nullable','string','max:2000'],'max_usuarios'=>['nullable','integer','min:1','max:10000'],'max_aplicaciones'=>['nullable','integer','min:1','max:10000'],'activo'=>['sometimes','boolean'],
         ]);
-        $plan ??= new PlanViti();
-        $plan->fill($data)->save();
+        $plan ??= new PlanViti(); $plan->fill($data)->save();
         return response()->json(['data'=>$plan->fresh()],$plan->wasRecentlyCreated?201:200);
     }
 
     public function asignarPlan(Request $request, Empresa $empresa): JsonResponse
     {
         $data = $request->validate(['plan_viti_id'=>['nullable','integer','exists:planes_viti,id']]);
-        $empresa->update($data);
-        Audit::log($request,'plan_viti_asignado',$empresa,'Se actualizó el plan SaaS del negocio.',$data);
+        $empresa->update($data); Audit::log($request,'plan_viti_asignado',$empresa,'Se actualizó el plan SaaS del negocio.',$data);
         return response()->json(['data'=>$empresa->fresh()->load('planViti')]);
     }
 }
