@@ -33,7 +33,17 @@ class Usuario extends Authenticatable
 
     public function getFotoUrlAttribute(): ?string
     {
-        return $this->foto_path ? Storage::disk('public')->url($this->foto_path) : null;
+        if (!$this->foto_path) return null;
+
+        $base = rtrim((string) config('filesystems.disks.public.url'), '/');
+        if ($base !== '') return $base.'/'.ltrim($this->foto_path, '/');
+
+        try {
+            return Storage::disk('public')->url($this->foto_path);
+        } catch (\Throwable) {
+            // El almacenamiento nunca debe impedir iniciar sesión.
+            return null;
+        }
     }
 
     public function cliente() { return $this->belongsTo(Cliente::class); }
