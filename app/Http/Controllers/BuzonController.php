@@ -33,6 +33,8 @@ class BuzonController extends Controller
         $items = $query->latest('created_at')->limit(8)->get()->map(function (Mensaje $mensaje) use ($user): array {
             $isClient = $user->rol === 'cliente';
             $senderName = $mensaje->usuario?->nombre ?: ($isClient ? 'Equipo VITI' : 'Cliente');
+            $preview = trim((string)$mensaje->mensaje);
+            if ($preview === '' && $mensaje->archivo_path) $preview = '📷 Imagen adjunta';
 
             return [
                 'id' => $mensaje->id,
@@ -41,7 +43,7 @@ class BuzonController extends Controller
                     ? 'Nueva respuesta del equipo VITI'
                     : 'Nuevo mensaje de '.($mensaje->conversacion?->cliente?->nombre ?: $senderName),
                 'asunto' => 'Atención VITI',
-                'mensaje' => str($mensaje->mensaje)->limit(95)->toString(),
+                'mensaje' => str($preview)->limit(95)->toString(),
                 'created_at' => $mensaje->created_at,
             ];
         })->values();
@@ -65,7 +67,6 @@ class BuzonController extends Controller
         }
 
         $updated = $query->update(['leido_at' => now()]);
-
         return response()->json([
             'message' => $updated ? 'Notificaciones marcadas como leídas.' : 'No había notificaciones pendientes.',
             'data' => ['actualizados' => $updated],
@@ -98,7 +99,6 @@ class BuzonController extends Controller
     {
         abort_unless($conversacion->canal_principal, 404, 'Este canal de atención ya no está activo.');
         $this->markConversationRead($conversacion, false);
-
         return response()->json(['data' => $this->loadChannel($conversacion)->setAttribute('no_leidos', 0)]);
     }
 
@@ -137,22 +137,8 @@ class BuzonController extends Controller
 
     public function clientStart(Request $request): JsonResponse
     {
-        $data = $request->validate([
-            'mensaje' => ['required', 'string', 'max:5000'],
-            'asunto' => ['nullable', 'string', 'max:180'],
-        ]);
         $channel = $this->ensurePrimaryChannel((int) $request->user()->cliente_id);
-
-        $message = Mensaje::create([
-            'conversacion_id' => $channel->id,
-            'usuario_id' => $request->user()->id,
-            'mensaje' => $data['mensaje'],
-        ]);
-        $channel->update(['ultimo_mensaje_at' => now(), 'estado' => 'abierta']);
-        Audit::log($request, 'mensaje_enviado', $channel, 'El cliente envió un mensaje a Atención VITI.');
-        $this->pushMessage($request, $channel, $data['mensaje']);
-
-        return response()->json(['data' => $this->loadChannel($channel->fresh())], 201);
+        return $this->send($request, $channel);
     }
 
     public function clientSend(Request $request, Conversacion $conversacion): JsonResponse
@@ -169,15 +155,41 @@ class BuzonController extends Controller
     private function send(Request $request, Conversacion $conversacion): JsonResponse
     {
         if ($conversacion->estado === 'cerrada') $conversacion->update(['estado' => 'abierta']);
-        $data = $request->validate(['mensaje' => ['required', 'string', 'max:5000']]);
+
+        $data = $request->validate([
+            'mensaje' => ['nullable','string','max:5000','required_without:archivo'],
+            'archivo' => ['nullable','image','mimes:jpg,jpeg,png,webp','max:8192','required_without:mensaje'],
+        ], [
+            'mensaje.required_without' => 'Escribe un mensaje o adjunta una imagen.',
+            'archivo.required_without' => 'Escribe un mensaje o adjunta una imagen.',
+            'archivo.image' => 'El archivo debe ser una imagen válida.',
+            'archivo.max' => 'La imagen no puede superar 8 MB.',
+        ]);
+
+        $file = $request->file('archivo');
+        $path = null;
+        if ($file) {
+            $path = $file->store('chat/'.now()->format('Y/m'), 'private_uploads');
+            if (!$path) return response()->json(['message'=>'No pudimos guardar la imagen adjunta.'], 500);
+        }
+
         $mensaje = Mensaje::create([
             'conversacion_id' => $conversacion->id,
             'usuario_id' => $request->user()->id,
-            'mensaje' => $data['mensaje'],
+            'tipo' => $file ? 'imagen' : 'texto',
+            'mensaje' => trim((string)($data['mensaje'] ?? '')),
+            'archivo_path' => $path,
+            'archivo_nombre' => $file?->getClientOriginalName(),
+            'archivo_mime' => $file?->getMimeType(),
+            'archivo_tamano' => $file?->getSize(),
         ]);
+
         $conversacion->update(['ultimo_mensaje_at' => now()]);
-        Audit::log($request, 'mensaje_enviado', $conversacion, 'Se envió un mensaje en Atención VITI.');
-        $this->pushMessage($request, $conversacion, $data['mensaje']);
+        Audit::log($request, 'mensaje_enviado', $conversacion, $file ? 'Se envió una imagen en Atención VITI.' : 'Se envió un mensaje en Atención VITI.');
+
+        $preview = trim((string)$mensaje->mensaje);
+        if ($preview === '') $preview = '📷 Imagen adjunta';
+        $this->pushMessage($request, $conversacion, $preview);
 
         return response()->json(['data' => $mensaje->load('usuario:id,nombre,apellido,rol')], 201);
     }
@@ -250,6 +262,7 @@ class BuzonController extends Controller
             'solicitud:id,codigo,titulo,estado',
             'proyecto:id,codigo,nombre,fase,progreso',
             'mensajes.usuario:id,nombre,apellido,rol',
+            'sesionesAtencion' => fn ($q) => $q->latest('id')->limit(10),
         ]);
     }
 
