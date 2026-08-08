@@ -25,6 +25,7 @@ Route::prefix('v1')->group(function (): void {
         Route::post('{token}', [OnboardingController::class,'register'])->middleware('throttle:login');
     });
 
+    Route::post('publico/solicitudes', [PublicSolicitudController::class,'start'])->middleware('throttle:login');
     Route::prefix('publico/solicitudes')->middleware('throttle:api')->group(function (): void {
         Route::get('{token}', [PublicSolicitudController::class,'show']);
         Route::put('{token}', [PublicSolicitudController::class,'save']);

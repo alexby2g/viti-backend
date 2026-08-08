@@ -2,15 +2,148 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\SolicitudRespuesta;
-use App\Models\SolicitudSistema;
-use App\Models\Conversacion;
+use App\Models\{Cliente,Conversacion,Cuestionario,Empresa,SolicitudRespuesta,SolicitudSistema};
+use App\Support\Code;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class PublicSolicitudController extends Controller
 {
+    public function start(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'nombre' => ['required','string','min:3','max:180'],
+            'telefono' => ['required','regex:/^[0-9]{7,15}$/'],
+            'whatsapp' => ['nullable','regex:/^[0-9]{7,15}$/'],
+            'documento' => ['nullable','string','max:50'],
+            'ci_expedido' => ['nullable','string','max:20'],
+            'ciudad' => ['required','string','max:100'],
+            'direccion' => ['nullable','string','max:255'],
+            'empresa_nombre' => ['required','string','max:180'],
+            'empresa_actividad' => ['nullable','string','max:200'],
+            'empresa_telefono' => ['nullable','string','max:30'],
+            'empresa_whatsapp' => ['nullable','string','max:30'],
+            'empresa_ciudad' => ['nullable','string','max:100'],
+            'empresa_direccion' => ['nullable','string','max:255'],
+            'titulo_sistema' => ['required','string','max:200'],
+            'resumen' => ['nullable','string','max:5000'],
+        ], [
+            'nombre.required' => 'Ingresa tu nombre completo.',
+            'telefono.required' => 'Ingresa tu número de teléfono.',
+            'telefono.regex' => 'El teléfono debe contener entre 7 y 15 dígitos.',
+            'whatsapp.regex' => 'El número de WhatsApp debe contener entre 7 y 15 dígitos.',
+            'ciudad.required' => 'Indica tu ciudad o localidad.',
+            'empresa_nombre.required' => 'Ingresa el nombre de tu negocio, institución o proyecto.',
+            'titulo_sistema.required' => 'Escribe brevemente qué sistema necesitas.',
+        ]);
+
+        $questionnaireId = Cuestionario::query()->where('activo', true)->value('id');
+        abort_unless($questionnaireId, 422, 'VITI no tiene un cuestionario activo en este momento.');
+
+        [$cliente, $empresa, $solicitud] = DB::transaction(function () use ($data, $questionnaireId): array {
+            $documento = filled($data['documento'] ?? null) ? trim($data['documento']) : null;
+            $cliente = Cliente::query()->where('telefono', $data['telefono'])->first();
+
+            if ($cliente) {
+                if ($documento) {
+                    abort_if(
+                        Cliente::query()->where('documento', $documento)->whereKeyNot($cliente->id)->exists(),
+                        422,
+                        'Ese documento ya pertenece a otro cliente.'
+                    );
+                    abort_if(
+                        filled($cliente->documento) && $cliente->documento !== $documento,
+                        422,
+                        'El documento indicado no coincide con el cliente registrado para ese teléfono.'
+                    );
+                }
+
+                $cliente->update([
+                    'whatsapp' => $cliente->whatsapp ?: ($data['whatsapp'] ?? $data['telefono']),
+                    'documento' => $cliente->documento ?: $documento,
+                    'ci_expedido' => $cliente->ci_expedido ?: ($data['ci_expedido'] ?? null),
+                    'ciudad' => $cliente->ciudad ?: trim($data['ciudad']),
+                    'direccion' => $cliente->direccion ?: ($data['direccion'] ?? null),
+                    'estado' => 'formulario_en_proceso',
+                ]);
+            } else {
+                abort_if(
+                    $documento && Cliente::query()->where('documento', $documento)->exists(),
+                    422,
+                    'Ese documento ya está registrado con otro número de teléfono.'
+                );
+
+                $cliente = Cliente::create([
+                    'nombre' => trim($data['nombre']),
+                    'telefono' => $data['telefono'],
+                    'whatsapp' => $data['whatsapp'] ?? $data['telefono'],
+                    'documento' => $documento,
+                    'ci_expedido' => $data['ci_expedido'] ?? null,
+                    'ciudad' => trim($data['ciudad']),
+                    'direccion' => $data['direccion'] ?? null,
+                    'estado' => 'formulario_en_proceso',
+                    'canal_origen' => 'viti',
+                ]);
+            }
+
+            $empresaNombre = trim($data['empresa_nombre']);
+            $empresa = Empresa::query()
+                ->where('cliente_id', $cliente->id)
+                ->where('nombre_comercial', $empresaNombre)
+                ->first();
+
+            if ($empresa) {
+                $empresa->update([
+                    'actividad' => $empresa->actividad ?: ($data['empresa_actividad'] ?? null),
+                    'telefono' => $empresa->telefono ?: ($data['empresa_telefono'] ?? $data['telefono']),
+                    'whatsapp' => $empresa->whatsapp ?: ($data['empresa_whatsapp'] ?? ($data['whatsapp'] ?? $data['telefono'])),
+                    'ciudad' => $empresa->ciudad ?: ($data['empresa_ciudad'] ?? $data['ciudad']),
+                    'direccion' => $empresa->direccion ?: ($data['empresa_direccion'] ?? $data['direccion'] ?? null),
+                ]);
+            } else {
+                $empresa = Empresa::create([
+                    'cliente_id' => $cliente->id,
+                    'codigo' => Code::next('empresas','EMP'),
+                    'nombre_comercial' => $empresaNombre,
+                    'actividad' => $data['empresa_actividad'] ?? null,
+                    'telefono' => $data['empresa_telefono'] ?? $data['telefono'],
+                    'whatsapp' => $data['empresa_whatsapp'] ?? ($data['whatsapp'] ?? $data['telefono']),
+                    'ciudad' => $data['empresa_ciudad'] ?? $data['ciudad'],
+                    'direccion' => $data['empresa_direccion'] ?? $data['direccion'] ?? null,
+                    'estado' => 'pendiente_revision',
+                ]);
+            }
+
+            $solicitud = SolicitudSistema::create([
+                'empresa_id' => $empresa->id,
+                'cliente_id' => $cliente->id,
+                'cuestionario_id' => $questionnaireId,
+                'codigo' => Code::next('solicitudes_sistema','SOL'),
+                'public_token' => Str::random(48),
+                'publico_habilitado' => true,
+                'titulo' => trim($data['titulo_sistema']),
+                'resumen' => $data['resumen'] ?? null,
+                'estado' => 'borrador',
+                'prioridad' => 'normal',
+            ]);
+
+            return [$cliente, $empresa, $solicitud];
+        });
+
+        return response()->json([
+            'message' => 'Tus datos fueron registrados. Ahora completa el formulario de requerimientos.',
+            'data' => [
+                'cliente' => $cliente,
+                'empresa' => $empresa,
+                'solicitud_codigo' => $solicitud->codigo,
+                'solicitud_token' => $solicitud->public_token,
+                'ruta_cuestionario' => '/solicitar/'.$solicitud->public_token,
+            ],
+        ], 201);
+    }
+
     public function show(string $token): JsonResponse
     {
         $solicitud = $this->resolve($token);
