@@ -6,6 +6,7 @@ use App\Models\{ConfiguracionPago,Proyecto};
 use App\Services\SubscriptionAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class ClientBillingController extends Controller
 {
@@ -48,9 +49,31 @@ class ClientBillingController extends Controller
                 ];
             });
 
+        $config = ConfiguracionPago::query()->where('activo',true)->first();
+
         return response()->json(['data'=>[
-            'configuracion'=>ConfiguracionPago::query()->where('activo',true)->first(),
+            'configuracion'=>$config ? $this->configRow($config) : null,
             'proyectos'=>$projects->values(),
         ]]);
+    }
+
+    private function configRow(ConfiguracionPago $config): array
+    {
+        $path = ltrim((string)$config->qr_path,'/');
+        $qrUrl = null;
+        if ($path && Storage::disk('public')->exists($path)) {
+            $qrUrl = Storage::disk('public')->url($path);
+        }
+
+        return [
+            'id'=>$config->id,
+            'nombre'=>$config->nombre,
+            'banco'=>$config->banco,
+            'titular'=>$config->titular,
+            'moneda'=>$config->moneda,
+            'qr_path'=>$config->qr_path,
+            'qr_url'=>$qrUrl,
+            'observaciones'=>$config->observaciones,
+        ];
     }
 }
