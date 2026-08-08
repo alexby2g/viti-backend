@@ -30,6 +30,8 @@ class ClientAppsController extends Controller
                 'version' => $app?->version,
                 'entorno' => $app?->entorno,
                 'estado' => $app?->estado,
+                'acceso_cliente' => (bool) $app?->acceso_cliente,
+                'entregado_at' => $app?->entregado_at,
                 'empresa' => $project->empresa,
                 'proyecto' => [
                     'codigo' => $project->codigo,
@@ -38,7 +40,7 @@ class ClientAppsController extends Controller
                     'estado' => $project->estado,
                     'progreso' => $project->progreso,
                 ],
-                'ruta' => $isPeluqueria ? '/mi-aplicaciones/peluqueria' : null,
+                'ruta' => $isPeluqueria && $app?->acceso_cliente ? '/mi-apps/peluqueria/inicio' : null,
             ];
         })->values();
 
@@ -56,7 +58,8 @@ class ClientAppsController extends Controller
             ->latest()
             ->first();
 
-        abort_unless($project && $project->empresa_id, 404, 'No tienes una aplicación de peluquería activa.');
+        abort_unless($project && $project->empresa_id, 404, 'No tienes una aplicación de peluquería asignada.');
+        abort_unless((bool) $project->aplicacion?->acceso_cliente, 403, 'Tu aplicación todavía no fue entregada. Contacta con Atención VITI.');
 
         $empresaId = (int) $project->empresa_id;
         $app = $project->aplicacion;
@@ -95,6 +98,8 @@ class ClientAppsController extends Controller
                 'version' => $app?->version,
                 'entorno' => $app?->entorno ?? 'produccion',
                 'estado' => $app?->estado ?? 'activo',
+                'acceso_cliente' => (bool) $app?->acceso_cliente,
+                'entregado_at' => $app?->entregado_at,
             ],
             'empresa' => $project->empresa,
             'proyecto' => [
