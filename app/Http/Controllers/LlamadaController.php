@@ -50,7 +50,7 @@ class LlamadaController extends Controller
             'receptor_usuario_id' => $target->id,
             'tipo' => $data['tipo'],
             'estado' => 'llamando',
-            'offer_sdp' => $data['offer_sdp'],
+            'offer_sdp' => $this->normalizeSdp($data['offer_sdp']),
         ]);
 
         $isClientCaller = $user->rol === 'cliente';
@@ -102,7 +102,7 @@ class LlamadaController extends Controller
 
         $data = $request->validate(['answer_sdp'=>['required','string','max:200000']]);
         $llamada->update([
-            'answer_sdp'=>$data['answer_sdp'],
+            'answer_sdp'=>$this->normalizeSdp($data['answer_sdp']),
             'estado'=>'activa',
             'contestada_at'=>now(),
         ]);
@@ -193,8 +193,8 @@ class LlamadaController extends Controller
             'cliente_id'=>$call->cliente_id,
             'tipo'=>$call->tipo,
             'estado'=>$call->estado,
-            'offer_sdp'=>$call->offer_sdp,
-            'answer_sdp'=>$call->answer_sdp,
+            'offer_sdp'=>$this->normalizeSdp($call->offer_sdp),
+            'answer_sdp'=>$this->normalizeSdp($call->answer_sdp),
             'contestada_at'=>$call->contestada_at,
             'finalizada_at'=>$call->finalizada_at,
             'created_at'=>$call->created_at,
@@ -204,5 +204,20 @@ class LlamadaController extends Controller
             'iniciador'=>$call->iniciador,
             'receptor'=>$call->receptor,
         ];
+    }
+
+    private function normalizeSdp(?string $sdp): ?string
+    {
+        if ($sdp === null || $sdp === '') return $sdp;
+
+        // Algunos navegadores/WebViews son estrictos con CRLF. PostgreSQL conserva el
+        // texto, pero normalizamos siempre antes de guardar y antes de responder.
+        $sdp = str_replace(["\\r\\n", "\\n", "\\r"], ["\n", "\n", "\n"], $sdp);
+        $sdp = str_replace(["\r\n", "\r"], "\n", $sdp);
+        $lines = explode("\n", $sdp);
+        $lines = array_map(static fn ($line) => rtrim($line, " \t"), $lines);
+        while ($lines && end($lines) === '') array_pop($lines);
+
+        return implode("\r\n", $lines)."\r\n";
     }
 }
