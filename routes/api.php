@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{AplicacionController,ArchivoController,AtencionSesionController,AuditoriaController,AuthController,BuzonController,ClientAuthController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,OnboardingController,PeluqueriaController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,StorageController,PublicSolicitudController};
+use App\Http\Controllers\{AplicacionController,ArchivoController,AtencionSesionController,AuditoriaController,AuthController,BuzonController,ClientAppsController,ClientAuthController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,OnboardingController,PeluqueriaController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,StorageController,PublicSolicitudController};
 use Illuminate\Support\Facades\Route;
 
 Route::get('health', fn () => ['status'=>'ok','service'=>'VITI Core API','time'=>now()->toIso8601String()]);
@@ -57,6 +57,8 @@ Route::prefix('v1')->group(function (): void {
             Route::post('solicitud', [ClientPortalController::class,'startRequest']);
             Route::post('solicitudes/{solicitud}/sincronizar', [ClientPortalController::class,'syncFromQuestionnaire']);
             Route::get('proyecto', [ClientProjectController::class,'show']);
+            Route::get('aplicaciones', [ClientAppsController::class,'index']);
+            Route::get('aplicaciones/peluqueria', [ClientAppsController::class,'peluqueria']);
             Route::get('buzon', [BuzonController::class,'clientIndex']);
             Route::get('buzon/{conversacion}', [BuzonController::class,'clientShow']);
             Route::post('buzon', [BuzonController::class,'clientStart']);
