@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{AplicacionController,ArchivoController,AuditoriaController,AuthController,BuzonController,ClientAuthController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,StorageController,PublicSolicitudController};
+use App\Http\Controllers\{AplicacionController,ArchivoController,AtencionSesionController,AuditoriaController,AuthController,BuzonController,ClientAuthController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,StorageController,PublicSolicitudController};
 use Illuminate\Support\Facades\Route;
 
 Route::get('health', fn () => ['status'=>'ok','service'=>'VITI Core API','time'=>now()->toIso8601String()]);
@@ -55,6 +55,11 @@ Route::prefix('v1')->group(function (): void {
             Route::get('buzon/{conversacion}', [BuzonController::class,'clientShow']);
             Route::post('buzon', [BuzonController::class,'clientStart']);
             Route::post('buzon/{conversacion}/mensajes', [BuzonController::class,'clientSend']);
+
+            Route::get('atencion/sesiones', [AtencionSesionController::class,'clientStatus']);
+            Route::post('atencion/solicitudes', [AtencionSesionController::class,'clientRequest']);
+            Route::post('atencion/sesiones/{sesion}/cancelar', [AtencionSesionController::class,'clientCancel']);
+
             Route::get('solicitudes/{solicitud}.pdf', [ReporteController::class,'clienteSolicitud']);
             Route::get('archivos/{archivo}/descargar', [ArchivoController::class,'clientDownload']);
         });
@@ -90,6 +95,12 @@ Route::prefix('v1')->group(function (): void {
             Route::get('buzon/{conversacion}', [BuzonController::class,'adminShow']);
             Route::post('buzon/{conversacion}/mensajes', [BuzonController::class,'adminSend']);
             Route::put('buzon/{conversacion}/estado', [BuzonController::class,'adminState']);
+
+            Route::get('atencion/sesiones', [AtencionSesionController::class,'adminIndex']);
+            Route::post('atencion/sesiones', [AtencionSesionController::class,'adminCreate']);
+            Route::post('atencion/sesiones/{sesion}/aprobar', [AtencionSesionController::class,'approve']);
+            Route::post('atencion/sesiones/{sesion}/rechazar', [AtencionSesionController::class,'reject']);
+            Route::post('atencion/sesiones/{sesion}/finalizar', [AtencionSesionController::class,'finish']);
 
             Route::get('auditoria', [AuditoriaController::class,'index']);
 
