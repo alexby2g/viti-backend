@@ -265,7 +265,7 @@ class BillingController extends Controller
     private function configRow(ConfiguracionPago $config): array
     {
         $path = ltrim((string)$config->qr_path,'/');
-        $qrUrl = null;
+        $qrUrl = url('/viti-payment-qr.svg');
         if ($path && Storage::disk('public')->exists($path)) {
             $qrUrl = Storage::disk('public')->url($path);
         }
