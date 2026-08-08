@@ -30,7 +30,10 @@ class SaasAlertService
 
     private function syncClient(Usuario $user): void
     {
-        $businessIds = $user->negocios()->wherePivot('activo',true)->pluck('empresas.id');
+        $businessIds = $user->negocios()
+            ->wherePivot('activo',true)
+            ->wherePivotIn('rol_negocio',['propietario','administrador'])
+            ->pluck('empresas.id');
         if ($businessIds->isEmpty()) return;
 
         Suscripcion::query()->with(['empresa:id,nombre_comercial','aplicacion:id,nombre'])
