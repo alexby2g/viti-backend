@@ -12,6 +12,7 @@ class ClientProjectController extends Controller
     public function show(Request $request, TenantContext $tenants): JsonResponse
     {
         $empresa = $tenants->resolve($request);
+        $tenants->assertCanManage($request->user(),$empresa);
         $proyecto = Proyecto::where('empresa_id',$empresa->id)
             ->latest()
             ->with([
