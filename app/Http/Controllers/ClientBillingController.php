@@ -13,6 +13,7 @@ class ClientBillingController extends Controller
     public function index(Request $request, SubscriptionAccessService $access, TenantContext $tenants): JsonResponse
     {
         $empresa = $tenants->resolve($request);
+        $tenants->assertCanManage($request->user(),$empresa);
         $projects = Proyecto::query()
             ->where('empresa_id',$empresa->id)
             ->with(['empresa:id,nombre_comercial','aplicacion'=>fn($q)=>$q->with('suscripcion.pagos'),'pagos'])
@@ -48,9 +49,6 @@ class ClientBillingController extends Controller
         $path = ltrim((string)$config->qr_path,'/');
         $qrUrl = url('/viti-payment-qr.svg');
         if ($path && Storage::disk('public')->exists($path)) $qrUrl = Storage::disk('public')->url($path);
-        return [
-            'id'=>$config->id,'nombre'=>$config->nombre,'banco'=>$config->banco,'titular'=>$config->titular,'moneda'=>$config->moneda,
-            'qr_path'=>$config->qr_path,'qr_url'=>$qrUrl,'observaciones'=>$config->observaciones,
-        ];
+        return ['id'=>$config->id,'nombre'=>$config->nombre,'banco'=>$config->banco,'titular'=>$config->titular,'moneda'=>$config->moneda,'qr_path'=>$config->qr_path,'qr_url'=>$qrUrl,'observaciones'=>$config->observaciones];
     }
 }
