@@ -63,11 +63,11 @@ services:
       - key: FIREBASE_SERVICE_ACCOUNT_JSON
         sync: false
 
-      # Cloudflare R2: fotos/logos públicos y anexos privados.
+      # Cloudflare R2. Primero carga credenciales; al final establece ambos drivers en s3.
       - key: PUBLIC_FILESYSTEM_DRIVER
-        value: s3
+        sync: false
       - key: PRIVATE_FILESYSTEM_DRIVER
-        value: s3
+        sync: false
       - key: AWS_DEFAULT_REGION
         value: auto
       - key: AWS_USE_PATH_STYLE_ENDPOINT
