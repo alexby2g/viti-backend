@@ -26,30 +26,24 @@ class Usuario extends Authenticatable
         'ultimo_acceso' => 'datetime',
     ];
 
-    public function getAuthPasswordName(): string
-    {
-        return 'password';
-    }
+    public function getAuthPasswordName(): string { return 'password'; }
 
     public function getFotoUrlAttribute(): ?string
     {
         if (!$this->foto_path) return null;
-
         $base = rtrim((string) config('filesystems.disks.public.url'), '/');
         if ($base !== '') return $base.'/'.ltrim($this->foto_path, '/');
-
-        try {
-            return Storage::disk('public')->url($this->foto_path);
-        } catch (\Throwable) {
-            // El almacenamiento nunca debe impedir iniciar sesión.
-            return null;
-        }
+        try { return Storage::disk('public')->url($this->foto_path); }
+        catch (\Throwable) { return null; }
     }
 
     public function cliente() { return $this->belongsTo(Cliente::class); }
-
-    public function isSuperAdmin(): bool
+    public function negocios()
     {
-        return $this->rol === 'superadmin';
+        return $this->belongsToMany(Empresa::class,'empresa_usuario','usuario_id','empresa_id')
+            ->withPivot(['rol_negocio','permisos','activo'])->withTimestamps();
     }
+    public function alertasSaas(){ return $this->hasMany(AlertaSaas::class,'usuario_id'); }
+
+    public function isSuperAdmin(): bool { return $this->rol === 'superadmin'; }
 }

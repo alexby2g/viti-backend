@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Models\{Empresa,Usuario};
+use App\Observers\{EmpresaObserver,UsuarioObserver};
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -14,15 +16,13 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        if (app()->environment('production')) {
-            URL::forceScheme('https');
-        }
-
+        Empresa::observe(EmpresaObserver::class);
+        Usuario::observe(UsuarioObserver::class);
+        if (app()->environment('production')) URL::forceScheme('https');
         RateLimiter::for('login', fn (Request $request) => [
             Limit::perMinute(5)->by(strtolower((string) $request->input('acceso')).'|'.$request->ip()),
             Limit::perHour(30)->by($request->ip()),
         ]);
-
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(120)->by((string) ($request->user()?->id ?: $request->ip())));
     }
 }

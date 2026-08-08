@@ -9,7 +9,9 @@ class EnsureClient
 {
     public function handle(Request $request, Closure $next)
     {
-        abort_unless($request->user()?->rol === 'cliente' && $request->user()?->cliente_id, 403, 'Este acceso es exclusivo para clientes de VITI.');
+        $user = $request->user();
+        $hasBusiness = $user?->negocios()->wherePivot('activo',true)->exists() ?? false;
+        abort_unless($user?->rol === 'cliente' && ($user?->cliente_id || $hasBusiness), 403, 'Este acceso es exclusivo para usuarios de negocios VITI.');
         return $next($request);
     }
 }
