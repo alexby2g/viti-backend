@@ -16,7 +16,16 @@ class Empresa extends Model
 
     public function getLogoUrlAttribute(): ?string
     {
-        return $this->logo_path ? Storage::disk('public')->url($this->logo_path) : null;
+        if (!$this->logo_path) return null;
+
+        $base = rtrim((string) config('filesystems.disks.public.url'), '/');
+        if ($base !== '') return $base.'/'.ltrim($this->logo_path, '/');
+
+        try {
+            return Storage::disk('public')->url($this->logo_path);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     public function cliente() { return $this->belongsTo(Cliente::class); }
