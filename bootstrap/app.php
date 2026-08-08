@@ -1,8 +1,6 @@
 <?php
 
-use App\Http\Middleware\EnsureSuperAdmin;
-use App\Http\Middleware\EnsureClient;
-use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\{EnsureClient,EnsureSuperAdmin,ResolveTenant,SecurityHeaders};
 use Illuminate\Foundation\Application;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -23,7 +21,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->trustProxies(at: '*');
         $middleware->statefulApi();
         $middleware->append(SecurityHeaders::class);
-        $middleware->alias(['superadmin' => EnsureSuperAdmin::class, 'cliente' => EnsureClient::class]);
+        $middleware->alias([
+            'superadmin'=>EnsureSuperAdmin::class,
+            'cliente'=>EnsureClient::class,
+            'tenant'=>ResolveTenant::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(fn ($request) => $request->is('api/*') || $request->expectsJson());
