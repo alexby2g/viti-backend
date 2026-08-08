@@ -10,6 +10,7 @@ class Aplicacion extends Model
     protected $casts=['publicado_at'=>'datetime','entregado_at'=>'datetime','acceso_cliente'=>'boolean'];
     public function empresa(){return $this->belongsTo(Empresa::class);}
     public function proyecto(){return $this->belongsTo(Proyecto::class);}
+    public function suscripcion(){return $this->hasOne(Suscripcion::class);}
     public function mantenimientos(){return $this->hasMany(Mantenimiento::class);}
     public function archivos(){return $this->morphMany(Archivo::class,'adjuntable');}
 }

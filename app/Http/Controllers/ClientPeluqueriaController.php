@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Proyecto;
+use App\Services\SubscriptionAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -14,13 +15,14 @@ class ClientPeluqueriaController extends Controller
         $project = Proyecto::query()
             ->where('cliente_id', $clienteId)
             ->whereHas('aplicacion', fn ($q) => $q->where('nombre','like','%Peluquer%'))
-            ->with(['empresa:id,nombre_comercial,actividad,ciudad,direccion','aplicacion'])
+            ->with(['empresa:id,nombre_comercial,actividad,ciudad,direccion','aplicacion.suscripcion'])
             ->latest()
             ->first();
 
         abort_unless($project && $project->empresa_id && $project->aplicacion, 404, 'No tienes una aplicación de peluquería asignada.');
         abort_unless((bool) $project->aplicacion->acceso_cliente, 403, 'Tu aplicación todavía no fue entregada. Contacta con Atención VITI.');
         abort_unless($project->aplicacion->estado === 'activo', 403, 'El acceso a esta aplicación está suspendido.');
+        app(SubscriptionAccessService::class)->assertCanUse($project->aplicacion);
         return $project;
     }
 

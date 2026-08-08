@@ -2,26 +2,29 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{Aplicacion,PeluqueriaAtencion,PeluqueriaCita,PeluqueriaCliente,PeluqueriaPago,PeluqueriaPersonal,PeluqueriaServicio,Proyecto};
+use App\Models\{PeluqueriaAtencion,PeluqueriaCita,PeluqueriaCliente,PeluqueriaPago,PeluqueriaPersonal,PeluqueriaServicio,Proyecto};
+use App\Services\SubscriptionAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class ClientAppsController extends Controller
 {
-    public function index(Request $request): JsonResponse
+    public function index(Request $request, SubscriptionAccessService $access): JsonResponse
     {
         $clienteId = (int) $request->user()->cliente_id;
 
         $projects = Proyecto::query()
             ->where('cliente_id', $clienteId)
             ->whereHas('aplicacion')
-            ->with(['empresa:id,nombre_comercial', 'aplicacion'])
+            ->with(['empresa:id,nombre_comercial', 'aplicacion.suscripcion'])
             ->latest()
             ->get();
 
-        $items = $projects->map(function (Proyecto $project): array {
+        $items = $projects->map(function (Proyecto $project) use ($access): array {
             $app = $project->aplicacion;
             $isPeluqueria = $app && str_contains(mb_strtolower((string) $app->nombre), 'peluquer');
+            $subscription = $app ? $access->statusFor($app) : null;
+            $canUse = !$subscription || $subscription['puede_usar'];
 
             return [
                 'id' => $app?->id,
@@ -40,26 +43,28 @@ class ClientAppsController extends Controller
                     'estado' => $project->estado,
                     'progreso' => $project->progreso,
                 ],
-                'ruta' => $isPeluqueria && $app?->acceso_cliente ? '/mi-apps/peluqueria/inicio' : null,
+                'suscripcion'=>$subscription,
+                'ruta' => $isPeluqueria && $app?->acceso_cliente && $app?->estado === 'activo' && $canUse ? '/mi-apps/peluqueria/inicio' : null,
             ];
         })->values();
 
         return response()->json(['data' => $items]);
     }
 
-    public function peluqueria(Request $request): JsonResponse
+    public function peluqueria(Request $request, SubscriptionAccessService $access): JsonResponse
     {
         $clienteId = (int) $request->user()->cliente_id;
 
         $project = Proyecto::query()
             ->where('cliente_id', $clienteId)
             ->whereHas('aplicacion', fn ($q) => $q->where('nombre', 'like', '%Peluquer%'))
-            ->with(['empresa:id,nombre_comercial,actividad,ciudad,direccion', 'aplicacion'])
+            ->with(['empresa:id,nombre_comercial,actividad,ciudad,direccion', 'aplicacion.suscripcion'])
             ->latest()
             ->first();
 
         abort_unless($project && $project->empresa_id, 404, 'No tienes una aplicación de peluquería asignada.');
         abort_unless((bool) $project->aplicacion?->acceso_cliente, 403, 'Tu aplicación todavía no fue entregada. Contacta con Atención VITI.');
+        $access->assertCanUse($project->aplicacion);
 
         $empresaId = (int) $project->empresa_id;
         $app = $project->aplicacion;
@@ -100,6 +105,7 @@ class ClientAppsController extends Controller
                 'estado' => $app?->estado ?? 'activo',
                 'acceso_cliente' => (bool) $app?->acceso_cliente,
                 'entregado_at' => $app?->entregado_at,
+                'suscripcion'=>$access->statusFor($app),
             ],
             'empresa' => $project->empresa,
             'proyecto' => [
