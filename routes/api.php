@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{AplicacionController,ArchivoController,AtencionSesionController,AuditoriaController,AuthController,BuzonController,ClientAuthController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,StorageController,PublicSolicitudController};
+use App\Http\Controllers\{AplicacionController,ArchivoController,AtencionSesionController,AuditoriaController,AuthController,BuzonController,ClientAuthController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,OnboardingController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,StorageController,PublicSolicitudController};
 use Illuminate\Support\Facades\Route;
 
 Route::get('health', fn () => ['status'=>'ok','service'=>'VITI Core API','time'=>now()->toIso8601String()]);
@@ -18,6 +18,11 @@ Route::prefix('v1')->group(function (): void {
     Route::prefix('mobile')->group(function (): void {
         Route::post('login', [MobileAuthController::class,'login'])->middleware('throttle:login');
         Route::middleware('auth:sanctum')->post('logout', [MobileAuthController::class,'logout']);
+    });
+
+    Route::prefix('publico/registro')->middleware('throttle:api')->group(function (): void {
+        Route::get('{token}', [OnboardingController::class,'showInvitation']);
+        Route::post('{token}', [OnboardingController::class,'register'])->middleware('throttle:login');
     });
 
     Route::prefix('publico/solicitudes')->middleware('throttle:api')->group(function (): void {
@@ -67,6 +72,7 @@ Route::prefix('v1')->group(function (): void {
         Route::middleware('superadmin')->group(function (): void {
             Route::get('dashboard', DashboardController::class);
             Route::get('almacenamiento/estado', [StorageController::class,'status']);
+            Route::post('invitaciones-clientes', [OnboardingController::class,'createInvitation']);
 
             Route::post('clientes/registro-completo', [ClienteController::class,'storeComplete']);
             Route::apiResource('clientes', ClienteController::class)->parameters(['clientes' => 'cliente']);
