@@ -8,6 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class BillingController extends Controller
@@ -32,6 +33,8 @@ class BillingController extends Controller
             return $s['frecuencia'] === 'anual' ? round($s['monto'] / 12, 2) : $s['monto'];
         });
 
+        $config = ConfiguracionPago::query()->where('activo',true)->first();
+
         return response()->json(['data'=>[
             'resumen'=>[
                 'por_cobrar_proyectos'=>round($projectPending,2),
@@ -40,7 +43,7 @@ class BillingController extends Controller
                 'suscripciones_suspendidas'=>$subscriptions->where('estado','suspendida')->count(),
                 'ingreso_recurrente_mensual'=>round($monthlyRecurring,2),
             ],
-            'configuracion'=>ConfiguracionPago::query()->where('activo',true)->first(),
+            'configuracion'=>$config ? $this->configRow($config) : null,
             'proyectos'=>$projects->values(),
             'suscripciones'=>$subscriptions->values(),
         ]]);
@@ -161,14 +164,56 @@ class BillingController extends Controller
 
     public function actualizarConfiguracion(Request $request): JsonResponse
     {
-        $config = ConfiguracionPago::query()->where('activo',true)->firstOrFail();
+        $config = ConfiguracionPago::query()->where('activo',true)->first();
+        if (!$config) {
+            $config = ConfiguracionPago::create([
+                'nombre'=>'QR principal VITI',
+                'moneda'=>'BOB',
+                'activo'=>true,
+            ]);
+        }
+
         $data = $request->validate([
             'banco'=>['required','string','max:120'],
             'titular'=>['required','string','max:180'],
             'observaciones'=>['nullable','string','max:3000'],
         ]);
         $config->update($data);
-        return response()->json(['data'=>$config->fresh()]);
+        return response()->json(['data'=>$this->configRow($config->fresh())]);
+    }
+
+    public function subirQr(Request $request): JsonResponse
+    {
+        $request->validate([
+            'qr'=>['required','image','mimes:jpg,jpeg,png,webp','max:5120'],
+        ], [
+            'qr.required'=>'Selecciona una imagen de QR.',
+            'qr.image'=>'El archivo debe ser una imagen válida.',
+            'qr.mimes'=>'El QR debe ser JPG, PNG o WEBP.',
+            'qr.max'=>'La imagen del QR no puede superar 5 MB.',
+        ]);
+
+        $config = ConfiguracionPago::query()->where('activo',true)->first();
+        if (!$config) {
+            $config = ConfiguracionPago::create([
+                'nombre'=>'QR principal VITI',
+                'moneda'=>'BOB',
+                'activo'=>true,
+            ]);
+        }
+
+        $old = ltrim((string)$config->qr_path,'/');
+        if ($old && Storage::disk('public')->exists($old)) {
+            Storage::disk('public')->delete($old);
+        }
+
+        $path = $request->file('qr')->store('pagos/qr','public');
+        $config->update(['qr_path'=>$path]);
+
+        return response()->json([
+            'data'=>$this->configRow($config->fresh()),
+            'message'=>'QR de cobro actualizado.',
+        ]);
     }
 
     private function refreshProjectPaymentStatus(Proyecto $project): void
@@ -214,6 +259,27 @@ class BillingController extends Controller
             'frecuencia'=>$s->frecuencia,'moneda'=>$s->moneda,'fecha_inicio'=>$s->fecha_inicio?->format('Y-m-d'),
             'fecha_vencimiento'=>$s->fecha_vencimiento?->format('Y-m-d'),'dias_gracia'=>(int)$s->dias_gracia,'estado'=>$s->estado,
             'pagos'=>$s->pagos->values(),
+        ];
+    }
+
+    private function configRow(ConfiguracionPago $config): array
+    {
+        $path = ltrim((string)$config->qr_path,'/');
+        $qrUrl = url('/viti-payment-qr.svg');
+        if ($path && Storage::disk('public')->exists($path)) {
+            $qrUrl = Storage::disk('public')->url($path);
+        }
+
+        return [
+            'id'=>$config->id,
+            'nombre'=>$config->nombre,
+            'banco'=>$config->banco,
+            'titular'=>$config->titular,
+            'moneda'=>$config->moneda,
+            'qr_path'=>$config->qr_path,
+            'qr_url'=>$qrUrl,
+            'activo'=>(bool)$config->activo,
+            'observaciones'=>$config->observaciones,
         ];
     }
 }

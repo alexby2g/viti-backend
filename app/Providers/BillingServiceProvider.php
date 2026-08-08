@@ -22,6 +22,7 @@ class BillingServiceProvider extends ServiceProvider
             ->group(function (): void {
                 Route::get('pagos', [BillingController::class,'index']);
                 Route::put('pagos/configuracion', [BillingController::class,'actualizarConfiguracion']);
+                Route::post('pagos/configuracion/qr', [BillingController::class,'subirQr']);
                 Route::put('proyectos/{proyecto}/acuerdo-pago', [BillingController::class,'guardarAcuerdo']);
                 Route::post('proyectos/{proyecto}/pagos', [BillingController::class,'registrarPagoProyecto']);
                 Route::put('aplicaciones/{aplicacion}/suscripcion', [BillingController::class,'guardarSuscripcion']);

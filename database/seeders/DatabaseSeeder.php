@@ -10,5 +10,6 @@ class DatabaseSeeder extends Seeder
     {
         $this->call(CuestionarioSeeder::class);
         $this->call(DemoPeluqueriaSeeder::class);
+        $this->call(PaymentQrSeeder::class);
     }
 }
