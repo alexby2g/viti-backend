@@ -2,34 +2,31 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Proyecto;
-use App\Services\SubscriptionAccessService;
+use App\Models\Aplicacion;
+use App\Services\{SubscriptionAccessService,TenantContext};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class ClientPeluqueriaExtrasController extends Controller
 {
-    private function project(Request $request): Proyecto
+    private function appFor(Request $request): Aplicacion
     {
-        $clienteId = (int) $request->user()->cliente_id;
-        $project = Proyecto::query()
-            ->where('cliente_id',$clienteId)
-            ->whereHas('aplicacion',fn($q)=>$q->where('nombre','like','%Peluquer%'))
-            ->with('aplicacion.suscripcion')
-            ->latest()
-            ->first();
-
-        abort_unless($project && $project->empresa_id && $project->aplicacion,404,'No tienes una aplicación de peluquería asignada.');
-        abort_unless((bool)$project->aplicacion->acceso_cliente,403,'Tu aplicación todavía no fue entregada. Contacta con Atención VITI.');
-        abort_unless($project->aplicacion->estado === 'activo',403,'El acceso a esta aplicación está suspendido.');
-        app(SubscriptionAccessService::class)->assertCanUse($project->aplicacion);
-        return $project;
+        $empresa = app(TenantContext::class)->resolve($request);
+        $app = Aplicacion::query()
+            ->where('empresa_id',$empresa->id)
+            ->whereHas('catalogo',fn($q)=>$q->where('clave','peluqueria'))
+            ->with('suscripcion')->latest()->first();
+        abort_unless($app,404,'Este negocio no tiene una aplicación de peluquería asignada.');
+        abort_unless((bool)$app->acceso_cliente,403,'Tu aplicación todavía no fue entregada. Contacta con Atención VITI.');
+        abort_unless($app->estado === 'activo',403,'El acceso a esta aplicación está suspendido.');
+        app(SubscriptionAccessService::class)->assertCanUse($app);
+        return $app;
     }
 
     private function forward(Request $request, string $method, ?int $id = null): JsonResponse
     {
-        $project = $this->project($request);
-        $request->merge(['empresa_id'=>(int)$project->empresa_id]);
+        $app = $this->appFor($request);
+        $request->merge(['empresa_id'=>(int)$app->empresa_id]);
         $controller = app(PeluqueriaExtrasController::class);
         return $id === null ? $controller->{$method}($request) : $controller->{$method}($request,$id);
     }
