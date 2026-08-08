@@ -2,7 +2,7 @@
 
 namespace App\Providers;
 
-use App\Http\Controllers\{ClientSaasController,SaasController};
+use App\Http\Controllers\{ClientSaasController,NotificationCenterController,SaasController};
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
@@ -10,6 +10,13 @@ class SaasServiceProvider extends ServiceProvider
 {
     public function boot(): void
     {
+        Route::middleware(['api','auth:sanctum','throttle:api'])
+            ->prefix('api/v1/notificaciones')
+            ->group(function (): void {
+                Route::get('centro',[NotificationCenterController::class,'index']);
+                Route::post('centro/leer-todo',[NotificationCenterController::class,'markAllRead']);
+            });
+
         Route::middleware(['api','auth:sanctum','throttle:api','cliente'])
             ->prefix('api/v1/mi')
             ->group(function (): void {
