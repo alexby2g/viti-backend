@@ -12,4 +12,5 @@ class Conversacion extends Model
     public function proyecto(){return $this->belongsTo(Proyecto::class);}
     public function mensajes(){return $this->hasMany(Mensaje::class);}
     public function llamadas(){return $this->hasMany(Llamada::class);}
+    public function sesionesAtencion(){return $this->hasMany(AtencionSesion::class);}
 }
