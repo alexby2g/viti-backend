@@ -51,7 +51,7 @@ class SaasController extends Controller
         ]);
         $empresa = Empresa::with('planViti')->findOrFail($data['empresa_id']);
         $tenants->assertAppLimit($empresa);
-        if (!empty($data['proyecto_id'])) abort_unless(Proyecto::whereKey($data['proyecto_id'])->where('empresa_id',$empresa->id)->exists(),422,'El proyecto no pertenecece a este negocio.');
+        if (!empty($data['proyecto_id'])) abort_unless(Proyecto::whereKey($data['proyecto_id'])->where('empresa_id',$empresa->id)->exists(),422,'El proyecto no pertenece a este negocio.');
         abort_if(Aplicacion::where('empresa_id',$empresa->id)->where('catalogo_aplicacion_id',$catalogoAplicacion->id)->whereNotIn('estado',['retirado'])->exists(),422,'Este negocio ya tiene una instancia activa de esta aplicación.');
 
         $app = Aplicacion::create([
@@ -80,7 +80,17 @@ class SaasController extends Controller
     public function asignarPlan(Request $request, Empresa $empresa): JsonResponse
     {
         $data = $request->validate(['plan_viti_id'=>['nullable','integer','exists:planes_viti,id']]);
-        $empresa->update($data); Audit::log($request,'plan_viti_asignado',$empresa,'Se actualizó el plan SaaS del negocio.',$data);
+        $plan = !empty($data['plan_viti_id']) ? PlanViti::findOrFail($data['plan_viti_id']) : null;
+        if ($plan?->max_usuarios !== null) {
+            $actuales = $empresa->usuarios()->wherePivot('activo',true)->count();
+            abort_if($actuales > $plan->max_usuarios,422,"El negocio ya tiene {$actuales} usuarios activos y el plan permite {$plan->max_usuarios}.");
+        }
+        if ($plan?->max_aplicaciones !== null) {
+            $actuales = $empresa->aplicaciones()->whereNotIn('estado',['retirado'])->count();
+            abort_if($actuales > $plan->max_aplicaciones,422,"El negocio ya tiene {$actuales} aplicaciones y el plan permite {$plan->max_aplicaciones}.");
+        }
+        $empresa->update($data);
+        Audit::log($request,'plan_viti_asignado',$empresa,'Se actualizó el plan SaaS del negocio.',$data);
         return response()->json(['data'=>$empresa->fresh()->load('planViti')]);
     }
 }
