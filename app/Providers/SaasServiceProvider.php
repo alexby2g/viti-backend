@@ -2,7 +2,7 @@
 
 namespace App\Providers;
 
-use App\Http\Controllers\{ClientSaasController,NotificationCenterController,SaasController};
+use App\Http\Controllers\{ClientCatalogRequestController,ClientSaasController,NotificationCenterController,SaasController};
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
@@ -29,6 +29,7 @@ class SaasServiceProvider extends ServiceProvider
                 Route::put('negocio/equipo/{usuario}',[ClientSaasController::class,'actualizarUsuario']);
                 Route::delete('negocio/equipo/{usuario}',[ClientSaasController::class,'quitarUsuario']);
                 Route::get('catalogo',[ClientSaasController::class,'catalogo']);
+                Route::post('catalogo/{catalogoAplicacion}/solicitar',[ClientCatalogRequestController::class,'store']);
             });
 
         Route::middleware(['api','auth:sanctum','throttle:api','superadmin'])
