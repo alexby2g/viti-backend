@@ -8,8 +8,7 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        // No se crean empresas, clientes, proyectos ni usuarios de demostración.
-        // Solo se instala el cuestionario institucional solicitado por AGR Studio.
         $this->call(CuestionarioSeeder::class);
+        $this->call(DemoPeluqueriaSeeder::class);
     }
 }
