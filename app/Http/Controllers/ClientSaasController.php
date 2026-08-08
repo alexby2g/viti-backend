@@ -44,15 +44,9 @@ class ClientSaasController extends Controller
         $empresa = $tenants->resolve($request);
         $tenants->assertCanManage($request->user(),$empresa);
         $data = $request->validate([
-            'nombre_comercial'=>['required','string','max:180'],
-            'razon_social'=>['nullable','string','max:200'],
-            'actividad'=>['nullable','string','max:200'],
-            'telefono'=>['nullable','string','max:30'],
-            'whatsapp'=>['nullable','string','max:30'],
-            'ciudad'=>['nullable','string','max:100'],
-            'direccion'=>['nullable','string','max:255'],
-            'moneda'=>['required','string','size:3'],
-            'zona_horaria'=>['required','string','max:80'],
+            'nombre_comercial'=>['required','string','max:180'],'razon_social'=>['nullable','string','max:200'],'actividad'=>['nullable','string','max:200'],
+            'telefono'=>['nullable','string','max:30'],'whatsapp'=>['nullable','string','max:30'],'ciudad'=>['nullable','string','max:100'],'direccion'=>['nullable','string','max:255'],
+            'moneda'=>['required','string','size:3'],'zona_horaria'=>['required','string','max:80'],
         ]);
         $empresa->update($data);
         Audit::log($request,'negocio_actualizado',$empresa,'El cliente actualizó la configuración de su negocio.');
@@ -64,8 +58,7 @@ class ClientSaasController extends Controller
         $empresa = $tenants->resolve($request);
         $tenants->assertCanManage($request->user(),$empresa);
         $request->validate(['logo'=>['required','image','mimes:jpg,jpeg,png,webp','max:3072']]);
-        $disk = Storage::disk('public');
-        $old = $empresa->logo_path;
+        $disk = Storage::disk('public'); $old = $empresa->logo_path;
         try {
             $path = $request->file('logo')->store('empresas/logos','public');
             if (!$path) throw new \RuntimeException('No se pudo guardar el logotipo.');
@@ -73,8 +66,7 @@ class ClientSaasController extends Controller
             if ($old && $old !== $path) { try { $disk->delete($old); } catch (Throwable) {} }
             return response()->json(['data'=>$empresa->fresh(),'logo_url'=>$empresa->fresh()->logo_url]);
         } catch (Throwable $e) {
-            report($e);
-            return response()->json(['message'=>'No pudimos guardar el logotipo en el almacenamiento permanente.'],503);
+            report($e); return response()->json(['message'=>'No pudimos guardar el logotipo en el almacenamiento permanente.'],503);
         }
     }
 
@@ -97,11 +89,10 @@ class ClientSaasController extends Controller
         $data = $request->validate([
             'nombre'=>['required','string','max:100'],'apellido'=>['nullable','string','max:100'],
             'usuario'=>['required','string','max:80','unique:usuarios,usuario'],'telefono'=>['nullable','string','max:30'],
-            'password'=>['required','string','min:8','max:120'],
-            'rol_negocio'=>['required',Rule::in(['propietario','administrador','empleado'])],
+            'password'=>['required','string','min:8','max:120'],'rol_negocio'=>['required',Rule::in(['propietario','administrador','empleado'])],
         ]);
         $role = $data['rol_negocio']; unset($data['rol_negocio']);
-        $usuario = Usuario::create($data + ['cliente_id'=>$empresa->cliente_id,'rol'=>'cliente','estado'=>'activo']);
+        $usuario = Usuario::create($data + ['cliente_id'=>null,'rol'=>'cliente','estado'=>'activo']);
         $empresa->usuarios()->attach($usuario->id,['rol_negocio'=>$role,'activo'=>true]);
         Audit::log($request,'usuario_negocio_creado',$empresa,'Se agregó '.$usuario->usuario.' al negocio.',['usuario_id'=>$usuario->id,'rol'=>$role]);
         return response()->json(['data'=>$usuario->fresh()],201);
@@ -113,15 +104,9 @@ class ClientSaasController extends Controller
         $tenants->assertCanManage($request->user(),$empresa);
         $membership = $empresa->usuarios()->where('usuarios.id',$usuario->id)->first();
         abort_unless($membership,404,'Ese usuario no pertenece a este negocio.');
-        $data = $request->validate([
-            'rol_negocio'=>['required',Rule::in(['propietario','administrador','empleado'])],
-            'activo'=>['required','boolean'],
-            'password'=>['nullable','string','min:8','max:120'],
-        ]);
+        $data = $request->validate(['rol_negocio'=>['required',Rule::in(['propietario','administrador','empleado'])],'activo'=>['required','boolean'],'password'=>['nullable','string','min:8','max:120']]);
         $owners = $empresa->usuarios()->wherePivot('activo',true)->wherePivot('rol_negocio','propietario')->count();
-        if ($membership->pivot?->rol_negocio === 'propietario' && ($data['rol_negocio'] !== 'propietario' || !$data['activo'])) {
-            abort_if($owners <= 1,422,'El negocio debe conservar al menos un propietario activo.');
-        }
+        if ($membership->pivot?->rol_negocio === 'propietario' && ($data['rol_negocio'] !== 'propietario' || !$data['activo'])) abort_if($owners <= 1,422,'El negocio debe conservar al menos un propietario activo.');
         $empresa->usuarios()->updateExistingPivot($usuario->id,['rol_negocio'=>$data['rol_negocio'],'activo'=>$data['activo']]);
         if (!empty($data['password'])) $usuario->update(['password'=>$data['password']]);
         return response()->json(['message'=>'Acceso actualizado.']);
