@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{AplicacionController,ArchivoController,AtencionSesionController,AuditoriaController,AuthController,BuzonController,ClientAuthController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,OnboardingController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,StorageController,PublicSolicitudController};
+use App\Http\Controllers\{AplicacionController,ArchivoController,AtencionSesionController,AuditoriaController,AuthController,BuzonController,ClientAuthController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,OnboardingController,PeluqueriaController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,StorageController,PublicSolicitudController};
 use Illuminate\Support\Facades\Route;
 
 Route::get('health', fn () => ['status'=>'ok','service'=>'VITI Core API','time'=>now()->toIso8601String()]);
@@ -92,6 +92,36 @@ Route::prefix('v1')->group(function (): void {
             Route::post('proyectos/{proyecto}/avances', [ProyectoController::class,'addProgress']);
             Route::apiResource('aplicaciones', AplicacionController::class)->parameters(['aplicaciones' => 'aplicacion']);
             Route::apiResource('mantenimientos', MantenimientoController::class)->parameters(['mantenimientos' => 'mantenimiento'])->except('show');
+
+            Route::prefix('apps/peluqueria')->group(function (): void {
+                Route::get('resumen', [PeluqueriaController::class,'resumen']);
+
+                Route::get('clientes', [PeluqueriaController::class,'clientes']);
+                Route::post('clientes', [PeluqueriaController::class,'guardarCliente']);
+                Route::put('clientes/{id}', [PeluqueriaController::class,'actualizarCliente']);
+                Route::delete('clientes/{id}', [PeluqueriaController::class,'eliminarCliente']);
+
+                Route::get('servicios', [PeluqueriaController::class,'servicios']);
+                Route::post('servicios', [PeluqueriaController::class,'guardarServicio']);
+                Route::put('servicios/{id}', [PeluqueriaController::class,'actualizarServicio']);
+                Route::delete('servicios/{id}', [PeluqueriaController::class,'eliminarServicio']);
+
+                Route::get('personal', [PeluqueriaController::class,'personal']);
+                Route::post('personal', [PeluqueriaController::class,'guardarPersonal']);
+                Route::put('personal/{id}', [PeluqueriaController::class,'actualizarPersonal']);
+                Route::delete('personal/{id}', [PeluqueriaController::class,'eliminarPersonal']);
+
+                Route::get('citas', [PeluqueriaController::class,'citas']);
+                Route::post('citas', [PeluqueriaController::class,'guardarCita']);
+                Route::put('citas/{id}', [PeluqueriaController::class,'actualizarCita']);
+                Route::delete('citas/{id}', [PeluqueriaController::class,'eliminarCita']);
+
+                Route::get('atenciones', [PeluqueriaController::class,'atenciones']);
+                Route::post('atenciones', [PeluqueriaController::class,'iniciarAtencion']);
+                Route::post('atenciones/{id}/finalizar', [PeluqueriaController::class,'finalizarAtencion']);
+                Route::post('atenciones/{id}/pagos', [PeluqueriaController::class,'registrarPago']);
+                Route::get('historial', [PeluqueriaController::class,'historial']);
+            });
 
             Route::get('archivos', [ArchivoController::class,'index']);
             Route::post('archivos', [ArchivoController::class,'store']);
