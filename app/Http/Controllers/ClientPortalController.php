@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Throwable;
 
 class ClientPortalController extends Controller
 {
@@ -48,12 +49,39 @@ class ClientPortalController extends Controller
     {
         $cliente = $this->client($request);
         $request->validate(['foto'=>['required','image','mimes:jpg,jpeg,png,webp','max:3072']], [
-            'foto.required'=>'Selecciona una fotografía.', 'foto.image'=>'El archivo debe ser una imagen.', 'foto.max'=>'La fotografía no puede superar 3 MB.'
+            'foto.required'=>'Selecciona una fotografía.',
+            'foto.image'=>'El archivo debe ser una imagen válida.',
+            'foto.mimes'=>'La fotografía debe ser JPG, PNG o WEBP.',
+            'foto.max'=>'La fotografía no puede superar 3 MB.'
         ]);
-        if ($cliente->foto_path) Storage::disk('public')->delete($cliente->foto_path);
-        $path = $request->file('foto')->store('clientes/fotos','public');
-        $cliente->update(['foto_path'=>$path,'foto_verificada'=>false]);
-        return response()->json(['data'=>$cliente,'foto_url'=>Storage::disk('public')->url($path)]);
+
+        $disk = Storage::disk('public');
+        $oldPath = $cliente->foto_path;
+
+        try {
+            $path = $request->file('foto')->store('clientes/fotos','public');
+            if (!$path || !$disk->exists($path)) {
+                throw new \RuntimeException('R2 no confirmó el archivo después de escribirlo.');
+            }
+
+            $cliente->update(['foto_path'=>$path,'foto_verificada'=>false]);
+
+            if ($oldPath && $oldPath !== $path) {
+                try { $disk->delete($oldPath); } catch (Throwable) {}
+            }
+
+            $fresh = $cliente->fresh();
+            return response()->json([
+                'message'=>'Fotografía actualizada correctamente.',
+                'data'=>$fresh,
+                'foto_url'=>$fresh->foto_url,
+            ]);
+        } catch (Throwable $e) {
+            report($e);
+            return response()->json([
+                'message'=>'No pudimos guardar la fotografía en el almacenamiento permanente. Revisa la conexión de R2 en Administración → Almacenamiento.',
+            ], 503);
+        }
     }
 
     public function currentRequest(Request $request): JsonResponse
