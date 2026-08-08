@@ -8,7 +8,9 @@ use App\Support\Audit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rules\Password;
+use Throwable;
 
 class ClientAuthController extends Controller
 {
@@ -41,35 +43,50 @@ class ClientAuthController extends Controller
             'password.confirmed' => 'Las contraseñas no coinciden.',
         ]);
 
-        $photoPath = $request->file('foto')->store('clientes/fotos','public');
+        try {
+            $photoPath = $request->file('foto')->store('clientes/fotos','public');
+            if (!$photoPath || !Storage::disk('public')->exists($photoPath)) {
+                throw new \RuntimeException('R2 no confirmó la fotografía del nuevo cliente.');
+            }
+        } catch (Throwable $e) {
+            report($e);
+            return response()->json([
+                'message'=>'No pudimos guardar tu fotografía en el almacenamiento permanente. Inténtalo nuevamente en unos minutos.',
+            ], 503);
+        }
 
-        [$cliente, $usuario] = DB::transaction(function () use ($data, $photoPath): array {
-            $cliente = Cliente::create([
-                'nombre' => trim($data['nombre']),
-                'telefono' => $data['telefono'],
-                'whatsapp' => $data['whatsapp'] ?? $data['telefono'],
-                'documento' => $data['ci'],
-                'ci_expedido' => $data['ci_expedido'] ?? null,
-                'foto_path' => $photoPath,
-                'perfil_completo_at' => now(),
-                'ciudad' => trim($data['ciudad']),
-                'direccion' => $data['direccion'] ?? null,
-                'estado' => 'nuevo',
-                'canal_origen' => $data['canal_origen'] ?? 'viti',
-            ]);
+        try {
+            [$cliente, $usuario] = DB::transaction(function () use ($data, $photoPath): array {
+                $cliente = Cliente::create([
+                    'nombre' => trim($data['nombre']),
+                    'telefono' => $data['telefono'],
+                    'whatsapp' => $data['whatsapp'] ?? $data['telefono'],
+                    'documento' => $data['ci'],
+                    'ci_expedido' => $data['ci_expedido'] ?? null,
+                    'foto_path' => $photoPath,
+                    'perfil_completo_at' => now(),
+                    'ciudad' => trim($data['ciudad']),
+                    'direccion' => $data['direccion'] ?? null,
+                    'estado' => 'nuevo',
+                    'canal_origen' => $data['canal_origen'] ?? 'viti',
+                ]);
 
-            $usuario = Usuario::create([
-                'cliente_id' => $cliente->id,
-                'nombre' => trim($data['nombre']),
-                'usuario' => 'cli_'.$cliente->id,
-                'telefono' => $data['telefono'],
-                'password' => $data['password'],
-                'rol' => 'cliente',
-                'estado' => 'activo',
-            ]);
+                $usuario = Usuario::create([
+                    'cliente_id' => $cliente->id,
+                    'nombre' => trim($data['nombre']),
+                    'usuario' => 'cli_'.$cliente->id,
+                    'telefono' => $data['telefono'],
+                    'password' => $data['password'],
+                    'rol' => 'cliente',
+                    'estado' => 'activo',
+                ]);
 
-            return [$cliente, $usuario];
-        });
+                return [$cliente, $usuario];
+            });
+        } catch (Throwable $e) {
+            try { Storage::disk('public')->delete($photoPath); } catch (Throwable) {}
+            throw $e;
+        }
 
         auth()->login($usuario);
         $request->session()->regenerate();
