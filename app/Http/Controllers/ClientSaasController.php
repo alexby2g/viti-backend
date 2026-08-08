@@ -88,7 +88,7 @@ class ClientSaasController extends Controller
         $tenants->assertUserLimit($empresa);
         $data = $request->validate([
             'nombre'=>['required','string','max:100'],'apellido'=>['nullable','string','max:100'],
-            'usuario'=>['required','string','max:80','unique:usuarios,usuario'],'telefono'=>['nullable','string','max:30'],
+            'usuario'=>['required','string','max:80','unique:usuarios,usuario'],'telefono'=>['nullable','string','max:30','unique:usuarios,telefono'],
             'password'=>['required','string','min:8','max:120'],'rol_negocio'=>['required',Rule::in(['propietario','administrador','empleado'])],
         ]);
         $role = $data['rol_negocio']; unset($data['rol_negocio']);
