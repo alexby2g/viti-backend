@@ -6,6 +6,7 @@ use App\Models\Empresa;
 use App\Support\{Audit,Code};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class EmpresaController extends Controller
@@ -40,16 +41,23 @@ class EmpresaController extends Controller
     public function destroy(Request $request, Empresa $empresa): JsonResponse
     {
         abort_if($empresa->solicitudes()->exists()||$empresa->proyectos()->exists(),422,'No se puede eliminar una empresa con solicitudes o proyectos.');
+        if ($empresa->logo_path) Storage::disk('public')->delete($empresa->logo_path);
         $empresa->delete(); Audit::log($request,'empresa_eliminada',$empresa,'Empresa enviada a papelera.');
         return response()->json(status:204);
     }
 
     public function uploadLogo(Request $request, Empresa $empresa): JsonResponse
     {
-        $request->validate(['logo'=>['required','image','max:3072']]);
+        $request->validate(['logo'=>['required','image','mimes:jpg,jpeg,png,webp','max:3072']], [
+            'logo.required'=>'Selecciona un logotipo.',
+            'logo.image'=>'El archivo debe ser una imagen.',
+            'logo.max'=>'El logotipo no puede superar 3 MB.',
+        ]);
+        if ($empresa->logo_path) Storage::disk('public')->delete($empresa->logo_path);
         $path=$request->file('logo')->store('empresas/logos','public');
         $empresa->update(['logo_path'=>$path]);
-        return response()->json(['data'=>$empresa]);
+        Audit::log($request,'logo_empresa_actualizado',$empresa,'Se actualizó el logotipo de la empresa.');
+        return response()->json(['data'=>$empresa->fresh(),'logo_url'=>Storage::disk('public')->url($path)]);
     }
 
     private function validateData(Request $request, ?Empresa $empresa=null): array
@@ -64,7 +72,7 @@ class EmpresaController extends Controller
             'ciudad'=>['nullable','string','max:100'],
             'direccion'=>['nullable','string','max:255'],
             'observaciones'=>['nullable','string','max:3000'],
-            'estado'=>['nullable',Rule::in(['prospecto','levantamiento','desarrollo','activo','inactivo'])],
+            'estado'=>['nullable',Rule::in(['prospecto','levantamiento','desarrollo','activo','inactivo','pendiente_revision'])],
         ]);
     }
 }
