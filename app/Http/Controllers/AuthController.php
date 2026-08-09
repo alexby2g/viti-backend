@@ -34,11 +34,17 @@ class AuthController extends Controller
 
         $access = trim($data['acceso']);
         $username = Str::lower($access);
-        $phone = preg_replace('/\D+/', '', $access);
+        $phoneDigits = preg_replace('/\D+/', '', $access);
+        $phone = preg_match('/^[0-9\s()+.-]+$/', $access) && strlen($phoneDigits) >= 7
+            ? $phoneDigits
+            : null;
 
         $usuario = Usuario::query()
             ->where('estado','activo')
-            ->where(fn ($q) => $q->whereRaw('LOWER(usuario) = ?', [$username])->orWhere('telefono',$phone))
+            ->where(function ($query) use ($username, $phone): void {
+                $query->whereRaw('LOWER(usuario) = ?', [$username]);
+                if ($phone !== null) $query->orWhere('telefono', $phone);
+            })
             ->first();
 
         if (!$usuario || !Hash::check($data['password'], $usuario->password)) {
