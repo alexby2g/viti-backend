@@ -49,10 +49,31 @@ class SetupController extends Controller
 
         unset($data['codigo_secreto']);
 
-        $usuario = DB::transaction(fn () => Usuario::create($data + [
-            'rol' => 'superadmin',
-            'estado' => 'activo',
-        ]));
+        $usuario = DB::transaction(function () use ($data): Usuario {
+            $usuario = Usuario::create($data + [
+                'rol' => 'superadmin',
+                'estado' => 'activo',
+            ]);
+
+            $electrofrioId = DB::table('empresas')
+                ->where('codigo', 'EMP-ELECTROFRIO')
+                ->value('id');
+
+            if ($electrofrioId) {
+                DB::table('empresa_usuario')->updateOrInsert(
+                    ['empresa_id' => $electrofrioId, 'usuario_id' => $usuario->id],
+                    [
+                        'rol_negocio' => 'administrador',
+                        'permisos' => null,
+                        'activo' => true,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]
+                );
+            }
+
+            return $usuario;
+        });
 
         auth()->login($usuario);
         $request->session()->regenerate();
