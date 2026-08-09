@@ -8,6 +8,7 @@ use App\Support\Audit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Throwable;
 
@@ -86,9 +87,10 @@ class ClientSaasController extends Controller
         $empresa = $tenants->resolve($request);
         $tenants->assertCanManage($request->user(),$empresa);
         $tenants->assertUserLimit($empresa);
+        $request->merge(['usuario'=>Str::lower(trim((string)$request->input('usuario')))]);
         $data = $request->validate([
             'nombre'=>['required','string','max:100'],'apellido'=>['nullable','string','max:100'],
-            'usuario'=>['required','string','max:80','unique:usuarios,usuario'],'telefono'=>['nullable','string','max:30','unique:usuarios,telefono'],
+            'usuario'=>['required','string','alpha_dash','min:4','max:80','not_regex:/^\d+$/','unique:usuarios,usuario'],'telefono'=>['nullable','string','max:30','unique:usuarios,telefono'],
             'password'=>['required','string','min:8','max:120'],'rol_negocio'=>['required',Rule::in(['propietario','administrador','empleado'])],
         ]);
         $role = $data['rol_negocio']; unset($data['rol_negocio']);
