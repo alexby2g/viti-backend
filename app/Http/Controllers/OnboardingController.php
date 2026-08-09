@@ -54,9 +54,11 @@ class OnboardingController extends Controller
     public function register(Request $request, string $token): JsonResponse
     {
         $invitation = $this->resolveInvitation($token);
+        $request->merge(['usuario' => Str::lower(trim((string) $request->input('usuario')))]);
 
         $data = $request->validate([
             'nombre' => ['required','string','min:3','max:180'],
+            'usuario' => ['required','string','alpha_dash','min:4','max:40','not_regex:/^\d+$/','unique:usuarios,usuario'],
             'telefono' => ['required','regex:/^[0-9]{7,15}$/','unique:clientes,telefono','unique:usuarios,telefono'],
             'whatsapp' => ['nullable','regex:/^[0-9]{7,15}$/'],
             'ci' => ['required','string','max:50','unique:clientes,documento'],
@@ -75,6 +77,11 @@ class OnboardingController extends Controller
             'resumen' => ['nullable','string','max:5000'],
         ], [
             'nombre.required' => 'Ingresa tu nombre completo.',
+            'usuario.required' => 'Crea un nombre de usuario para ingresar a VITI.',
+            'usuario.alpha_dash' => 'El usuario solo puede contener letras, números, guiones y guiones bajos.',
+            'usuario.min' => 'El usuario debe tener al menos 4 caracteres.',
+            'usuario.not_regex' => 'El usuario debe incluir al menos una letra.',
+            'usuario.unique' => 'Ese nombre de usuario ya está registrado.',
             'telefono.required' => 'Ingresa tu número de teléfono.',
             'telefono.regex' => 'El teléfono debe contener entre 7 y 15 dígitos.',
             'telefono.unique' => 'Ese número de teléfono ya está registrado en VITI.',
@@ -127,10 +134,10 @@ class OnboardingController extends Controller
                     'canal_origen' => 'viti',
                 ]);
 
-                Usuario::create([
+                $usuario = Usuario::create([
                     'cliente_id' => $cliente->id,
                     'nombre' => trim($data['nombre']),
-                    'usuario' => 'cli_'.$cliente->id,
+                    'usuario' => $data['usuario'],
                     'telefono' => $data['telefono'],
                     'password' => $data['password'],
                     'rol' => 'cliente',
@@ -147,6 +154,11 @@ class OnboardingController extends Controller
                     'ciudad' => $data['empresa_ciudad'] ?? $data['ciudad'],
                     'direccion' => $data['empresa_direccion'] ?? $data['direccion'] ?? null,
                     'estado' => 'pendiente_revision',
+                ]);
+
+                $empresa->usuarios()->attach($usuario->id, [
+                    'rol_negocio' => 'propietario',
+                    'activo' => true,
                 ]);
 
                 $solicitud = SolicitudSistema::create([
