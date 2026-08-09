@@ -33,10 +33,18 @@ class UsuarioController extends Controller
     {
         $this->normalizeUsername($request);
         $data = $this->data($request, $usuario);
+
+        if ($usuario->isSuperAdmin()) {
+            $data['rol'] = 'superadmin';
+            $data['estado'] = 'activo';
+        } elseif ($usuario->cliente_id || $usuario->rol === 'cliente') {
+            $data['rol'] = 'cliente';
+        }
+
         if (empty($data['password'])) unset($data['password']);
         $usuario->update($data);
-        Audit::log($request, 'usuario_actualizado', $usuario, 'Se actualizó un usuario interno.');
-        return response()->json(['data'=>$usuario]);
+        Audit::log($request, 'usuario_actualizado', $usuario, 'Se actualizó una cuenta sin modificar su tipo de acceso protegido.');
+        return response()->json(['data'=>$usuario->fresh()]);
     }
 
     public function destroy(Request $request, Usuario $usuario, AccountDeletionService $deletion): JsonResponse
@@ -56,6 +64,18 @@ class UsuarioController extends Controller
 
     private function data(Request $request, ?Usuario $usuario=null): array
     {
+        $protectedRole = $usuario?->isSuperAdmin()
+            ? 'superadmin'
+            : (($usuario?->cliente_id || $usuario?->rol === 'cliente') ? 'cliente' : null);
+
+        $roleRules = $protectedRole
+            ? ['required', Rule::in([$protectedRole])]
+            : ['required', Rule::in(['administrador','soporte'])];
+
+        $stateRules = $usuario?->isSuperAdmin()
+            ? ['required', Rule::in(['activo'])]
+            : ['nullable', Rule::in(['activo','inactivo'])];
+
         return $request->validate([
             'nombre'=>['required','string','max:120'],
             'apellido'=>['nullable','string','max:120'],
@@ -63,8 +83,17 @@ class UsuarioController extends Controller
             'telefono'=>['nullable','string','max:30',Rule::unique('usuarios','telefono')->ignore($usuario?->id)],
             'correo'=>['nullable','email','max:160',Rule::unique('usuarios','correo')->ignore($usuario?->id)],
             'password'=>$usuario ? ['nullable','confirmed',Password::min(12)->letters()->mixedCase()->numbers()] : ['required','confirmed',Password::min(12)->letters()->mixedCase()->numbers()],
-            'rol'=>['required',Rule::in(['superadmin','administrador','soporte'])],
-            'estado'=>['nullable',Rule::in(['activo','inactivo'])],
+            'rol'=>$roleRules,
+            'estado'=>$stateRules,
+        ], [
+            'rol.in' => $protectedRole === 'cliente'
+                ? 'Una cuenta de cliente no puede convertirse en administrador.'
+                : ($protectedRole === 'superadmin'
+                    ? 'La cuenta principal debe conservar el rol de superadministrador.'
+                    : 'Solo puedes crear usuarios internos con rol administrador o soporte.'),
+            'estado.in' => $protectedRole === 'superadmin'
+                ? 'La cuenta principal del superadministrador debe permanecer activa.'
+                : 'Selecciona un estado válido.',
         ]);
     }
 
