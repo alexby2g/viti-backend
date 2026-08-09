@@ -19,14 +19,21 @@ class ClientAppsController extends Controller
 
         $items = $apps->map(function (Aplicacion $app) use ($lifecycle): array {
             $cycle = $lifecycle->status($app);
-            $route = $app->catalogo?->ruta_base;
+            $internalRoute = $app->catalogo?->ruta_base;
+            $externalUrl = filter_var($app->url, FILTER_VALIDATE_URL) && str_starts_with((string)$app->url, 'https://')
+                ? $app->url
+                : null;
+            $route = $internalRoute ?: ($externalUrl ? '/apps/externa/'.$app->id : null);
+            $canOpen = (bool)$app->acceso_cliente && (bool)$cycle['puede_usar'];
             return [
                 'id'=>$app->id,'nombre'=>$app->nombre,'slug'=>$app->slug,'version'=>$app->version,'entorno'=>$app->entorno,
                 'estado'=>$app->estado,'estado_servicio'=>$cycle['estado'],'estado_mensaje'=>$cycle['mensaje'],'puede_usar'=>$cycle['puede_usar'],
                 'acceso_cliente'=>(bool)$app->acceso_cliente,'entregado_at'=>$app->entregado_at,'empresa'=>$app->empresa,'catalogo'=>$app->catalogo,
                 'proyecto'=>$app->proyecto ? ['codigo'=>$app->proyecto->codigo,'nombre'=>$app->proyecto->nombre,'fase'=>$app->proyecto->fase,'estado'=>$app->proyecto->estado,'progreso'=>$app->proyecto->progreso] : null,
                 'suscripcion'=>$cycle['suscripcion'] ?? null,
-                'ruta'=>$app->acceso_cliente && $cycle['puede_usar'] ? $route : null,
+                'ruta'=>$canOpen ? $route : null,
+                'es_externa'=>(bool)$externalUrl && !$internalRoute,
+                'url_externa'=>$canOpen && $externalUrl ? $externalUrl : null,
             ];
         })->values();
 
