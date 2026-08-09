@@ -7,6 +7,7 @@ use App\Support\Audit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
 
 class SetupController extends Controller
@@ -19,12 +20,13 @@ class SetupController extends Controller
     public function store(Request $request): JsonResponse
     {
         abort_if(Usuario::query()->exists(), 409, 'La configuración inicial ya fue completada.');
+        $request->merge(['usuario' => Str::lower(trim((string) $request->input('usuario')))]);
 
         $data = $request->validate([
             'codigo_secreto' => ['required', 'string', 'max:120'],
             'nombre' => ['required', 'string', 'max:120'],
             'apellido' => ['nullable', 'string', 'max:120'],
-            'usuario' => ['required', 'string', 'alpha_dash', 'min:4', 'max:80', 'unique:usuarios,usuario'],
+            'usuario' => ['required', 'string', 'alpha_dash', 'min:4', 'max:80', 'not_regex:/^\d+$/', 'unique:usuarios,usuario'],
             'telefono' => ['required', 'regex:/^[0-9]{7,15}$/', 'unique:usuarios,telefono'],
             'password' => ['required', 'confirmed', Password::min(12)->letters()->mixedCase()->numbers()],
         ], [

@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{AplicacionController,ArchivoController,AtencionSesionController,AuditoriaController,AuthController,BuzonController,ClientAppsController,ClientAuthController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,OnboardingController,PeluqueriaController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,StorageController,PublicSolicitudController};
+use App\Http\Controllers\{AplicacionController,ArchivoController,AtencionSesionController,AuditoriaController,AuthController,BuzonController,ClientAppsController,ClientAuthController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,OnboardingController,PeluqueriaController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,StorageController,PublicSolicitudController,UsuarioController};
 use Illuminate\Support\Facades\Route;
 
 Route::get('health', fn () => ['status'=>'ok','service'=>'VITI Core API','time'=>now()->toIso8601String()]);
@@ -80,6 +80,7 @@ Route::prefix('v1')->group(function (): void {
             Route::post('clientes/registro-completo', [ClienteController::class,'storeComplete']);
             Route::apiResource('clientes', ClienteController::class)->parameters(['clientes' => 'cliente']);
             Route::put('clientes/{cliente}/verificar-foto', [ClienteController::class,'verifyPhoto']);
+            Route::apiResource('usuarios', UsuarioController::class)->parameters(['usuarios' => 'usuario'])->except('show');
             Route::apiResource('empresas', EmpresaController::class)->parameters(['empresas' => 'empresa']);
             Route::post('empresas/{empresa}/logo', [EmpresaController::class,'uploadLogo']);
 

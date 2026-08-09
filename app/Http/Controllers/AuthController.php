@@ -8,6 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Throwable;
 
 class AuthController extends Controller
@@ -31,9 +32,13 @@ class AuthController extends Controller
             'password.required'=>'Ingresa tu contraseña.',
         ]);
 
+        $access = trim($data['acceso']);
+        $username = Str::lower($access);
+        $phone = preg_replace('/\D+/', '', $access);
+
         $usuario = Usuario::query()
             ->where('estado','activo')
-            ->where(fn ($q) => $q->where('usuario',$data['acceso'])->orWhere('telefono',$data['acceso']))
+            ->where(fn ($q) => $q->whereRaw('LOWER(usuario) = ?', [$username])->orWhere('telefono',$phone))
             ->first();
 
         if (!$usuario || !Hash::check($data['password'], $usuario->password)) {

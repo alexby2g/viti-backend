@@ -7,6 +7,7 @@ use App\Support\Audit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class MobileAuthController extends Controller
 {
@@ -20,10 +21,14 @@ class MobileAuthController extends Controller
             'password.required' => 'Ingresa tu contraseña.',
         ]);
 
+        $access = trim($data['acceso']);
+        $username = Str::lower($access);
+        $phone = preg_replace('/\D+/', '', $access);
+
         $usuario = Usuario::query()
             ->where('estado', 'activo')
             ->where('rol', 'cliente')
-            ->where(fn ($q) => $q->where('usuario', $data['acceso'])->orWhere('telefono', $data['acceso']))
+            ->where(fn ($q) => $q->whereRaw('LOWER(usuario) = ?', [$username])->orWhere('telefono', $phone))
             ->first();
 
         if (!$usuario || !Hash::check($data['password'], $usuario->password)) {
