@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Throwable;
 
@@ -59,9 +60,9 @@ class OnboardingController extends Controller
         $data = $request->validate([
             'nombre' => ['required','string','min:3','max:180'],
             'usuario' => ['required','string','alpha_dash','min:4','max:40','not_regex:/^\d+$/','unique:usuarios,usuario'],
-            'telefono' => ['required','regex:/^[0-9]{7,15}$/','unique:clientes,telefono','unique:usuarios,telefono'],
+            'telefono' => ['required','regex:/^[0-9]{7,15}$/',Rule::unique('usuarios','telefono')],
             'whatsapp' => ['nullable','regex:/^[0-9]{7,15}$/'],
-            'ci' => ['required','string','max:50','unique:clientes,documento'],
+            'ci' => ['required','string','max:50'],
             'ci_expedido' => ['nullable','string','max:20'],
             'ciudad' => ['required','string','max:100'],
             'direccion' => ['nullable','string','max:255'],
@@ -120,19 +121,56 @@ class OnboardingController extends Controller
                 $questionnaireId = Cuestionario::query()->where('activo', true)->value('id');
                 abort_unless($questionnaireId, 422, 'VITI no tiene un cuestionario activo en este momento.');
 
-                $cliente = Cliente::create([
-                    'nombre' => trim($data['nombre']),
-                    'telefono' => $data['telefono'],
-                    'whatsapp' => $data['whatsapp'] ?? $data['telefono'],
-                    'documento' => trim($data['ci']),
-                    'ci_expedido' => $data['ci_expedido'] ?? null,
-                    'ciudad' => trim($data['ciudad']),
-                    'direccion' => $data['direccion'] ?? null,
-                    'foto_path' => $photoPath,
-                    'perfil_completo_at' => $photoPath ? now() : null,
-                    'estado' => 'formulario_en_proceso',
-                    'canal_origen' => 'viti',
-                ]);
+                $document = trim($data['ci']);
+                $cliente = Cliente::query()->where('telefono', $data['telefono'])->lockForUpdate()->first();
+                $documentOwner = Cliente::query()->where('documento', $document)->lockForUpdate()->first();
+
+                abort_if(
+                    $documentOwner && (!$cliente || (int) $documentOwner->id !== (int) $cliente->id),
+                    422,
+                    'Ese número de cédula ya está registrado con otro cliente.'
+                );
+
+                if ($cliente) {
+                    abort_if(
+                        filled($cliente->documento) && $cliente->documento !== $document,
+                        422,
+                        'La cédula no coincide con la ficha existente para ese teléfono.'
+                    );
+                    abort_if(
+                        Usuario::query()->where('cliente_id', $cliente->id)->exists(),
+                        422,
+                        'Este cliente ya tiene una cuenta. Ingresa a VITI con su usuario y contraseña.'
+                    );
+
+                    $oldPhotoPath = $cliente->foto_path;
+                    $cliente->update([
+                        'nombre' => trim($data['nombre']),
+                        'whatsapp' => $data['whatsapp'] ?? $data['telefono'],
+                        'documento' => $document,
+                        'ci_expedido' => $data['ci_expedido'] ?? $cliente->ci_expedido,
+                        'ciudad' => trim($data['ciudad']),
+                        'direccion' => $data['direccion'] ?? $cliente->direccion,
+                        'foto_path' => $photoPath ?: $cliente->foto_path,
+                        'perfil_completo_at' => $photoPath ? now() : $cliente->perfil_completo_at,
+                        'estado' => 'formulario_en_proceso',
+                    ]);
+                } else {
+                    $oldPhotoPath = null;
+                    $cliente = Cliente::create([
+                        'nombre' => trim($data['nombre']),
+                        'telefono' => $data['telefono'],
+                        'whatsapp' => $data['whatsapp'] ?? $data['telefono'],
+                        'documento' => $document,
+                        'ci_expedido' => $data['ci_expedido'] ?? null,
+                        'ciudad' => trim($data['ciudad']),
+                        'direccion' => $data['direccion'] ?? null,
+                        'foto_path' => $photoPath,
+                        'perfil_completo_at' => $photoPath ? now() : null,
+                        'estado' => 'formulario_en_proceso',
+                        'canal_origen' => 'viti',
+                    ]);
+                }
 
                 $usuario = Usuario::create([
                     'cliente_id' => $cliente->id,
@@ -144,35 +182,67 @@ class OnboardingController extends Controller
                     'estado' => 'activo',
                 ]);
 
-                $empresa = Empresa::create([
-                    'cliente_id' => $cliente->id,
-                    'codigo' => Code::next('empresas','EMP'),
-                    'nombre_comercial' => trim($data['empresa_nombre']),
+                $companyName = trim($data['empresa_nombre']);
+                $empresa = Empresa::query()
+                    ->where('cliente_id', $cliente->id)
+                    ->whereRaw('LOWER(nombre_comercial) = ?', [Str::lower($companyName)])
+                    ->lockForUpdate()
+                    ->first();
+
+                $companyData = [
                     'actividad' => $data['empresa_actividad'] ?? null,
                     'telefono' => $data['empresa_telefono'] ?? $data['telefono'],
                     'whatsapp' => $data['empresa_whatsapp'] ?? ($data['whatsapp'] ?? $data['telefono']),
                     'ciudad' => $data['empresa_ciudad'] ?? $data['ciudad'],
                     'direccion' => $data['empresa_direccion'] ?? $data['direccion'] ?? null,
-                    'estado' => 'pendiente_revision',
-                ]);
+                ];
 
-                $empresa->usuarios()->attach($usuario->id, [
+                if ($empresa) {
+                    $empresa->update(array_filter($companyData, fn ($value) => filled($value)));
+                } else {
+                    $empresa = Empresa::create(array_merge($companyData, [
+                        'cliente_id' => $cliente->id,
+                        'codigo' => Code::next('empresas','EMP'),
+                        'nombre_comercial' => $companyName,
+                        'estado' => 'pendiente_revision',
+                    ]));
+                }
+
+                $empresa->usuarios()->syncWithoutDetaching([$usuario->id => [
                     'rol_negocio' => 'propietario',
                     'activo' => true,
-                ]);
+                ]]);
 
-                $solicitud = SolicitudSistema::create([
-                    'empresa_id' => $empresa->id,
-                    'cliente_id' => $cliente->id,
-                    'cuestionario_id' => $questionnaireId,
-                    'codigo' => Code::next('solicitudes_sistema','SOL'),
-                    'public_token' => Str::random(48),
-                    'publico_habilitado' => true,
-                    'titulo' => trim($data['titulo_sistema']),
-                    'resumen' => $data['resumen'] ?? null,
-                    'estado' => 'borrador',
-                    'prioridad' => 'normal',
-                ]);
+                $requestTitle = trim($data['titulo_sistema']);
+                $solicitud = SolicitudSistema::query()
+                    ->where('cliente_id', $cliente->id)
+                    ->where('empresa_id', $empresa->id)
+                    ->whereRaw('LOWER(titulo) = ?', [Str::lower($requestTitle)])
+                    ->whereIn('estado', ['borrador','en_revision'])
+                    ->latest('id')
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($solicitud) {
+                    $solicitud->update([
+                        'public_token' => $solicitud->public_token ?: Str::random(48),
+                        'publico_habilitado' => true,
+                        'resumen' => $solicitud->resumen ?: ($data['resumen'] ?? null),
+                    ]);
+                } else {
+                    $solicitud = SolicitudSistema::create([
+                        'empresa_id' => $empresa->id,
+                        'cliente_id' => $cliente->id,
+                        'cuestionario_id' => $questionnaireId,
+                        'codigo' => Code::next('solicitudes_sistema','SOL'),
+                        'public_token' => Str::random(48),
+                        'publico_habilitado' => true,
+                        'titulo' => $requestTitle,
+                        'resumen' => $data['resumen'] ?? null,
+                        'estado' => 'borrador',
+                        'prioridad' => 'normal',
+                    ]);
+                }
 
                 $locked->update([
                     'estado' => 'usada',
@@ -181,7 +251,7 @@ class OnboardingController extends Controller
                     'usada_at' => now(),
                 ]);
 
-                return [$cliente, $empresa, $solicitud];
+                return [$cliente, $empresa, $solicitud, $oldPhotoPath];
             });
         } catch (Throwable $e) {
             if ($photoPath) {
@@ -190,7 +260,11 @@ class OnboardingController extends Controller
             throw $e;
         }
 
-        [$cliente, $empresa, $solicitud] = $result;
+        [$cliente, $empresa, $solicitud, $oldPhotoPath] = $result;
+
+        if ($photoPath && $oldPhotoPath && $oldPhotoPath !== $photoPath) {
+            try { Storage::disk('public')->delete($oldPhotoPath); } catch (Throwable) {}
+        }
 
         return response()->json([
             'message' => 'Tu registro fue creado. Ahora completa el cuestionario de tu sistema.',
