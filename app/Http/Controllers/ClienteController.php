@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{Cliente, Empresa};
+use App\Services\AccountDeletionService;
 use App\Support\{Audit, Code};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -104,12 +105,15 @@ class ClienteController extends Controller
         return response()->json(['data'=>$cliente->fresh()]);
     }
 
-    public function destroy(Request $request, Cliente $cliente): JsonResponse
+    public function destroy(Request $request, Cliente $cliente, AccountDeletionService $deletion): JsonResponse
     {
-        abort_if($cliente->empresas()->exists()||$cliente->solicitudes()->exists(),422,'No se puede eliminar un cliente con empresas o solicitudes.');
-        $cliente->delete();
-        Audit::log($request,'cliente_eliminado',$cliente,'Cliente enviado a papelera.');
-        return response()->json(status:204);
+        $name = $cliente->nombre;
+        $summary = $deletion->deleteClient($cliente);
+        Audit::log($request,'cliente_eliminado_cascada',null,'Se eliminó a '.$name.' junto con su cuenta y datos relacionados.',$summary);
+        return response()->json([
+            'message'=>'El cliente, su cuenta, empresas, solicitudes y datos relacionados fueron eliminados.',
+            'data'=>$summary,
+        ]);
     }
 
     private function validateData(Request $request, ?Cliente $cliente=null): array
