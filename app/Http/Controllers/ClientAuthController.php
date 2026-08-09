@@ -9,6 +9,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Throwable;
 
@@ -16,8 +18,10 @@ class ClientAuthController extends Controller
 {
     public function register(Request $request): JsonResponse
     {
+        $request->merge(['usuario' => Str::lower(trim((string) $request->input('usuario')))]);
         $data = $request->validate([
             'nombre' => ['required','string','max:120'],
+            'usuario' => ['required','string','alpha_dash','min:4','max:40','not_regex:/^\d+$/',Rule::unique('usuarios','usuario')],
             'telefono' => ['required','regex:/^[0-9]{7,15}$/','unique:clientes,telefono','unique:usuarios,telefono'],
             'whatsapp' => ['nullable','regex:/^[0-9]{7,15}$/'],
             'ci' => ['required','string','max:50','unique:clientes,documento'],
@@ -29,6 +33,11 @@ class ClientAuthController extends Controller
             'canal_origen' => ['nullable','in:viti,agr_studio,referido,whatsapp,otro'],
         ], [
             'nombre.required' => 'Ingresa tu nombre completo.',
+            'usuario.required' => 'Crea un nombre de usuario para ingresar a VITI.',
+            'usuario.alpha_dash' => 'El usuario solo puede contener letras, números, guiones y guiones bajos.',
+            'usuario.min' => 'El usuario debe tener al menos 4 caracteres.',
+            'usuario.not_regex' => 'El usuario debe incluir al menos una letra.',
+            'usuario.unique' => 'Ese nombre de usuario ya está registrado.',
             'telefono.required' => 'Ingresa tu número de teléfono.',
             'telefono.regex' => 'El teléfono debe contener entre 7 y 15 dígitos.',
             'telefono.unique' => 'Ese número de teléfono ya está registrado.',
@@ -74,7 +83,7 @@ class ClientAuthController extends Controller
                 $usuario = Usuario::create([
                     'cliente_id' => $cliente->id,
                     'nombre' => trim($data['nombre']),
-                    'usuario' => 'cli_'.$cliente->id,
+                    'usuario' => $data['usuario'],
                     'telefono' => $data['telefono'],
                     'password' => $data['password'],
                     'rol' => 'cliente',
