@@ -15,7 +15,7 @@ class ClientElectrofrioController extends Controller
         $app = Aplicacion::query()
             ->where('empresa_id', $empresa->id)
             ->whereHas('catalogo', fn ($query) => $query->where('clave', 'electrofrio'))
-            ->with(['empresa:id,nombre_comercial,actividad,ciudad,direccion', 'proyecto', 'catalogo', 'suscripcion'])
+            ->with(['empresa.planViti', 'proyecto', 'catalogo', 'suscripcion'])
             ->latest()
             ->first();
 
@@ -46,6 +46,12 @@ class ClientElectrofrioController extends Controller
         return response()->json(['data' => [
             'empresa' => $app->empresa,
             'aplicacion' => $app,
+            'plan' => $app->empresa->planViti ? [
+                'codigo' => $app->empresa->planViti->codigo,
+                'nombre' => $app->empresa->planViti->nombre,
+                'precio_proyecto' => $app->empresa->planViti->precio_proyecto,
+                'modulos' => $app->empresa->planViti->modulos,
+            ] : null,
             'proyecto' => $app->proyecto ? [
                 'codigo' => $app->proyecto->codigo,
                 'nombre' => $app->proyecto->nombre,
