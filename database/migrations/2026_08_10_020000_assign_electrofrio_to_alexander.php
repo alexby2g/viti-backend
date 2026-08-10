@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     private const USERNAME = 'alexander_electrofrio';
-    private const PASSWORD_HASH = '$2b$12$/Mz/mmtZ0XBJL333YA1LFOgDJcITft68GdSeIfl6x84U22/uS5ZA6';
+    private const PASSWORD_HASH = '$argon2id$v=19$m=65536,t=4,p=1$Moz9lY0eJOW3YU3/ont6yQ$S0BZdrqr6L3xWGGTQT+B2Gq5VxXXxHROQzZyy3hB9NY';
 
     public function up(): void
     {
