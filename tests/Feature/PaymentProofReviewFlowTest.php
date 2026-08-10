@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Models\{Cliente,Empresa,Proyecto,Usuario};
+use App\Models\{Aplicacion,CatalogoAplicacion,Cliente,Empresa,Proyecto,Suscripcion,Usuario};
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -98,6 +98,74 @@ class PaymentProofReviewFlowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.proyectos.0.pagado',0)
             ->assertJsonPath('data.proyectos.0.siguiente_pago.puede_enviar',true);
+    }
+
+    public function test_subscription_proof_is_separate_and_only_extends_access_after_confirmation(): void
+    {
+        Storage::fake('private_uploads');
+        [$clientUser,$admin,$company,$project]=$this->scenario();
+
+        $catalog=CatalogoAplicacion::create([
+            'clave'=>'servicio-tecnico-pago-test',
+            'nombre'=>'Servicio Técnico Test',
+            'descripcion'=>'App para probar cobros.',
+            'icono'=>'computer',
+            'tipo'=>'web',
+            'ruta_base'=>'/apps/servicio-tecnico',
+            'activo'=>true,
+            'solicitable'=>false,
+            'orden'=>90,
+        ]);
+        $app=Aplicacion::create([
+            'empresa_id'=>$company->id,
+            'proyecto_id'=>$project->id,
+            'catalogo_aplicacion_id'=>$catalog->id,
+            'nombre'=>'Soporte Vital PC',
+            'slug'=>'soporte-vital-pago-test',
+            'version'=>'0.5.0',
+            'tipo'=>'web',
+            'entorno'=>'beta',
+            'estado'=>'en_pruebas',
+            'acceso_cliente'=>true,
+        ]);
+        $subscription=Suscripcion::create([
+            'aplicacion_id'=>$app->id,
+            'empresa_id'=>$company->id,
+            'plan'=>'Plan Profesional',
+            'monto'=>50,
+            'frecuencia'=>'mensual',
+            'moneda'=>'BOB',
+            'fecha_inicio'=>now()->subDays(20)->toDateString(),
+            'prueba_hasta'=>now()->subDays(7)->toDateString(),
+            'primer_cobro_monto'=>40,
+            'primer_cobro_desde'=>now()->subDays(6)->toDateString(),
+            'primer_cobro_hasta'=>now()->endOfMonth()->toDateString(),
+            'primer_cobro_pagado'=>false,
+            'fecha_vencimiento'=>now()->endOfMonth()->toDateString(),
+            'dias_gracia'=>7,
+            'estado'=>'activa',
+        ]);
+
+        $response=$this->actingAs($clientUser)
+            ->withHeader('X-VITI-Empresa',(string)$company->id)
+            ->post('/api/v1/mi/pagos/suscripciones/'.$subscription->id.'/comprobante',[
+                'monto'=>40,
+                'metodo'=>'qr',
+                'fecha_pago'=>now()->toDateString(),
+                'comprobante'=>UploadedFile::fake()->image('suscripcion.png',700,700),
+            ]);
+
+        $response->assertCreated()->assertJsonPath('data.estado_revision','pendiente_revision');
+        $paymentId=(int)$response->json('data.id');
+        $this->assertDatabaseHas('suscripcion_pagos',['id'=>$paymentId,'suscripcion_id'=>$subscription->id,'estado_revision'=>'pendiente_revision','origen'=>'cliente']);
+        $this->assertDatabaseHas('suscripciones',['id'=>$subscription->id,'primer_cobro_pagado'=>false]);
+
+        $this->actingAs($admin)
+            ->postJson('/api/v1/pagos/suscripcion-pagos/'.$paymentId.'/confirmar')
+            ->assertOk();
+
+        $this->assertDatabaseHas('suscripcion_pagos',['id'=>$paymentId,'estado_revision'=>'confirmado']);
+        $this->assertDatabaseHas('suscripciones',['id'=>$subscription->id,'primer_cobro_pagado'=>true]);
     }
 
     private function scenario(): array
