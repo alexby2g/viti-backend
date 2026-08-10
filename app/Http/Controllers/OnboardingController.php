@@ -55,14 +55,17 @@ class OnboardingController extends Controller
     public function register(Request $request, string $token): JsonResponse
     {
         $invitation = $this->resolveInvitation($token);
-        $request->merge(['usuario' => Str::lower(trim((string) $request->input('usuario')))]);
+        $request->merge([
+            'usuario' => Str::lower(trim((string) $request->input('usuario'))),
+            'ci' => preg_replace('/\D+/', '', (string) $request->input('ci')),
+        ]);
 
         $data = $request->validate([
             'nombre' => ['required','string','min:3','max:180'],
             'usuario' => ['required','string','alpha_dash','min:4','max:40','not_regex:/^\d+$/','unique:usuarios,usuario'],
             'telefono' => ['required','regex:/^[0-9]{7,15}$/',Rule::unique('usuarios','telefono')],
             'whatsapp' => ['nullable','regex:/^[0-9]{7,15}$/'],
-            'ci' => ['required','string','max:50'],
+            'ci' => ['required','regex:/^[0-9]{5,15}$/',Rule::unique('usuarios','documento')],
             'ci_expedido' => ['nullable','string','max:20'],
             'ciudad' => ['required','string','max:100'],
             'direccion' => ['nullable','string','max:255'],
@@ -88,6 +91,7 @@ class OnboardingController extends Controller
             'telefono.unique' => 'Ese número de teléfono ya está registrado en VITI.',
             'whatsapp.regex' => 'El número de WhatsApp debe contener entre 7 y 15 dígitos.',
             'ci.required' => 'Ingresa tu número de cédula de identidad.',
+            'ci.regex' => 'El CI debe contener entre 5 y 15 dígitos.',
             'ci.unique' => 'Ese número de cédula ya está registrado.',
             'ciudad.required' => 'Indica tu ciudad o localidad.',
             'password.required' => 'Crea una contraseña para tu cuenta VITI.',
@@ -176,6 +180,7 @@ class OnboardingController extends Controller
                     'cliente_id' => $cliente->id,
                     'nombre' => trim($data['nombre']),
                     'usuario' => $data['usuario'],
+                    'documento' => $document,
                     'telefono' => $data['telefono'],
                     'password' => $data['password'],
                     'rol' => 'cliente',

@@ -8,9 +8,9 @@ use Illuminate\Support\Facades\Storage;
 class Mensaje extends Model
 {
     protected $table='mensajes';
-    protected $fillable=['conversacion_id','usuario_id','tipo','mensaje','archivo_path','archivo_nombre','archivo_mime','archivo_tamano','leido_at'];
-    protected $casts=['leido_at'=>'datetime','archivo_tamano'=>'integer'];
-    protected $appends=['archivo_url'];
+    protected $fillable=['conversacion_id','usuario_id','tipo','mensaje','archivo_path','archivo_nombre','archivo_mime','archivo_tamano','client_request_id','entregado_at','leido_at','editado_at','eliminado_at','eliminado_por_usuario_id'];
+    protected $casts=['entregado_at'=>'datetime','leido_at'=>'datetime','editado_at'=>'datetime','eliminado_at'=>'datetime','archivo_tamano'=>'integer'];
+    protected $appends=['archivo_url','eliminado'];
 
     public function conversacion(){return $this->belongsTo(Conversacion::class);}
     public function usuario(){return $this->belongsTo(Usuario::class);}
@@ -25,5 +25,10 @@ class Mensaje extends Model
                 return null;
             }
         });
+    }
+
+    protected function eliminado(): Attribute
+    {
+        return Attribute::get(fn (): bool => (bool) $this->eliminado_at);
     }
 }
