@@ -15,66 +15,104 @@ class PaymentReviewController extends Controller
 {
     public function confirmarProyecto(Request $request, ProyectoPago $pago): JsonResponse
     {
-        abort_unless($pago->estado_revision === 'pendiente_revision',422,'Este comprobante ya fue revisado.');
+        $paymentId = (int) $pago->id;
+        $projectId = (int) $pago->proyecto_id;
 
-        DB::transaction(function () use ($request,$pago): void {
-            $pago->update([
+        DB::transaction(function () use ($request,$paymentId,$projectId): void {
+            // El proyecto se bloquea primero para serializar cualquier cambio contable
+            // relacionado con él. Así un doble clic no procesa dos veces el mismo pago.
+            $project = Proyecto::query()->lockForUpdate()->findOrFail($projectId);
+            $locked = ProyectoPago::query()->lockForUpdate()->findOrFail($paymentId);
+            abort_unless($locked->estado_revision === 'pendiente_revision',422,'Este comprobante ya fue revisado.');
+
+            $locked->update([
                 'estado_revision'=>'confirmado',
                 'revisado_at'=>now(),
                 'revisado_por'=>$request->user()->id,
                 'motivo_revision'=>null,
             ]);
-            Empresa::whereKey($pago->empresa_id)->update(['metodo_pago_preferido'=>$pago->metodo]);
-            $this->refreshProject($pago->proyecto()->firstOrFail());
-        });
+            Empresa::whereKey($locked->empresa_id)->update(['metodo_pago_preferido'=>$locked->metodo]);
+            $this->refreshProject($project);
+        }, 3);
 
-        return response()->json(['message'=>'Pago confirmado. El saldo del proyecto fue actualizado.','data'=>$pago->fresh()->load(['pagador:id,nombre,apellido','revisor:id,nombre,apellido'])]);
+        return response()->json([
+            'message'=>'Pago confirmado. El saldo del proyecto fue actualizado.',
+            'data'=>ProyectoPago::query()->findOrFail($paymentId)->load(['pagador:id,nombre,apellido','revisor:id,nombre,apellido']),
+        ]);
     }
 
     public function rechazarProyecto(Request $request, ProyectoPago $pago): JsonResponse
     {
-        abort_unless($pago->estado_revision === 'pendiente_revision',422,'Este comprobante ya fue revisado.');
         $data=$request->validate(['motivo'=>['required','string','min:5','max:500']]);
-        $pago->update([
-            'estado_revision'=>'rechazado',
-            'revisado_at'=>now(),
-            'revisado_por'=>$request->user()->id,
-            'motivo_revision'=>$data['motivo'],
+        $paymentId = (int) $pago->id;
+
+        DB::transaction(function () use ($request,$data,$paymentId): void {
+            $locked = ProyectoPago::query()->lockForUpdate()->findOrFail($paymentId);
+            abort_unless($locked->estado_revision === 'pendiente_revision',422,'Este comprobante ya fue revisado.');
+            $locked->update([
+                'estado_revision'=>'rechazado',
+                'revisado_at'=>now(),
+                'revisado_por'=>$request->user()->id,
+                'motivo_revision'=>$data['motivo'],
+            ]);
+        }, 3);
+
+        return response()->json([
+            'message'=>'Comprobante rechazado. El cliente podrá ver el motivo y enviar uno nuevo.',
+            'data'=>ProyectoPago::query()->findOrFail($paymentId)->load(['pagador:id,nombre,apellido','revisor:id,nombre,apellido']),
         ]);
-        return response()->json(['message'=>'Comprobante rechazado. El cliente podrá ver el motivo y enviar uno nuevo.','data'=>$pago->fresh()->load(['pagador:id,nombre,apellido','revisor:id,nombre,apellido'])]);
     }
 
     public function confirmarSuscripcion(Request $request, SuscripcionPago $pago, SubscriptionAccessService $access): JsonResponse
     {
-        abort_unless($pago->estado_revision === 'pendiente_revision',422,'Este comprobante ya fue revisado.');
-        $subscription=$pago->suscripcion()->firstOrFail();
+        $paymentId = (int) $pago->id;
+        $subscriptionId = (int) $pago->suscripcion_id;
 
-        DB::transaction(function () use ($request,$pago,$subscription): void {
-            $pago->update([
+        DB::transaction(function () use ($request,$paymentId,$subscriptionId): void {
+            // La suscripción es el recurso contable que cambia de vigencia, por eso
+            // se bloquea junto con el comprobante antes de revisar su estado.
+            $subscription = Suscripcion::query()->lockForUpdate()->findOrFail($subscriptionId);
+            $locked = SuscripcionPago::query()->lockForUpdate()->findOrFail($paymentId);
+            abort_unless($locked->estado_revision === 'pendiente_revision',422,'Este comprobante ya fue revisado.');
+
+            $locked->update([
                 'estado_revision'=>'confirmado',
                 'revisado_at'=>now(),
                 'revisado_por'=>$request->user()->id,
                 'motivo_revision'=>null,
             ]);
-            $this->applySubscriptionPayment($subscription,$pago);
-            Empresa::whereKey($pago->empresa_id)->update(['metodo_pago_preferido'=>$pago->metodo]);
-        });
+            $this->applySubscriptionPayment($subscription,$locked);
+            Empresa::whereKey($locked->empresa_id)->update(['metodo_pago_preferido'=>$locked->metodo]);
+        }, 3);
 
-        $access->refresh($subscription->fresh());
-        return response()->json(['message'=>'Pago de suscripción confirmado. La vigencia fue actualizada.','data'=>$pago->fresh()->load(['pagador:id,nombre,apellido','revisor:id,nombre,apellido'])]);
+        $subscription = Suscripcion::query()->findOrFail($subscriptionId);
+        $access->refresh($subscription);
+        return response()->json([
+            'message'=>'Pago de suscripción confirmado. La vigencia fue actualizada.',
+            'data'=>SuscripcionPago::query()->findOrFail($paymentId)->load(['pagador:id,nombre,apellido','revisor:id,nombre,apellido']),
+        ]);
     }
 
     public function rechazarSuscripcion(Request $request, SuscripcionPago $pago): JsonResponse
     {
-        abort_unless($pago->estado_revision === 'pendiente_revision',422,'Este comprobante ya fue revisado.');
         $data=$request->validate(['motivo'=>['required','string','min:5','max:500']]);
-        $pago->update([
-            'estado_revision'=>'rechazado',
-            'revisado_at'=>now(),
-            'revisado_por'=>$request->user()->id,
-            'motivo_revision'=>$data['motivo'],
+        $paymentId = (int) $pago->id;
+
+        DB::transaction(function () use ($request,$data,$paymentId): void {
+            $locked = SuscripcionPago::query()->lockForUpdate()->findOrFail($paymentId);
+            abort_unless($locked->estado_revision === 'pendiente_revision',422,'Este comprobante ya fue revisado.');
+            $locked->update([
+                'estado_revision'=>'rechazado',
+                'revisado_at'=>now(),
+                'revisado_por'=>$request->user()->id,
+                'motivo_revision'=>$data['motivo'],
+            ]);
+        }, 3);
+
+        return response()->json([
+            'message'=>'Comprobante de suscripción rechazado.',
+            'data'=>SuscripcionPago::query()->findOrFail($paymentId)->load(['pagador:id,nombre,apellido','revisor:id,nombre,apellido']),
         ]);
-        return response()->json(['message'=>'Comprobante de suscripción rechazado.','data'=>$pago->fresh()->load(['pagador:id,nombre,apellido','revisor:id,nombre,apellido'])]);
     }
 
     public function comprobanteProyecto(ProyectoPago $pago): StreamedResponse
