@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\{Cliente,Cuestionario,Empresa,SolicitudSistema};
+use Database\Seeders\CuestionarioSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -13,6 +14,7 @@ class LegacyRequestCompatibilityTest extends TestCase
 
     public function test_existing_request_does_not_require_new_commercial_agreement(): void
     {
+        $this->seed(CuestionarioSeeder::class);
         $questionnaire = Cuestionario::query()->where('activo', true)->firstOrFail();
         $client = Cliente::create([
             'nombre'=>'Cliente antiguo',
