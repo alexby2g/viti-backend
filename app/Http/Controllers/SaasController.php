@@ -73,6 +73,8 @@ class SaasController extends Controller
             'codigo'=>['required','string','max:60',Rule::unique('planes_viti','codigo')->ignore($plan?->id)],'nombre'=>['required','string','max:100'],
             'descripcion'=>['nullable','string','max:2000'],
             'precio_proyecto'=>['nullable','numeric','min:0','max:9999999999'],
+            'precio_mensual'=>['nullable','numeric','min:0','max:9999999999'],
+            'dias_prueba'=>['nullable','integer','min:0','max:60'],
             'modulos'=>['nullable','array'],
             'modulos.*'=>['string',Rule::in(['inicio','agenda','ordenes','clientes','equipos','tecnicos','inventario','pagos','garantias','historial','buzon'])],
             'max_usuarios'=>['nullable','integer','min:1','max:10000'],'max_aplicaciones'=>['nullable','integer','min:1','max:10000'],'activo'=>['sometimes','boolean'],
