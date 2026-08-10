@@ -30,8 +30,8 @@ class ClientPaymentController extends Controller
         [$type,$expected] = $this->projectDue($proyecto);
         abort_if($expected <= 0,422,'Este proyecto no tiene un pago pendiente.');
 
-        $data = $this->validateSubmission($request,$expected);
-        $proof = $this->storeProof($request,'proyectos/'.$proyecto->id,$data['metodo']);
+        $data = $this->validateSubmission($request,$expected,false);
+        $proof = $this->storeProof($request,'proyectos/'.$proyecto->id);
 
         $payment = ProyectoPago::create([
             'proyecto_id'=>$proyecto->id,
@@ -75,8 +75,8 @@ class ClientPaymentController extends Controller
         abort_if($pendingExisting,422,'Ya existe un comprobante de suscripción pendiente de revisión.');
 
         $expected = $this->subscriptionDue($suscripcion);
-        $data = $this->validateSubmission($request,$expected);
-        $proof = $this->storeProof($request,'suscripciones/'.$suscripcion->id,$data['metodo']);
+        $data = $this->validateSubmission($request,$expected,true);
+        $proof = $this->storeProof($request,'suscripciones/'.$suscripcion->id);
 
         $payment = SuscripcionPago::create([
             'suscripcion_id'=>$suscripcion->id,
@@ -118,7 +118,7 @@ class ClientPaymentController extends Controller
         return $this->streamProof($pago->comprobante_path,$pago->comprobante_nombre,$pago->comprobante_mime);
     }
 
-    private function validateSubmission(Request $request, float $expected): array
+    private function validateSubmission(Request $request, float $expected, bool $exactAmount): array
     {
         $data = $request->validate([
             'monto'=>['required','numeric','min:0.01'],
@@ -132,7 +132,12 @@ class ClientPaymentController extends Controller
             'comprobante.mimes'=>'El comprobante debe ser una imagen JPG/PNG/WEBP o un PDF.',
         ]);
 
-        abort_if((float)$data['monto'] > $expected + 0.001,422,'El monto indicado supera el importe pendiente de '.number_format($expected,2).' Bs.');
+        $amount=(float)$data['monto'];
+        if($exactAmount){
+            abort_if(abs($amount-$expected)>0.001,422,'La suscripción requiere el monto exacto de '.number_format($expected,2).' Bs.');
+        }else{
+            abort_if($amount > $expected + 0.001,422,'El monto indicado supera el importe pendiente de '.number_format($expected,2).' Bs.');
+        }
         if ($data['metodo'] !== 'efectivo') {
             abort_unless($request->hasFile('comprobante'),422,'Adjunta el comprobante del pago realizado.');
         }
@@ -160,7 +165,7 @@ class ClientPaymentController extends Controller
         return (float)$subscription->monto;
     }
 
-    private function storeProof(Request $request, string $folder, string $method): array
+    private function storeProof(Request $request, string $folder): array
     {
         if (!$request->hasFile('comprobante')) {
             return ['path'=>null,'name'=>null,'mime'=>null];
