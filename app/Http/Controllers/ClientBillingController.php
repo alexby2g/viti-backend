@@ -16,7 +16,11 @@ class ClientBillingController extends Controller
         $tenants->assertCanManage($request->user(),$empresa);
         $projects = Proyecto::query()
             ->where('empresa_id',$empresa->id)
-            ->with(['empresa:id,nombre_comercial','aplicacion'=>fn($q)=>$q->with('suscripcion.pagos'),'pagos'])
+            ->with([
+                'empresa:id,nombre_comercial,metodo_pago_preferido',
+                'aplicacion'=>fn($q)=>$q->with('suscripcion.pagos.pagador:id,nombre,apellido,usuario,telefono'),
+                'pagos.pagador:id,nombre,apellido,usuario,telefono',
+            ])
             ->latest('id')->get()
             ->map(function (Proyecto $project) use ($access): array {
                 $initialPaid = (float)$project->pagos->where('tipo','anticipo')->sum('monto');
@@ -26,7 +30,12 @@ class ClientBillingController extends Controller
                 $app = $project->aplicacion;
                 $subscription = $app ? $access->statusFor($app) : null;
                 return [
-                    'id'=>$project->id,'codigo'=>$project->codigo,'nombre'=>$project->nombre,'empresa'=>$project->empresa,
+                    'id'=>$project->id,'codigo'=>$project->codigo,'nombre'=>$project->nombre,
+                    'empresa'=>[
+                        'id'=>$project->empresa?->id,
+                        'nombre_comercial'=>$project->empresa?->nombre_comercial,
+                        'metodo_pago_preferido'=>$project->empresa?->metodo_pago_preferido ?: 'qr',
+                    ],
                     'precio_acordado'=>$project->precio_acordado !== null ? (float)$project->precio_acordado : null,
                     'anticipo_monto'=>$project->anticipo_monto !== null ? (float)$project->anticipo_monto : null,
                     'saldo_monto'=>$project->saldo_monto !== null ? (float)$project->saldo_monto : null,
@@ -38,7 +47,11 @@ class ClientBillingController extends Controller
 
         $config = ConfiguracionPago::query()->where('activo',true)->first();
         return response()->json(['data'=>[
-            'negocio'=>['id'=>$empresa->id,'nombre_comercial'=>$empresa->nombre_comercial],
+            'negocio'=>[
+                'id'=>$empresa->id,
+                'nombre_comercial'=>$empresa->nombre_comercial,
+                'metodo_pago_preferido'=>$empresa->metodo_pago_preferido ?: 'qr',
+            ],
             'configuracion'=>$config ? $this->configRow($config) : null,
             'proyectos'=>$projects->values(),
         ]]);
