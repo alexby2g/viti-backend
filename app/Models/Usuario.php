@@ -16,7 +16,7 @@ class Usuario extends Authenticatable
     protected $appends = ['foto_url'];
 
     protected $fillable = [
-        'cliente_id', 'nombre', 'apellido', 'usuario', 'telefono', 'correo', 'foto_path', 'password', 'rol', 'estado', 'ultimo_acceso',
+        'cliente_id', 'nombre', 'apellido', 'usuario', 'documento', 'telefono', 'correo', 'foto_path', 'password', 'rol', 'estado', 'ultimo_acceso',
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -46,4 +46,5 @@ class Usuario extends Authenticatable
     public function alertasSaas(){ return $this->hasMany(AlertaSaas::class,'usuario_id'); }
 
     public function isSuperAdmin(): bool { return $this->rol === 'superadmin'; }
+    public function isPlatformAdmin(): bool { return in_array($this->rol, ['superadmin', 'administrador'], true); }
 }
