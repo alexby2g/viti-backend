@@ -30,13 +30,12 @@ class VitiChatPrivacyTest extends TestCase
             'canal_principal'=>true,
         ]);
 
-        $this->actingAs($secondary)
-            ->getJson('/api/v1/buzon')
-            ->assertForbidden();
-
-        $this->actingAs($secondary)
-            ->getJson('/api/v1/buzon/'.$conversation->id)
-            ->assertForbidden();
+        $this->actingAs($secondary)->getJson('/api/v1/buzon')->assertForbidden();
+        $this->actingAs($secondary)->getJson('/api/v1/buzon/'.$conversation->id)->assertForbidden();
+        $this->actingAs($secondary)->postJson('/api/v1/llamadas',[
+            'conversacion_id'=>$conversation->id,'tipo'=>'audio','offer_sdp'=>'v=0',
+        ])->assertForbidden();
+        $this->actingAs($secondary)->getJson('/api/v1/llamadas/entrante')->assertOk()->assertJsonPath('data',null);
 
         $this->actingAs($secondary)
             ->getJson('/api/v1/notificaciones/buzon')
