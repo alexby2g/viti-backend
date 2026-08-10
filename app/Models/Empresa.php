@@ -11,7 +11,7 @@ class Empresa extends Model
     use SoftDeletes;
 
     protected $table = 'empresas';
-    protected $fillable = ['cliente_id','plan_viti_id','codigo','nombre_comercial','razon_social','actividad','telefono','whatsapp','ciudad','direccion','logo_path','observaciones','estado','moneda','zona_horaria','configuracion'];
+    protected $fillable = ['cliente_id','plan_viti_id','codigo','nombre_comercial','razon_social','actividad','telefono','whatsapp','ciudad','direccion','logo_path','observaciones','estado','moneda','metodo_pago_preferido','zona_horaria','configuracion'];
     protected $appends = ['logo_url'];
     protected $casts = ['configuracion'=>'array'];
 
