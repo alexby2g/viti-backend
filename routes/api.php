@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{AplicacionController,ArchivoController,AtencionSesionController,AuditoriaController,AuthController,BuzonController,ClientAppsController,ClientAuthController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,OnboardingController,PeluqueriaController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,StorageController,PublicSolicitudController,UsuarioController};
+use App\Http\Controllers\{AplicacionController,ArchivoController,AtencionSesionController,AuditoriaController,AuthController,BuzonController,ClientAppsController,ClientAuthController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,ElectrofrioController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,OnboardingController,PeluqueriaController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,StorageController,PublicSolicitudController,UsuarioController};
 use Illuminate\Support\Facades\Route;
 
 Route::get('health', fn () => ['status'=>'ok','service'=>'VITI Core API','time'=>now()->toIso8601String()]);
@@ -123,6 +123,44 @@ Route::prefix('v1')->group(function (): void {
                 Route::post('atenciones/{id}/finalizar', [PeluqueriaController::class,'finalizarAtencion']);
                 Route::post('atenciones/{id}/pagos', [PeluqueriaController::class,'registrarPago']);
                 Route::get('historial', [PeluqueriaController::class,'historial']);
+            });
+
+            Route::prefix('apps/electrofrio')->group(function (): void {
+                Route::get('resumen', [ElectrofrioController::class, 'resumen']);
+
+                Route::get('clientes', [ElectrofrioController::class, 'clientes']);
+                Route::post('clientes', [ElectrofrioController::class, 'guardarCliente']);
+                Route::put('clientes/{id}', [ElectrofrioController::class, 'actualizarCliente']);
+                Route::delete('clientes/{id}', [ElectrofrioController::class, 'eliminarCliente']);
+
+                Route::get('equipos', [ElectrofrioController::class, 'equipos']);
+                Route::post('equipos', [ElectrofrioController::class, 'guardarEquipo']);
+                Route::put('equipos/{id}', [ElectrofrioController::class, 'actualizarEquipo']);
+                Route::delete('equipos/{id}', [ElectrofrioController::class, 'eliminarEquipo']);
+
+                Route::get('tecnicos', [ElectrofrioController::class, 'tecnicos']);
+                Route::post('tecnicos', [ElectrofrioController::class, 'guardarTecnico']);
+                Route::put('tecnicos/{id}', [ElectrofrioController::class, 'actualizarTecnico']);
+                Route::delete('tecnicos/{id}', [ElectrofrioController::class, 'eliminarTecnico']);
+
+                Route::get('materiales', [ElectrofrioController::class, 'materiales']);
+                Route::post('materiales', [ElectrofrioController::class, 'guardarMaterial']);
+                Route::put('materiales/{id}', [ElectrofrioController::class, 'actualizarMaterial']);
+                Route::delete('materiales/{id}', [ElectrofrioController::class, 'eliminarMaterial']);
+
+                Route::get('ordenes', [ElectrofrioController::class, 'ordenes']);
+                Route::post('ordenes', [ElectrofrioController::class, 'guardarOrden']);
+                Route::put('ordenes/{id}', [ElectrofrioController::class, 'actualizarOrden']);
+                Route::delete('ordenes/{id}', [ElectrofrioController::class, 'eliminarOrden']);
+                Route::post('ordenes/{id}/decision', [ElectrofrioController::class, 'decision']);
+                Route::post('ordenes/{id}/finalizar', [ElectrofrioController::class, 'finalizar']);
+                Route::post('ordenes/{id}/materiales', [ElectrofrioController::class, 'usarMaterial']);
+                Route::delete('ordenes/{orderId}/materiales/{materialId}', [ElectrofrioController::class, 'quitarMaterial']);
+                Route::post('ordenes/{id}/pagos', [ElectrofrioController::class, 'registrarPago']);
+
+                Route::get('pagos', [ElectrofrioController::class, 'pagos']);
+                Route::get('garantias', [ElectrofrioController::class, 'garantias']);
+                Route::get('historial', [ElectrofrioController::class, 'historial']);
             });
 
             Route::get('archivos', [ArchivoController::class,'index']);
