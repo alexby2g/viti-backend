@@ -19,10 +19,17 @@ class AppServiceProvider extends ServiceProvider
         Empresa::observe(EmpresaObserver::class);
         Usuario::observe(UsuarioObserver::class);
         if (app()->environment('production')) URL::forceScheme('https');
+
         RateLimiter::for('login', fn (Request $request) => [
             Limit::perMinute(5)->by(strtolower((string) $request->input('acceso')).'|'.$request->ip()),
             Limit::perHour(30)->by($request->ip()),
         ]);
-        RateLimiter::for('api', fn (Request $request) => Limit::perMinute(120)->by((string) ($request->user()?->id ?: $request->ip())));
+
+        RateLimiter::for('api', function (Request $request): Limit {
+            if ($request->user()) {
+                return Limit::perMinute(300)->by('user:'.$request->user()->id);
+            }
+            return Limit::perMinute(120)->by('ip:'.$request->ip());
+        });
     }
 }
