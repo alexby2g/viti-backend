@@ -12,9 +12,13 @@ use Illuminate\Validation\Rule;
 
 class ElectrofrioController extends Controller
 {
+    private ?array $activeModules = null;
+
     public function resumen(Request $request, TenantContext $tenants): JsonResponse
     {
         $empresaId = $this->empresaId($request, $tenants);
+        $modules = $request->attributes->get('viti_plan_modules');
+        $hasModule = fn (string $module): bool => $modules === null || in_array($module, $modules, true);
         $today = now()->toDateString();
         $monthStart = now()->startOfMonth();
         $monthEnd = now()->endOfMonth();
@@ -28,15 +32,16 @@ class ElectrofrioController extends Controller
 
         return response()->json(['data' => [
             'empresa' => DB::table('empresas')->select('id', 'nombre_comercial', 'actividad')->find($empresaId),
+            'plan' => $request->attributes->get('viti_plan'),
             'clientes' => DB::table('electrofrio_clientes')->where('empresa_id', $empresaId)->where('activo', true)->count(),
             'equipos' => DB::table('electrofrio_equipos')->where('empresa_id', $empresaId)->where('activo', true)->count(),
             'citas_hoy' => DB::table('electrofrio_ordenes')->where('empresa_id', $empresaId)->whereDate('fecha_cita', $today)->count(),
             'ordenes_abiertas' => DB::table('electrofrio_ordenes')->where('empresa_id', $empresaId)->where('etapa', '!=', 'cerrada')->count(),
-            'por_cobrar' => max(0, (float) DB::table('electrofrio_ordenes')->where('empresa_id', $empresaId)->sum('total')
-                - (float) DB::table('electrofrio_pagos')->where('empresa_id', $empresaId)->where('estado', 'pagado')->sum('monto')),
-            'ingresos_mes' => (float) DB::table('electrofrio_pagos')->where('empresa_id', $empresaId)->where('estado', 'pagado')->whereBetween('pagado_at', [$monthStart, $monthEnd])->sum('monto'),
-            'garantias_vigentes' => DB::table('electrofrio_ordenes')->where('empresa_id', $empresaId)->whereNotNull('garantia_fin')->whereDate('garantia_fin', '>=', $today)->count(),
-            'stock_bajo' => DB::table('electrofrio_materiales')->where('empresa_id', $empresaId)->where('activo', true)->whereColumn('stock', '<=', 'stock_minimo')->count(),
+            'por_cobrar' => $hasModule('pagos') ? max(0, (float) DB::table('electrofrio_ordenes')->where('empresa_id', $empresaId)->sum('total')
+                - (float) DB::table('electrofrio_pagos')->where('empresa_id', $empresaId)->where('estado', 'pagado')->sum('monto')) : null,
+            'ingresos_mes' => $hasModule('pagos') ? (float) DB::table('electrofrio_pagos')->where('empresa_id', $empresaId)->where('estado', 'pagado')->whereBetween('pagado_at', [$monthStart, $monthEnd])->sum('monto') : null,
+            'garantias_vigentes' => $hasModule('garantias') ? DB::table('electrofrio_ordenes')->where('empresa_id', $empresaId)->whereNotNull('garantia_fin')->whereDate('garantia_fin', '>=', $today)->count() : null,
+            'stock_bajo' => $hasModule('inventario') ? DB::table('electrofrio_materiales')->where('empresa_id', $empresaId)->where('activo', true)->whereColumn('stock', '<=', 'stock_minimo')->count() : null,
             'agenda_hoy' => $agenda,
         ]]);
     }
@@ -267,6 +272,9 @@ class ElectrofrioController extends Controller
     public function finalizar(Request $request, TenantContext $tenants, int $id): JsonResponse
     {
         $empresaId = $this->empresaId($request, $tenants);
+        if ($request->integer('garantia_dias', 0) > 0) {
+            abort_unless($this->hasModule($request, 'garantias'), 403, 'Las garantías no forman parte del plan VITI asignado.');
+        }
         $order = $this->scoped('electrofrio_ordenes', $empresaId, $id);
         abort_unless($order->decision_cliente === 'aceptado', 422, 'El cliente debe aceptar la propuesta antes de finalizar el servicio.');
         abort_if($order->etapa === 'cerrada', 422, 'La orden ya está cerrada.');
@@ -410,7 +418,42 @@ class ElectrofrioController extends Controller
         $request->merge(['empresa_id' => (int)$empresa->id]);
         $resolved = $tenants->resolve($request);
         abort_unless((int)$resolved->id === (int)$empresa->id, 403, 'No tienes acceso a Electrofrío.');
+
+        $module = $this->moduleForAction((string) $request->route()?->getActionMethod());
+        if ($module !== null) $tenants->assertModule($resolved, $module);
+
+        $modules = $tenants->modules($resolved);
+        $this->activeModules = $modules;
+        $request->attributes->set('viti_plan_modules', $modules);
+        $request->attributes->set('viti_plan', $resolved->planViti ? [
+            'codigo' => $resolved->planViti->codigo,
+            'nombre' => $resolved->planViti->nombre,
+            'precio_proyecto' => $resolved->planViti->precio_proyecto,
+            'modulos' => $modules,
+        ] : null);
         return (int)$empresa->id;
+    }
+
+    private function moduleForAction(string $action): ?string
+    {
+        return match ($action) {
+            'resumen' => 'inicio',
+            'clientes', 'guardarCliente', 'actualizarCliente', 'eliminarCliente' => 'clientes',
+            'equipos', 'guardarEquipo', 'actualizarEquipo', 'eliminarEquipo' => 'equipos',
+            'tecnicos', 'guardarTecnico', 'actualizarTecnico', 'eliminarTecnico' => 'tecnicos',
+            'materiales', 'guardarMaterial', 'actualizarMaterial', 'eliminarMaterial', 'usarMaterial', 'quitarMaterial' => 'inventario',
+            'ordenes', 'guardarOrden', 'actualizarOrden', 'eliminarOrden', 'decision', 'finalizar' => 'ordenes',
+            'pagos', 'registrarPago' => 'pagos',
+            'garantias' => 'garantias',
+            'historial' => 'historial',
+            default => null,
+        };
+    }
+
+    private function hasModule(Request $request, string $module): bool
+    {
+        $modules = $request->attributes->get('viti_plan_modules');
+        return $modules === null || in_array($module, $modules, true);
     }
 
     private function datosCliente(Request $request, int $empresaId, ?int $ignoreId = null): array
@@ -513,12 +556,16 @@ class ElectrofrioController extends Controller
         $ids = $items->pluck('id')->all();
         if (!$ids) return $items;
 
-        $materials = DB::table('electrofrio_orden_material as om')
-            ->join('electrofrio_materiales as m', 'm.id', '=', 'om.material_id')
-            ->where('om.empresa_id', $empresaId)->whereIn('om.orden_id', $ids)
-            ->select('om.*', 'm.nombre as material_nombre', 'm.unidad as material_unidad')
-            ->get()->groupBy('orden_id');
-        $payments = DB::table('electrofrio_pagos')->where('empresa_id', $empresaId)->whereIn('orden_id', $ids)->where('estado', 'pagado')->get()->groupBy('orden_id');
+        $materials = $this->moduleEnabled('inventario')
+            ? DB::table('electrofrio_orden_material as om')
+                ->join('electrofrio_materiales as m', 'm.id', '=', 'om.material_id')
+                ->where('om.empresa_id', $empresaId)->whereIn('om.orden_id', $ids)
+                ->select('om.*', 'm.nombre as material_nombre', 'm.unidad as material_unidad')
+                ->get()->groupBy('orden_id')
+            : collect();
+        $payments = $this->moduleEnabled('pagos')
+            ? DB::table('electrofrio_pagos')->where('empresa_id', $empresaId)->whereIn('orden_id', $ids)->where('estado', 'pagado')->get()->groupBy('orden_id')
+            : collect();
 
         return $items->map(function ($order) use ($materials, $payments) {
             $order->materiales = ($materials[$order->id] ?? collect())->values();
@@ -527,6 +574,11 @@ class ElectrofrioController extends Controller
             $order->saldo = max(0, (float)$order->total - $order->pagado);
             return $order;
         });
+    }
+
+    private function moduleEnabled(string $module): bool
+    {
+        return $this->activeModules === null || in_array($module, $this->activeModules, true);
     }
 
     private function findOrder(int $empresaId, int $id): object
