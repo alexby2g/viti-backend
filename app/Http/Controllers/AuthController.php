@@ -52,6 +52,7 @@ class AuthController extends Controller
             ->first();
 
         if (!$usuario || !Hash::check($data['password'], $usuario->password)) {
+            $this->auditFailedLogin($request, $usuario, 'credenciales_invalidas', $access);
             return response()->json(['message'=>'El usuario, teléfono, CI o contraseña no son correctos.'], 422);
         }
 
@@ -59,8 +60,15 @@ class AuthController extends Controller
             $expected = (string) config('app.admin_secret');
             if ($expected === '') return response()->json(['message'=>'El servidor no tiene configurado el código secreto administrativo.'],500);
             if (!hash_equals($expected, (string)($data['codigo_secreto'] ?? ''))) {
+                $this->auditFailedLogin($request, $usuario, 'codigo_administrativo_incorrecto', $access);
                 return response()->json(['message'=>'El código secreto administrativo es incorrecto.'], 422);
             }
+        }
+
+        // Si los parámetros de hash cambian en el futuro, el próximo acceso correcto
+        // actualiza la contraseña sin pedirle nada adicional al usuario.
+        if (Hash::needsRehash($usuario->password)) {
+            $usuario->forceFill(['password' => $data['password']])->save();
         }
 
         auth()->login($usuario, false);
@@ -122,5 +130,20 @@ class AuthController extends Controller
         $request->session()->invalidate();
         $request->session()->regenerateToken();
         return response()->json(['message'=>'Sesión cerrada correctamente.']);
+    }
+
+    private function auditFailedLogin(Request $request, ?Usuario $usuario, string $reason, string $access): void
+    {
+        Audit::log(
+            $request,
+            'inicio_sesion_fallido',
+            $usuario,
+            'Se rechazó un intento de inicio de sesión.',
+            [
+                'motivo' => $reason,
+                // No almacenamos CI, teléfono ni usuario escrito en texto plano.
+                'identificador_hash' => hash('sha256', Str::lower(trim($access))),
+            ]
+        );
     }
 }

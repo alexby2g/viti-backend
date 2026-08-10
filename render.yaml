@@ -28,8 +28,10 @@ services:
         value: require
       - key: SESSION_DRIVER
         value: database
+      # 12 horas de inactividad. Antes eran 43.200 minutos (~30 días),
+      # demasiado para un panel con pagos, empresas y datos personales.
       - key: SESSION_LIFETIME
-        value: "43200"
+        value: "720"
       - key: SESSION_EXPIRE_ON_CLOSE
         value: "false"
       - key: SESSION_SECURE_COOKIE
