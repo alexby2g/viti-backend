@@ -223,9 +223,12 @@ class ElectrofrioController extends Controller
         $order = $this->scoped('electrofrio_ordenes', $empresaId, $id);
         abort_if($order->etapa === 'cerrada', 422, 'La orden está cerrada. El historial no puede modificarse.');
         $data = $this->datosOrden($request, $empresaId, $id);
-        if (!empty($data['propuesta'])) $data['etapa'] = 'propuesta';
+        if ($order->decision_cliente === 'aceptado') $data['etapa'] = 'servicio';
+        elseif (!empty($data['propuesta'])) $data['etapa'] = 'propuesta';
         elseif (!empty($data['diagnostico'])) $data['etapa'] = 'diagnostico';
         $data['total'] = max(0, (float)($data['costo_mano_obra'] ?? $order->costo_mano_obra) + (float)$order->costo_materiales - (float)($data['descuento'] ?? $order->descuento));
+        $paid = (float) DB::table('electrofrio_pagos')->where('empresa_id', $empresaId)->where('orden_id', $id)->where('estado', 'pagado')->sum('monto');
+        abort_if($data['total'] + 0.001 < $paid, 422, 'El nuevo total no puede ser menor al monto ya pagado.');
         DB::table('electrofrio_ordenes')->where('id', $id)->update($data + ['updated_at' => now()]);
         return response()->json(['data' => $this->findOrder($empresaId, $id)]);
     }
@@ -249,6 +252,7 @@ class ElectrofrioController extends Controller
             'motivo_rechazo' => ['nullable', 'string', 'max:3000', 'required_if:decision,rechazado'],
         ]);
         abort_if($data['decision'] === 'aceptado' && empty($order->diagnostico), 422, 'Registra el diagnóstico antes de aceptar el servicio.');
+        abort_if($data['decision'] === 'aceptado' && empty($order->propuesta), 422, 'Registra la propuesta antes de aceptar el servicio.');
         DB::table('electrofrio_ordenes')->where('id', $id)->update([
             'decision_cliente' => $data['decision'],
             'motivo_rechazo' => $data['motivo_rechazo'] ?? null,
@@ -536,9 +540,12 @@ class ElectrofrioController extends Controller
     {
         $order = $this->scoped('electrofrio_ordenes', $empresaId, $id);
         $materials = (float) DB::table('electrofrio_orden_material')->where('empresa_id', $empresaId)->where('orden_id', $id)->sum('subtotal');
+        $total = max(0, (float)$order->costo_mano_obra + $materials - (float)$order->descuento);
+        $paid = (float) DB::table('electrofrio_pagos')->where('empresa_id', $empresaId)->where('orden_id', $id)->where('estado', 'pagado')->sum('monto');
+        abort_if($total + 0.001 < $paid, 422, 'No puedes retirar materiales porque el total quedaría por debajo de lo ya pagado.');
         DB::table('electrofrio_ordenes')->where('id', $id)->update([
             'costo_materiales' => $materials,
-            'total' => max(0, (float)$order->costo_mano_obra + $materials - (float)$order->descuento),
+            'total' => $total,
             'updated_at' => now(),
         ]);
     }
