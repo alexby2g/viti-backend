@@ -38,8 +38,10 @@ class ServicioTecnicoV1ReadyTest extends TestCase
             'nombre'=>'Técnico Empleado','usuario'=>'tecnico_st_v1','documento'=>'95000003','telefono'=>'75000004',
             'password'=>'Prueba1234','rol'=>'cliente','estado'=>'activo',
         ]);
-        $company->usuarios()->attach($owner->id,['rol_negocio'=>'propietario','permisos'=>null,'activo'=>true]);
-        $company->usuarios()->attach($employee->id,['rol_negocio'=>'empleado','permisos'=>null,'activo'=>true]);
+        $company->usuarios()->syncWithoutDetaching([
+            $owner->id=>['rol_negocio'=>'propietario','permisos'=>null,'activo'=>true],
+            $employee->id=>['rol_negocio'=>'empleado','permisos'=>null,'activo'=>true],
+        ]);
 
         return [$platform,$company,$app,$owner,$employee];
     }
