@@ -2,7 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\{Cliente,Empresa,PlanViti,SolicitudSistema,Usuario};
+use App\Models\{Cliente,Cuestionario,Empresa,PlanViti,SolicitudSistema,Usuario};
+use Database\Seeders\CuestionarioSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -13,6 +14,8 @@ class RequestCommercialAgreementTest extends TestCase
 
     public function test_converting_request_assigns_selected_plan_to_company(): void
     {
+        $this->seed(CuestionarioSeeder::class);
+        $questionnaire = Cuestionario::query()->where('activo', true)->firstOrFail();
         $admin = Usuario::create([
             'nombre'=>'Administrador',
             'usuario'=>'admin_comercial',
@@ -45,6 +48,7 @@ class RequestCommercialAgreementTest extends TestCase
         $request = SolicitudSistema::create([
             'empresa_id'=>$company->id,
             'cliente_id'=>$client->id,
+            'cuestionario_id'=>$questionnaire->id,
             'plan_viti_id'=>$plan->id,
             'codigo'=>'SOL-COMERCIAL-TEST',
             'public_token'=>Str::random(48),
