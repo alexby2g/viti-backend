@@ -36,5 +36,8 @@ jobs:
       - name: Validate PHP syntax
         run: find app bootstrap config database routes -name '*.php' -print0 | xargs -0 -n1 php -l
 
+      - name: Validate database migrations
+        run: php artisan migrate:fresh --force
+
       - name: Boot Laravel routes
         run: php artisan route:list --except-vendor
