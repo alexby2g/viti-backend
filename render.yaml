@@ -42,8 +42,11 @@ services:
         value: sync
       - key: RUN_MIGRATIONS
         value: "true"
+      # Los datos iniciales se cargan de forma explícita, no en cada arranque.
+      # Ejecutar db:seed al despertar una instancia gratuita retrasa el health check
+      # y puede reescribir datos demo o depender de servicios externos como R2.
       - key: RUN_SEEDER
-        value: "true"
+        value: "false"
       - key: APP_KEY
         sync: false
       - key: APP_URL
