@@ -6,8 +6,8 @@ class Proyecto extends Model
 {
     use SoftDeletes;
     protected $table='proyectos';
-    protected $fillable=['solicitud_id','empresa_id','cliente_id','responsable_id','codigo','nombre','descripcion','fase','estado','progreso','fecha_inicio','fecha_beta','fecha_entrega','repositorio_url','produccion_url','observaciones','precio_acordado','anticipo_monto','saldo_monto','estado_pago'];
-    protected $casts=['progreso'=>'integer','fecha_inicio'=>'date:Y-m-d','fecha_beta'=>'date:Y-m-d','fecha_entrega'=>'date:Y-m-d','precio_acordado'=>'decimal:2','anticipo_monto'=>'decimal:2','saldo_monto'=>'decimal:2'];
+    protected $fillable=['solicitud_id','empresa_id','cliente_id','responsable_id','codigo','nombre','descripcion','fase','estado','progreso','fecha_inicio','fecha_beta','fecha_entrega','repositorio_url','produccion_url','observaciones','precio_estimado','complejidad','dias_estimados','precio_acordado','anticipo_monto','saldo_monto','estado_pago'];
+    protected $casts=['progreso'=>'integer','fecha_inicio'=>'date:Y-m-d','fecha_beta'=>'date:Y-m-d','fecha_entrega'=>'date:Y-m-d','precio_estimado'=>'decimal:2','dias_estimados'=>'integer','precio_acordado'=>'decimal:2','anticipo_monto'=>'decimal:2','saldo_monto'=>'decimal:2'];
     public function solicitud(){return $this->belongsTo(SolicitudSistema::class,'solicitud_id');}
     public function empresa(){return $this->belongsTo(Empresa::class);}
     public function cliente(){return $this->belongsTo(Cliente::class);}
