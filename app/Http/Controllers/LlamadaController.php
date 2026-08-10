@@ -24,7 +24,15 @@ class LlamadaController extends Controller
         $conversation = Conversacion::with(['cliente','responsable'])->findOrFail($data['conversacion_id']);
         $authorizedSession = null;
 
-        if ($user->rol === 'cliente') {
+        if($conversation->contexto===ChatChannelService::ELECTROFRIO){
+            if($user->rol==='cliente_negocio')$this->channels->assertCustomer($request,$conversation);else$this->channels->assertBusiness($request,$conversation);
+            $authorizedSession=AtencionSesion::query()->where('conversacion_id',$conversation->id)->habilitadaAhora()->latest('id')->first();
+            if(!$authorizedSession)return response()->json(['message'=>'La llamada todavía no está habilitada. Solicita una sesión de atención o espera la hora programada.','code'=>'CALL_NOT_AUTHORIZED'],403);
+            if($user->rol==='cliente_negocio'){
+                $target=$conversation->responsable;
+                if(!$target||$target->estado!=='activo')$target=Usuario::whereIn('id',$this->channels->businessUserIds($conversation))->where('estado','activo')->first();
+            }else $target=Usuario::where('estado','activo')->where('rol','cliente_negocio')->where('electrofrio_cliente_id',$conversation->electrofrio_cliente_id)->first();
+        } elseif ($user->rol === 'cliente') {
             abort_unless((int) $conversation->cliente_id === (int) $user->cliente_id, 403, 'No tienes permiso para llamar desde este canal.');
 
             $authorizedSession = AtencionSesion::query()
@@ -53,6 +61,8 @@ class LlamadaController extends Controller
                 $target = Usuario::where('estado','activo')->whereIn('rol',['superadmin','administrador'])->orderByRaw("CASE WHEN rol = 'superadmin' THEN 0 ELSE 1 END")->orderBy('id')->first();
             }
         } else {
+            abort_unless($user->isPlatformAdmin(),403,'No tienes permiso para llamar desde este canal.');
+            $this->channels->assertContext($conversation,ChatChannelService::VITI);
             $target = Usuario::where('estado','activo')
                 ->where('rol','cliente')
                 ->where('cliente_id',$conversation->cliente_id)
@@ -78,6 +88,7 @@ class LlamadaController extends Controller
         $call = Llamada::create([
             'conversacion_id' => $conversation->id,
             'cliente_id' => $conversation->cliente_id,
+            'electrofrio_cliente_id'=>$conversation->electrofrio_cliente_id,
             'atencion_sesion_id' => $authorizedSession?->id,
             'iniciada_por_usuario_id' => $user->id,
             'receptor_usuario_id' => $target->id,
@@ -86,12 +97,12 @@ class LlamadaController extends Controller
             'offer_sdp' => $this->normalizeSdp($data['offer_sdp']),
         ]);
 
-        $isClientCaller = $user->rol === 'cliente';
+        $isClientCaller = in_array($user->rol,['cliente','cliente_negocio'],true);
         $title = $isClientCaller
             ? (($data['tipo']==='video'?'Videollamada':'Llamada').' de '.($user->nombre ?: 'Cliente'))
             : (($data['tipo']==='video'?'Videollamada':'Llamada').' de '.$this->channels->label($conversation->contexto));
         $path = $isClientCaller
-            ? $this->channels->adminPath($conversation).'?c='.$conversation->id.'&call='.$call->id
+            ? ($conversation->contexto===ChatChannelService::ELECTROFRIO?$this->channels->businessPath($conversation):$this->channels->adminPath($conversation)).'?c='.$conversation->id.'&call='.$call->id
             : $this->channels->clientPath($conversation).'?c='.$conversation->id.'&call='.$call->id;
 
         FirebasePush::sendToUsers(
@@ -199,11 +210,6 @@ class LlamadaController extends Controller
     private function authorizeCall(Request $request, Llamada $call): void
     {
         $user = $request->user();
-        if ($user->rol === 'cliente') {
-            abort_unless((int) $call->cliente_id === (int) $user->cliente_id, 403, 'No tienes permiso para acceder a esta llamada.');
-            return;
-        }
-
         abort_unless(
             (int) $call->iniciada_por_usuario_id === (int) $user->id ||
             (int) $call->receptor_usuario_id === (int) $user->id ||
@@ -226,6 +232,7 @@ class LlamadaController extends Controller
             'id'=>$call->id,
             'conversacion_id'=>$call->conversacion_id,
             'cliente_id'=>$call->cliente_id,
+            'electrofrio_cliente_id'=>$call->electrofrio_cliente_id,
             'atencion_sesion_id'=>$call->atencion_sesion_id,
             'tipo'=>$call->tipo,
             'estado'=>$call->estado,

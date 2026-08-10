@@ -42,15 +42,18 @@ class ClientElectrofrioController extends Controller
     public function estado(Request $request): JsonResponse
     {
         $app = $this->appFor($request);
+        $tenants = app(TenantContext::class);
+        $modules = $tenants->effectiveModules($request->user(),$app->empresa);
 
         return response()->json(['data' => [
             'empresa' => $app->empresa,
+            'rol'=>$tenants->role($request->user(),$app->empresa),
             'aplicacion' => $app,
             'plan' => $app->empresa->planViti ? [
                 'codigo' => $app->empresa->planViti->codigo,
                 'nombre' => $app->empresa->planViti->nombre,
                 'precio_proyecto' => $app->empresa->planViti->precio_proyecto,
-                'modulos' => $app->empresa->planViti->modulos,
+                'modulos' => $modules,
             ] : null,
             'proyecto' => $app->proyecto ? [
                 'codigo' => $app->proyecto->codigo,
@@ -72,9 +75,12 @@ class ClientElectrofrioController extends Controller
     public function actualizarEquipo(Request $request, int $id): JsonResponse { return $this->forward($request, 'actualizarEquipo', $id); }
     public function eliminarEquipo(Request $request, int $id): JsonResponse { return $this->forward($request, 'eliminarEquipo', $id); }
     public function tecnicos(Request $request): JsonResponse { return $this->forward($request, 'tecnicos'); }
+    public function usuariosNegocio(Request $request): JsonResponse { return $this->forward($request, 'usuariosNegocio'); }
     public function guardarTecnico(Request $request): JsonResponse { return $this->forward($request, 'guardarTecnico'); }
     public function actualizarTecnico(Request $request, int $id): JsonResponse { return $this->forward($request, 'actualizarTecnico', $id); }
     public function eliminarTecnico(Request $request, int $id): JsonResponse { return $this->forward($request, 'eliminarTecnico', $id); }
+    public function guardarAccesoCliente(Request $request, int $id): JsonResponse { return $this->forward($request, 'guardarAccesoCliente', $id); }
+    public function revocarAccesoCliente(Request $request, int $id): JsonResponse { return $this->forward($request, 'revocarAccesoCliente', $id); }
     public function materiales(Request $request): JsonResponse { return $this->forward($request, 'materiales'); }
     public function guardarMaterial(Request $request): JsonResponse { return $this->forward($request, 'guardarMaterial'); }
     public function actualizarMaterial(Request $request, int $id): JsonResponse { return $this->forward($request, 'actualizarMaterial', $id); }

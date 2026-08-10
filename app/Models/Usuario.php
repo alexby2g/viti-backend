@@ -16,7 +16,7 @@ class Usuario extends Authenticatable
     protected $appends = ['foto_url'];
 
     protected $fillable = [
-        'cliente_id', 'nombre', 'apellido', 'usuario', 'documento', 'telefono', 'correo', 'foto_path', 'password', 'rol', 'estado', 'ultimo_acceso',
+        'cliente_id', 'electrofrio_cliente_id', 'nombre', 'apellido', 'usuario', 'documento', 'telefono', 'correo', 'foto_path', 'password', 'rol', 'estado', 'ultimo_acceso',
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -38,6 +38,7 @@ class Usuario extends Authenticatable
     }
 
     public function cliente() { return $this->belongsTo(Cliente::class); }
+    public function electrofrioCliente() { return $this->belongsTo(ElectrofrioCliente::class, 'electrofrio_cliente_id'); }
     public function negocios()
     {
         return $this->belongsToMany(Empresa::class,'empresa_usuario','usuario_id','empresa_id')

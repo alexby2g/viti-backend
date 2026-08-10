@@ -50,8 +50,9 @@ class AtencionSesionController extends Controller
             'motivo.required' => 'Cuéntanos brevemente qué necesitas revisar.',
         ]);
 
-        $clientId = (int) $request->user()->cliente_id;
         $conversation = $this->channels->clientChannel($request);
+        $clientId = $conversation->contexto===ChatChannelService::ELECTROFRIO ? null : (int)$request->user()->cliente_id;
+        $electroClientId = $conversation->contexto===ChatChannelService::ELECTROFRIO ? (int)$request->user()->electrofrio_cliente_id : null;
 
         $alreadyPending = AtencionSesion::query()
             ->where('conversacion_id', $conversation->id)
@@ -64,6 +65,7 @@ class AtencionSesionController extends Controller
         $session = AtencionSesion::create([
             'conversacion_id' => $conversation->id,
             'cliente_id' => $clientId,
+            'electrofrio_cliente_id' => $electroClientId,
             'solicitada_por_usuario_id' => $request->user()->id,
             'modalidad' => $data['modalidad'],
             'estado' => 'solicitada',
@@ -72,15 +74,15 @@ class AtencionSesionController extends Controller
 
         Audit::log($request, 'atencion_solicitada', $session, 'El cliente solicitó una sesión de atención.');
 
-        $targetIds = $conversation->responsable_usuario_id
-            ? [$conversation->responsable_usuario_id]
-            : Usuario::where('estado','activo')->where('rol','!=','cliente')->pluck('id')->all();
+        $targetIds = $conversation->contexto===ChatChannelService::ELECTROFRIO
+            ? $this->channels->businessUserIds($conversation)
+            : ($conversation->responsable_usuario_id ? [$conversation->responsable_usuario_id] : Usuario::where('estado','activo')->where('rol','!=','cliente')->pluck('id')->all());
 
         FirebasePush::sendToUsers(
             $targetIds,
             'Nueva solicitud de atención',
             ($request->user()->nombre ?: 'Un cliente').' solicita '.($data['modalidad'] === 'pantalla' ? 'asistencia con pantalla' : ($data['modalidad'] === 'video' ? 'videollamada' : 'llamada de voz')).'.',
-            ['type'=>'atencion','contexto'=>$conversation->contexto,'conversation_id'=>$conversation->id,'session_id'=>$session->id,'path'=>$this->channels->adminPath($conversation).'?c='.$conversation->id]
+            ['type'=>'atencion','contexto'=>$conversation->contexto,'conversation_id'=>$conversation->id,'session_id'=>$session->id,'path'=>($conversation->contexto===ChatChannelService::ELECTROFRIO?$this->channels->businessPath($conversation):$this->channels->adminPath($conversation)).'?c='.$conversation->id]
         );
 
         return response()->json(['message'=>'Solicitud enviada. El equipo responsable la revisará antes de habilitar la llamada.','data'=>$session], 201);
@@ -90,7 +92,8 @@ class AtencionSesionController extends Controller
     {
         $sesion->loadMissing('conversacion');
         $this->channels->assertClient($request, $sesion->conversacion, $this->channels->context($request));
-        abort_unless((int)$sesion->cliente_id === (int)$request->user()->cliente_id, 403, 'No tienes permiso para modificar esta solicitud.');
+        if($sesion->conversacion->contexto===ChatChannelService::ELECTROFRIO) abort_unless((int)$sesion->electrofrio_cliente_id===(int)$request->user()->electrofrio_cliente_id,403,'No tienes permiso para modificar esta solicitud.');
+        else abort_unless((int)$sesion->cliente_id === (int)$request->user()->cliente_id, 403, 'No tienes permiso para modificar esta solicitud.');
         abort_unless(in_array($sesion->estado, ['solicitada','aprobada'], true), 422, 'Esta sesión ya no puede cancelarse.');
         $sesion->update(['estado'=>'cancelada']);
         return response()->json(['message'=>'Solicitud cancelada.','data'=>$sesion->fresh()]);
@@ -98,9 +101,13 @@ class AtencionSesionController extends Controller
 
     public function adminIndex(Request $request): JsonResponse
     {
+        $context=$this->channels->context($request);
         $query = AtencionSesion::query()
-            ->with(['cliente:id,nombre,telefono,foto_path','solicitante:id,nombre,apellido,rol','aprobador:id,nombre,apellido,rol'])
-            ->whereHas('conversacion', fn ($conversation) => $conversation->where('contexto', $this->channels->context($request))->where('canal_principal', true))
+            ->with(['cliente:id,nombre,telefono,foto_path','electrofrioCliente:id,nombre,telefono','solicitante:id,nombre,apellido,rol','aprobador:id,nombre,apellido,rol'])
+            ->whereHas('conversacion', function($conversation)use($request,$context):void{
+                $conversation->where('contexto',$context)->where('canal_principal',true);
+                if($context===ChatChannelService::ELECTROFRIO){$empresa=$this->channels->ensureBusinessChannels($request);$conversation->where('empresa_id',$empresa->id);}
+            })
             ->latest('id');
 
         if ($request->filled('conversacion_id')) {
@@ -121,7 +128,7 @@ class AtencionSesionController extends Controller
         ]);
 
         $conversation = Conversacion::findOrFail($data['conversacion_id']);
-        $this->channels->assertContext($conversation, $this->channels->context($request));
+        $this->assertOperator($request,$conversation);
         $session = $this->createApproved(
             $request,
             $conversation,
@@ -137,7 +144,7 @@ class AtencionSesionController extends Controller
     public function approve(Request $request, AtencionSesion $sesion): JsonResponse
     {
         $sesion->loadMissing('conversacion');
-        $this->channels->assertContext($sesion->conversacion, $this->channels->context($request));
+        $this->assertOperator($request,$sesion->conversacion);
         abort_unless($sesion->estado === 'solicitada', 422, 'Esta solicitud ya fue revisada.');
         $data = $request->validate([
             'programada_para' => ['nullable','date'],
@@ -169,7 +176,7 @@ class AtencionSesionController extends Controller
     public function reject(Request $request, AtencionSesion $sesion): JsonResponse
     {
         $sesion->loadMissing('conversacion');
-        $this->channels->assertContext($sesion->conversacion, $this->channels->context($request));
+        $this->assertOperator($request,$sesion->conversacion);
         abort_unless($sesion->estado === 'solicitada', 422, 'Esta solicitud ya fue revisada.');
         $data = $request->validate(['nota_admin'=>['nullable','string','max:1000']]);
         $sesion->update([
@@ -184,7 +191,7 @@ class AtencionSesionController extends Controller
     public function finish(Request $request, AtencionSesion $sesion): JsonResponse
     {
         $sesion->loadMissing('conversacion');
-        $this->channels->assertContext($sesion->conversacion, $this->channels->context($request));
+        $this->assertOperator($request,$sesion->conversacion);
         abort_unless(in_array($sesion->estado, ['aprobada'], true), 422, 'La sesión ya no está activa.');
         $sesion->update(['estado'=>'finalizada','habilitada_hasta'=>now()]);
         return response()->json(['message'=>'Sesión finalizada.','data'=>$sesion->fresh()]);
@@ -196,6 +203,7 @@ class AtencionSesionController extends Controller
         $session = AtencionSesion::create([
             'conversacion_id'=>$conversation->id,
             'cliente_id'=>$conversation->cliente_id,
+            'electrofrio_cliente_id'=>$conversation->electrofrio_cliente_id,
             'solicitada_por_usuario_id'=>$request->user()->id,
             'aprobada_por_usuario_id'=>$request->user()->id,
             'modalidad'=>$modality,
@@ -213,10 +221,9 @@ class AtencionSesionController extends Controller
     private function pushClient(AtencionSesion $session, string $title, string $body): void
     {
         $session->loadMissing('conversacion');
-        $targetIds = Usuario::where('estado','activo')
-            ->where('rol','cliente')
-            ->where('cliente_id',$session->cliente_id)
-            ->pluck('id')->all();
+        $targetIds = $session->conversacion?->contexto===ChatChannelService::ELECTROFRIO
+            ? Usuario::where('estado','activo')->where('rol','cliente_negocio')->where('electrofrio_cliente_id',$session->electrofrio_cliente_id)->pluck('id')->all()
+            : Usuario::where('estado','activo')->where('rol','cliente')->where('cliente_id',$session->cliente_id)->pluck('id')->all();
         FirebasePush::sendToUsers($targetIds, $title, $body, [
             'type'=>'atencion',
             'conversation_id'=>$session->conversacion_id,
@@ -224,5 +231,11 @@ class AtencionSesionController extends Controller
             'contexto'=>$session->conversacion?->contexto,
             'path'=>$this->channels->clientPath($session->conversacion).'?c='.$session->conversacion_id,
         ]);
+    }
+
+    private function assertOperator(Request $request,Conversacion $conversation):void
+    {
+        if($this->channels->context($request)===ChatChannelService::ELECTROFRIO)$this->channels->assertBusiness($request,$conversation);
+        else $this->channels->assertContext($conversation,ChatChannelService::VITI);
     }
 }

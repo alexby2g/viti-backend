@@ -2,13 +2,16 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Usuario;
 use App\Services\TenantContext;
 use App\Support\Audit;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 
 class ElectrofrioController extends Controller
 {
@@ -49,7 +52,15 @@ class ElectrofrioController extends Controller
     public function clientes(Request $request, TenantContext $tenants): JsonResponse
     {
         $empresaId = $this->empresaId($request, $tenants);
-        return response()->json(['data' => DB::table('electrofrio_clientes')->where('empresa_id', $empresaId)->latest('id')->limit(500)->get()]);
+        $query = DB::table('electrofrio_clientes as c')
+            ->leftJoin('usuarios as u','u.electrofrio_cliente_id','=','c.id')
+            ->where('c.empresa_id',$empresaId)
+            ->select('c.*','u.id as acceso_usuario_id','u.usuario as acceso_usuario','u.documento as acceso_documento','u.telefono as acceso_telefono','u.estado as acceso_estado');
+        if ($request->filled('buscar')) {
+            $term = '%'.trim((string)$request->input('buscar')).'%';
+            $query->where(fn ($q) => $q->where('c.nombre','like',$term)->orWhere('c.telefono','like',$term)->orWhere('c.direccion','like',$term));
+        }
+        return response()->json(['data'=>$query->latest('c.id')->limit(150)->get()]);
     }
 
     public function guardarCliente(Request $request, TenantContext $tenants): JsonResponse
@@ -86,7 +97,8 @@ class ElectrofrioController extends Controller
             ->join('electrofrio_clientes as c', 'c.id', '=', 'e.cliente_id')
             ->where('e.empresa_id', $empresaId)
             ->select('e.*', 'c.nombre as cliente_nombre')
-            ->latest('e.id')->limit(500)->get();
+            ->when($request->filled('cliente_id'),fn($q)=>$q->where('e.cliente_id',$request->integer('cliente_id')))
+            ->latest('e.id')->limit(150)->get();
         return response()->json(['data' => $items]);
     }
 
@@ -119,18 +131,24 @@ class ElectrofrioController extends Controller
     public function tecnicos(Request $request, TenantContext $tenants): JsonResponse
     {
         $empresaId = $this->empresaId($request, $tenants);
-        return response()->json(['data' => DB::table('electrofrio_tecnicos')->where('empresa_id', $empresaId)->latest('id')->limit(300)->get()]);
+        $items = DB::table('electrofrio_tecnicos as t')->leftJoin('usuarios as u','u.id','=','t.usuario_id')
+            ->where('t.empresa_id',$empresaId)->select('t.*','u.usuario','u.documento','u.estado as usuario_estado')->latest('t.id')->limit(150)->get();
+        return response()->json(['data'=>$items]);
+    }
+
+    public function usuariosNegocio(Request $request, TenantContext $tenants): JsonResponse
+    {
+        $empresaId = $this->empresaId($request,$tenants);
+        $items = DB::table('empresa_usuario as eu')->join('usuarios as u','u.id','=','eu.usuario_id')
+            ->where('eu.empresa_id',$empresaId)->where('eu.activo',true)->where('u.estado','activo')
+            ->select('u.id','u.nombre','u.apellido','u.usuario','u.telefono')->orderBy('u.nombre')->get();
+        return response()->json(['data'=>$items]);
     }
 
     public function guardarTecnico(Request $request, TenantContext $tenants): JsonResponse
     {
         $empresaId = $this->empresaId($request, $tenants);
-        $data = $request->validate([
-            'nombre' => ['required', 'string', 'max:180'],
-            'telefono' => ['nullable', 'string', 'max:30'],
-            'especialidad' => ['nullable', 'string', 'max:160'],
-            'activo' => ['sometimes', 'boolean'],
-        ]);
+        $data = $this->datosTecnico($request,$empresaId);
         $id = DB::table('electrofrio_tecnicos')->insertGetId($data + ['empresa_id' => $empresaId, 'created_at' => now(), 'updated_at' => now()]);
         return response()->json(['data' => DB::table('electrofrio_tecnicos')->find($id)], 201);
     }
@@ -139,12 +157,7 @@ class ElectrofrioController extends Controller
     {
         $empresaId = $this->empresaId($request, $tenants);
         $this->scoped('electrofrio_tecnicos', $empresaId, $id);
-        $data = $request->validate([
-            'nombre' => ['required', 'string', 'max:180'],
-            'telefono' => ['nullable', 'string', 'max:30'],
-            'especialidad' => ['nullable', 'string', 'max:160'],
-            'activo' => ['sometimes', 'boolean'],
-        ]);
+        $data = $this->datosTecnico($request,$empresaId,$id);
         DB::table('electrofrio_tecnicos')->where('id', $id)->update($data + ['updated_at' => now()]);
         return response()->json(['data' => DB::table('electrofrio_tecnicos')->find($id)]);
     }
@@ -155,6 +168,45 @@ class ElectrofrioController extends Controller
         $this->scoped('electrofrio_tecnicos', $empresaId, $id);
         DB::table('electrofrio_tecnicos')->where('id', $id)->delete();
         return response()->json(status: 204);
+    }
+
+    public function guardarAccesoCliente(Request $request, TenantContext $tenants, int $id): JsonResponse
+    {
+        $empresaId = $this->empresaId($request,$tenants);
+        $tenants->assertCanManage($request->user(),$tenants->resolve($request));
+        $client = $this->scoped('electrofrio_clientes',$empresaId,$id);
+        $request->merge([
+            'usuario'=>Str::lower(trim((string)$request->input('usuario'))),
+            'documento'=>preg_replace('/\D+/', '', (string)$request->input('documento')) ?: null,
+            'telefono'=>preg_replace('/\D+/', '', (string)($request->input('telefono') ?: $client->telefono)) ?: null,
+        ]);
+        $existing = Usuario::query()->where('electrofrio_cliente_id',$id)->first();
+        $data = $request->validate([
+            'usuario'=>['required','alpha_dash','min:4','max:80','not_regex:/^\d+$/',Rule::unique('usuarios','usuario')->ignore($existing?->id)],
+            'documento'=>['nullable','regex:/^[0-9]{5,15}$/',Rule::unique('usuarios','documento')->ignore($existing?->id)],
+            'telefono'=>['nullable','regex:/^[0-9]{7,15}$/',Rule::unique('usuarios','telefono')->ignore($existing?->id)],
+            'password'=>$existing?['nullable','confirmed',Password::min(8)->letters()->numbers()]:['required','confirmed',Password::min(8)->letters()->numbers()],
+        ]);
+        if ($existing) {
+            if (empty($data['password'])) unset($data['password']);
+            $existing->update($data+['nombre'=>$client->nombre,'rol'=>'cliente_negocio','estado'=>'activo']);
+            $user=$existing->fresh();
+        } else {
+            $user=Usuario::create($data+['electrofrio_cliente_id'=>$id,'nombre'=>$client->nombre,'rol'=>'cliente_negocio','estado'=>'activo']);
+        }
+        Audit::log($request,'electrofrio_acceso_cliente_habilitado',$user,'Se habilitó el portal de un cliente final de Electrofrío.');
+        return response()->json(['data'=>['id'=>$user->id,'usuario'=>$user->usuario,'telefono'=>$user->telefono,'documento'=>$user->documento,'estado'=>$user->estado]],$existing?200:201);
+    }
+
+    public function revocarAccesoCliente(Request $request, TenantContext $tenants, int $id): JsonResponse
+    {
+        $empresaId = $this->empresaId($request,$tenants);
+        $tenants->assertCanManage($request->user(),$tenants->resolve($request));
+        $this->scoped('electrofrio_clientes',$empresaId,$id);
+        $user=Usuario::query()->where('electrofrio_cliente_id',$id)->firstOrFail();
+        $user->update(['estado'=>'inactivo']);
+        Audit::log($request,'electrofrio_acceso_cliente_revocado',$user,'Se revocó el portal de un cliente final de Electrofrío.');
+        return response()->json(['message'=>'Acceso del cliente revocado.']);
     }
 
     public function materiales(Request $request, TenantContext $tenants): JsonResponse
@@ -412,17 +464,18 @@ class ElectrofrioController extends Controller
 
     private function empresaId(Request $request, TenantContext $tenants): int
     {
-        $empresa = DB::table('empresas')->where('codigo', 'EMP-ELECTROFRIO')->whereNull('deleted_at')->first();
-        abort_unless($empresa, 404, 'La empresa Electrofrío todavía no está configurada en VITI.');
-        $request->headers->set('X-VITI-Empresa', (string)$empresa->id);
-        $request->merge(['empresa_id' => (int)$empresa->id]);
         $resolved = $tenants->resolve($request);
-        abort_unless((int)$resolved->id === (int)$empresa->id, 403, 'No tienes acceso a Electrofrío.');
+        $hasApp = DB::table('aplicaciones as a')->join('catalogo_aplicaciones as c','c.id','=','a.catalogo_aplicacion_id')
+            ->where('a.empresa_id',$resolved->id)->where('c.clave','electrofrio')->where('a.estado','activo')->whereNull('a.deleted_at')->exists();
+        abort_unless($hasApp,404,'Este negocio no tiene Electrofrío activo.');
 
         $module = $this->moduleForAction((string) $request->route()?->getActionMethod());
-        if ($module !== null) $tenants->assertModule($resolved, $module);
+        if ($module !== null) {
+            $tenants->assertModule($resolved,$module);
+            $tenants->assertCanUse($request->user(),$resolved,$module);
+        }
 
-        $modules = $tenants->modules($resolved);
+        $modules = $tenants->effectiveModules($request->user(),$resolved);
         $this->activeModules = $modules;
         $request->attributes->set('viti_plan_modules', $modules);
         $request->attributes->set('viti_plan', $resolved->planViti ? [
@@ -431,16 +484,16 @@ class ElectrofrioController extends Controller
             'precio_proyecto' => $resolved->planViti->precio_proyecto,
             'modulos' => $modules,
         ] : null);
-        return (int)$empresa->id;
+        return (int)$resolved->id;
     }
 
     private function moduleForAction(string $action): ?string
     {
         return match ($action) {
             'resumen' => 'inicio',
-            'clientes', 'guardarCliente', 'actualizarCliente', 'eliminarCliente' => 'clientes',
+            'clientes', 'guardarCliente', 'actualizarCliente', 'eliminarCliente', 'guardarAccesoCliente', 'revocarAccesoCliente' => 'clientes',
             'equipos', 'guardarEquipo', 'actualizarEquipo', 'eliminarEquipo' => 'equipos',
-            'tecnicos', 'guardarTecnico', 'actualizarTecnico', 'eliminarTecnico' => 'tecnicos',
+            'tecnicos', 'usuariosNegocio', 'guardarTecnico', 'actualizarTecnico', 'eliminarTecnico' => 'tecnicos',
             'materiales', 'guardarMaterial', 'actualizarMaterial', 'eliminarMaterial', 'usarMaterial', 'quitarMaterial' => 'inventario',
             'ordenes', 'guardarOrden', 'actualizarOrden', 'eliminarOrden', 'decision', 'finalizar' => 'ordenes',
             'pagos', 'registrarPago' => 'pagos',
@@ -495,6 +548,19 @@ class ElectrofrioController extends Controller
             'costo_unitario' => ['required', 'numeric', 'min:0'],
             'activo' => ['sometimes', 'boolean'],
         ]);
+    }
+
+    private function datosTecnico(Request $request, int $empresaId, ?int $ignoreId = null): array
+    {
+        $data=$request->validate([
+            'usuario_id'=>['nullable','integer',Rule::unique('electrofrio_tecnicos','usuario_id')->where(fn($q)=>$q->where('empresa_id',$empresaId))->ignore($ignoreId)],
+            'nombre'=>['required','string','max:180'],'telefono'=>['nullable','string','max:30'],'especialidad'=>['nullable','string','max:160'],'activo'=>['sometimes','boolean'],
+        ]);
+        if (!empty($data['usuario_id'])) {
+            $member=DB::table('empresa_usuario')->where('empresa_id',$empresaId)->where('usuario_id',$data['usuario_id'])->where('activo',true)->exists();
+            abort_unless($member,422,'La cuenta seleccionada no pertenece al equipo activo de este negocio.');
+        }
+        return $data;
     }
 
     private function datosOrden(Request $request, int $empresaId, ?int $orderId = null): array

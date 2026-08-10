@@ -6,9 +6,10 @@ class Conversacion extends Model
 {
     use SoftDeletes;
     protected $table='conversaciones';
-    protected $fillable=['cliente_id','empresa_id','aplicacion_id','responsable_usuario_id','solicitud_id','proyecto_id','asunto','estado','contexto','canal_principal','ultimo_mensaje_at','eliminada_por_usuario_id'];
+    protected $fillable=['cliente_id','electrofrio_cliente_id','empresa_id','aplicacion_id','responsable_usuario_id','solicitud_id','proyecto_id','asunto','estado','contexto','canal_principal','ultimo_mensaje_at','eliminada_por_usuario_id'];
     protected $casts=['ultimo_mensaje_at'=>'datetime','canal_principal'=>'boolean','deleted_at'=>'datetime'];
     public function cliente(){return $this->belongsTo(Cliente::class);}
+    public function electrofrioCliente(){return $this->belongsTo(ElectrofrioCliente::class, 'electrofrio_cliente_id');}
     public function empresa(){return $this->belongsTo(Empresa::class);}
     public function aplicacion(){return $this->belongsTo(Aplicacion::class);}
     public function responsable(){return $this->belongsTo(Usuario::class,'responsable_usuario_id');}

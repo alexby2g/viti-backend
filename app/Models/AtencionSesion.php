@@ -11,6 +11,7 @@ class AtencionSesion extends Model
     protected $fillable = [
         'conversacion_id',
         'cliente_id',
+        'electrofrio_cliente_id',
         'solicitada_por_usuario_id',
         'aprobada_por_usuario_id',
         'modalidad',
@@ -32,6 +33,7 @@ class AtencionSesion extends Model
 
     public function conversacion(){ return $this->belongsTo(Conversacion::class); }
     public function cliente(){ return $this->belongsTo(Cliente::class); }
+    public function electrofrioCliente(){ return $this->belongsTo(ElectrofrioCliente::class, 'electrofrio_cliente_id'); }
     public function solicitante(){ return $this->belongsTo(Usuario::class, 'solicitada_por_usuario_id'); }
     public function aprobador(){ return $this->belongsTo(Usuario::class, 'aprobada_por_usuario_id'); }
 

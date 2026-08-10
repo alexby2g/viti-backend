@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 
 class TenantContext
 {
+    private const EMPLOYEE_DEFAULT_MODULES = ['inicio','agenda','ordenes'];
+
     public function resolve(Request $request): Empresa
     {
         $user = $request->user();
@@ -28,6 +30,7 @@ class TenantContext
         abort_unless($business,403,'No tienes acceso a este negocio.');
         $request->attributes->set('viti_empresa_id',$business->id);
         $request->attributes->set('viti_rol_negocio',$business->pivot?->rol_negocio);
+        $request->attributes->set('viti_permisos_negocio',$this->pivotPermissions($business->pivot?->permisos));
         return $business;
     }
 
@@ -46,6 +49,27 @@ class TenantContext
     public function assertCanManage(Usuario $user, Empresa $empresa): void
     {
         abort_unless($this->canManage($user,$empresa),403,'No tienes permisos administrativos en este negocio.');
+    }
+
+    public function permissions(Usuario $user, Empresa $empresa): ?array
+    {
+        if ($user->isPlatformAdmin()) return null;
+        $membership = $user->negocios()->where('empresas.id',$empresa->id)->wherePivot('activo',true)->first();
+        if (!$membership) return [];
+        if (in_array($membership->pivot?->rol_negocio, ['propietario','administrador'], true)) return null;
+        $permissions = $this->pivotPermissions($membership->pivot?->permisos);
+        return $permissions === null ? self::EMPLOYEE_DEFAULT_MODULES : $permissions;
+    }
+
+    public function canUse(Usuario $user, Empresa $empresa, string $module): bool
+    {
+        $permissions = $this->permissions($user,$empresa);
+        return $permissions === null || in_array($module,$permissions,true);
+    }
+
+    public function assertCanUse(Usuario $user, Empresa $empresa, string $module): void
+    {
+        abort_unless($this->canUse($user,$empresa,$module),403,'Tu rol no tiene permiso para usar este módulo de Electrofrío.');
     }
 
     public function assertUserLimit(Empresa $empresa): void
@@ -87,5 +111,22 @@ class TenantContext
             403,
             'Este módulo no forma parte del plan VITI asignado a tu negocio.'
         );
+    }
+
+    public function effectiveModules(Usuario $user, Empresa $empresa): ?array
+    {
+        $plan = $this->modules($empresa);
+        $permissions = $this->permissions($user,$empresa);
+        if ($plan === null) return $permissions;
+        if ($permissions === null) return $plan;
+        return array_values(array_intersect($plan,$permissions));
+    }
+
+    private function pivotPermissions(mixed $value): ?array
+    {
+        if ($value === null || $value === '') return null;
+        if (is_string($value)) $value = json_decode($value,true);
+        if (!is_array($value)) return [];
+        return array_values(array_unique(array_filter(array_map(fn ($permission) => trim((string)$permission),$value))));
     }
 }

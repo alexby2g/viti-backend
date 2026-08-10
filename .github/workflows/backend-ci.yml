@@ -41,3 +41,6 @@ jobs:
 
       - name: Boot Laravel routes
         run: php artisan route:list --except-vendor
+
+      - name: Run feature tests
+        run: php artisan test
