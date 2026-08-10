@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Middleware\{EnsureClient,EnsurePlatformAdmin,EnsureSuperAdmin,ResolveTenant,SecurityHeaders};
+use App\Http\Middleware\{EnsureClient,EnsureElectrofrioCustomer,EnsurePlatformAdmin,EnsureSuperAdmin,ResolveTenant,SecurityHeaders};
 use Illuminate\Foundation\Application;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -25,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'superadmin'=>EnsureSuperAdmin::class,
             'platform_admin'=>EnsurePlatformAdmin::class,
             'cliente'=>EnsureClient::class,
+            'electrofrio_customer'=>EnsureElectrofrioCustomer::class,
             'tenant'=>ResolveTenant::class,
         ]);
     })

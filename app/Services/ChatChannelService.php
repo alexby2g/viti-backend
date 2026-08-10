@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Models\{Aplicacion,Cliente,Conversacion,Usuario};
+use App\Models\{Aplicacion,Cliente,Conversacion,ElectrofrioCliente,Empresa,Usuario};
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 
@@ -13,123 +13,124 @@ class ChatChannelService
 
     public function context(Request $request): string
     {
-        $context = (string) ($request->route('chat_context') ?: self::VITI);
-        abort_unless(in_array($context, [self::VITI, self::ELECTROFRIO], true), 404, 'El buzón solicitado no existe.');
+        $context=(string)($request->route('chat_context') ?: self::VITI);
+        abort_unless(in_array($context,[self::VITI,self::ELECTROFRIO],true),404,'El buzón solicitado no existe.');
         return $context;
     }
 
-    public function clientChannel(Request $request, ?string $context = null): Conversacion
+    public function clientChannel(Request $request, ?string $context=null): Conversacion
     {
-        $context ??= $this->context($request);
-        $clientId = (int) $request->user()->cliente_id;
+        $context??=$this->context($request);
+        if ($context===self::ELECTROFRIO) return $this->customerChannel($request);
+        $clientId=(int)$request->user()->cliente_id;
+        abort_unless($clientId,403,'Tu cuenta no tiene un perfil de cliente VITI.');
+        return $this->ensureViti($clientId);
+    }
 
-        if ($context === self::VITI) return $this->ensure($clientId, self::VITI);
-
-        $empresa = app(TenantContext::class)->resolve($request);
-        $app = Aplicacion::query()
-            ->where('empresa_id', $empresa->id)
-            ->where('estado', 'activo')
-            ->where('acceso_cliente', true)
-            ->whereHas('catalogo', fn (Builder $query) => $query->where('clave', self::ELECTROFRIO))
-            ->latest('id')
-            ->first();
-
-        abort_unless($app, 404, 'Este negocio no tiene un buzón de Electrofrío activo.');
-        return $this->ensure($clientId, self::ELECTROFRIO, (int) $empresa->id, (int) $app->id);
+    public function customerChannel(Request $request): Conversacion
+    {
+        $customer=$request->user()->electrofrioCliente?->loadMissing('empresa');
+        abort_unless($customer?->activo,403,'Tu acceso a Electrofrío no está activo.');
+        $app=$this->electrofrioApp((int)$customer->empresa_id);
+        return $this->ensureElectrofrio($customer,$app);
     }
 
     public function ensureAdminChannels(string $context): void
     {
-        if ($context === self::VITI) {
-            Cliente::query()->select('id')->orderBy('id')->chunkById(100, function ($clients): void {
-                foreach ($clients as $client) $this->ensure((int) $client->id, self::VITI);
-            });
-            return;
-        }
+        if ($context!==self::VITI) return;
+        Cliente::query()->select('id')->orderBy('id')->chunkById(100,function($clients):void{
+            foreach($clients as $client)$this->ensureViti((int)$client->id);
+        });
+    }
 
-        Aplicacion::query()
-            ->where('estado', 'activo')
-            ->where('acceso_cliente', true)
-            ->whereHas('catalogo', fn (Builder $query) => $query->where('clave', self::ELECTROFRIO))
-            ->with('empresa:id,cliente_id')
-            ->orderBy('id')
-            ->chunkById(100, function ($apps): void {
-                foreach ($apps as $app) {
-                    if ($app->empresa?->cliente_id) {
-                        $this->ensure((int) $app->empresa->cliente_id, self::ELECTROFRIO, (int) $app->empresa_id, (int) $app->id);
-                    }
-                }
-            });
+    public function ensureBusinessChannels(Request $request): Empresa
+    {
+        $empresa=app(TenantContext::class)->resolve($request);
+        app(TenantContext::class)->assertModule($empresa,'buzon');
+        app(TenantContext::class)->assertCanUse($request->user(),$empresa,'buzon');
+        $this->electrofrioApp((int)$empresa->id);
+        return $empresa;
     }
 
     public function adminQuery(string $context): Builder
     {
-        return Conversacion::query()->where('contexto', $context)->where('canal_principal', true);
+        return Conversacion::query()->where('contexto',$context)->where('canal_principal',true);
     }
 
-    public function assertContext(Conversacion $conversation, string $context): void
+    public function businessQuery(Request $request): Builder
     {
-        abort_unless($conversation->contexto === $context && $conversation->canal_principal, 404, 'Esta conversación no pertenece a este buzón.');
+        $empresa=$this->ensureBusinessChannels($request);
+        return Conversacion::query()->where('contexto',self::ELECTROFRIO)->where('empresa_id',$empresa->id)->whereNotNull('electrofrio_cliente_id')->where('canal_principal',true);
     }
 
-    public function assertClient(Request $request, Conversacion $conversation, string $context): void
+    public function assertContext(Conversacion $conversation,string $context):void
     {
-        $this->assertContext($conversation, $context);
-        abort_unless((int) $conversation->cliente_id === (int) $request->user()->cliente_id, 403, 'No tienes permiso para acceder a esta conversación.');
-
-        if ($context === self::ELECTROFRIO) {
-            $channel = $this->clientChannel($request, $context);
-            abort_unless((int) $channel->id === (int) $conversation->id, 403, 'Esta conversación pertenece a otro negocio.');
-        }
+        abort_unless($conversation->contexto===$context && $conversation->canal_principal,404,'Esta conversación no pertenece a este buzón.');
     }
 
-    public function label(string $context): string
+    public function assertClient(Request $request,Conversacion $conversation,string $context):void
     {
-        return $context === self::ELECTROFRIO ? 'Electrofrío' : 'Atención VITI';
+        if($context===self::ELECTROFRIO){$this->assertCustomer($request,$conversation);return;}
+        $this->assertContext($conversation,self::VITI);
+        abort_unless((int)$conversation->cliente_id===(int)$request->user()->cliente_id,403,'No tienes permiso para acceder a esta conversación.');
     }
 
-    public function adminPath(Conversacion $conversation): string
+    public function assertCustomer(Request $request,Conversacion $conversation):void
     {
-        return $conversation->contexto === self::ELECTROFRIO ? '/apps/electrofrio/buzon' : '/buzon';
+        $this->assertContext($conversation,self::ELECTROFRIO);
+        abort_unless($request->user()->rol==='cliente_negocio' && (int)$conversation->electrofrio_cliente_id===(int)$request->user()->electrofrio_cliente_id,403,'Esta conversación pertenece a otro cliente.');
     }
 
-    public function clientPath(Conversacion $conversation): string
+    public function assertBusiness(Request $request,Conversacion $conversation):Empresa
     {
-        return $conversation->contexto === self::ELECTROFRIO ? '/mi-apps/electrofrio/buzon' : '/mi-buzon';
+        $this->assertContext($conversation,self::ELECTROFRIO);
+        $empresa=app(TenantContext::class)->resolve($request);
+        app(TenantContext::class)->assertCanUse($request->user(),$empresa,'buzon');
+        abort_unless((int)$conversation->empresa_id===(int)$empresa->id,403,'Esta conversación pertenece a otro negocio.');
+        return $empresa;
     }
 
-    private function ensure(int $clientId, string $context, ?int $businessId = null, ?int $appId = null): Conversacion
+    public function label(string $context):string{return $context===self::ELECTROFRIO?'Electrofrío':'Atención VITI';}
+    public function adminPath(Conversacion $conversation):string{return $conversation->contexto===self::ELECTROFRIO?'/apps/electrofrio/buzon':'/buzon';}
+    public function businessPath(Conversacion $conversation):string{return '/mi-apps/electrofrio/buzon';}
+    public function clientPath(Conversacion $conversation):string{return $conversation->contexto===self::ELECTROFRIO?'/portal/electrofrio/mensajes':'/mi-buzon';}
+
+    public function businessUserIds(Conversacion $conversation):array
     {
-        $query = Conversacion::query()
-            ->where('cliente_id', $clientId)
-            ->where('contexto', $context)
-            ->where('canal_principal', true);
-
-        if ($businessId) $query->where('empresa_id', $businessId);
-        if ($appId) $query->where('aplicacion_id', $appId);
-        if ($channel = $query->first()) return $channel;
-
-        $adminId = Usuario::query()
-            ->where('estado', 'activo')
-            ->where('rol', 'superadmin')
-            ->orderBy('id')
-            ->value('id');
-
-        Conversacion::query()
-            ->where('cliente_id', $clientId)
-            ->where('contexto', $context)
-            ->when($businessId, fn (Builder $q) => $q->where('empresa_id', $businessId))
-            ->update(['canal_principal' => false]);
-
-        return Conversacion::create([
-            'cliente_id' => $clientId,
-            'empresa_id' => $businessId,
-            'aplicacion_id' => $appId,
-            'responsable_usuario_id' => $adminId,
-            'asunto' => $this->label($context),
-            'estado' => 'abierta',
-            'contexto' => $context,
-            'canal_principal' => true,
-        ]);
+        $empresa=Empresa::query()->with('planViti')->find($conversation->empresa_id);
+        if(!$empresa || !app(TenantContext::class)->hasModule($empresa,'buzon'))return [];
+        return $empresa->usuarios()->where('usuarios.estado','activo')->wherePivot('activo',true)->get()
+            ->filter(function(Usuario $user):bool{
+                if(in_array($user->pivot?->rol_negocio,['propietario','administrador'],true))return true;
+                $permissions=$user->pivot?->permisos;
+                if(is_string($permissions))$permissions=json_decode($permissions,true);
+                return is_array($permissions)&&in_array('buzon',$permissions,true);
+            })->pluck('id')->all();
     }
+
+    private function electrofrioApp(int $businessId):Aplicacion
+    {
+        $app=Aplicacion::query()->where('empresa_id',$businessId)->where('estado','activo')->where('acceso_cliente',true)
+            ->whereHas('catalogo',fn(Builder $q)=>$q->where('clave',self::ELECTROFRIO))->latest('id')->first();
+        abort_unless($app,404,'Este negocio no tiene un buzón de Electrofrío activo.');
+        return $app;
+    }
+
+    private function ensureViti(int $clientId):Conversacion
+    {
+        $channel=Conversacion::query()->where('cliente_id',$clientId)->where('contexto',self::VITI)->where('canal_principal',true)->first();
+        if($channel)return $channel;
+        return Conversacion::create(['cliente_id'=>$clientId,'responsable_usuario_id'=>$this->platformAdminId(),'asunto'=>$this->label(self::VITI),'estado'=>'abierta','contexto'=>self::VITI,'canal_principal'=>true]);
+    }
+
+    private function ensureElectrofrio(ElectrofrioCliente $customer,Aplicacion $app):Conversacion
+    {
+        $query=Conversacion::query()->where('electrofrio_cliente_id',$customer->id)->where('empresa_id',$customer->empresa_id)->where('aplicacion_id',$app->id)->where('contexto',self::ELECTROFRIO)->where('canal_principal',true);
+        if($channel=$query->first())return $channel;
+        Conversacion::query()->where('electrofrio_cliente_id',$customer->id)->where('contexto',self::ELECTROFRIO)->update(['canal_principal'=>false]);
+        $responsible=Usuario::query()->where('estado','activo')->whereHas('negocios',fn($q)=>$q->where('empresas.id',$customer->empresa_id)->where('empresa_usuario.activo',true)->whereIn('empresa_usuario.rol_negocio',['propietario','administrador']))->orderBy('id')->value('id');
+        return Conversacion::create(['cliente_id'=>null,'electrofrio_cliente_id'=>$customer->id,'empresa_id'=>$customer->empresa_id,'aplicacion_id'=>$app->id,'responsable_usuario_id'=>$responsible,'asunto'=>'Atención de '.$customer->nombre,'estado'=>'abierta','contexto'=>self::ELECTROFRIO,'canal_principal'=>true]);
+    }
+
+    private function platformAdminId():?int{return Usuario::query()->where('estado','activo')->where('rol','superadmin')->orderBy('id')->value('id');}
 }

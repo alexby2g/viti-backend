@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{AplicacionController,ArchivoController,AtencionSesionController,AuditoriaController,AuthController,BuzonController,ClientAppsController,ClientAuthController,ClientElectrofrioController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,ElectrofrioController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,OnboardingController,PeluqueriaController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,StorageController,PublicSolicitudController,UsuarioController};
+use App\Http\Controllers\{AplicacionController,ArchivoController,AtencionSesionController,AuditoriaController,AuthController,BuzonController,ClientAppsController,ClientAuthController,ClientElectrofrioController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,ElectrofrioController,ElectrofrioCustomerAuthController,ElectrofrioCustomerPortalController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,OnboardingController,PeluqueriaController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,StorageController,PublicSolicitudController,UsuarioController};
 use Illuminate\Support\Facades\Route;
 
 Route::get('health', fn () => ['status'=>'ok','service'=>'VITI Core API','time'=>now()->toIso8601String()]);
@@ -13,6 +13,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('status', [AuthController::class,'status']);
         Route::post('login', [AuthController::class,'login'])->middleware('throttle:login');
         Route::post('cliente/registro', [ClientAuthController::class,'register'])->middleware('throttle:login');
+        Route::post('electrofrio/login',[ElectrofrioCustomerAuthController::class,'login'])->middleware('throttle:login');
     });
 
     Route::prefix('mobile')->group(function (): void {
@@ -39,6 +40,21 @@ Route::prefix('v1')->group(function (): void {
         Route::post('notificaciones/buzon/leer-todo', [BuzonController::class,'markAllRead']);
         Route::post('push/dispositivo', [PushDeviceController::class,'store']);
         Route::delete('push/dispositivo', [PushDeviceController::class,'destroy']);
+
+        Route::middleware('electrofrio_customer')->prefix('portal/electrofrio')->group(function():void{
+            Route::get('me',[ElectrofrioCustomerAuthController::class,'me']);
+            Route::get('resumen',[ElectrofrioCustomerPortalController::class,'resumen']);
+            Route::get('buzon',[BuzonController::class,'clientIndex'])->defaults('chat_context','electrofrio');
+            Route::get('buzon/{conversacion}',[BuzonController::class,'clientShow'])->defaults('chat_context','electrofrio');
+            Route::post('buzon',[BuzonController::class,'clientStart'])->defaults('chat_context','electrofrio');
+            Route::post('buzon/{conversacion}/mensajes',[BuzonController::class,'clientSend'])->defaults('chat_context','electrofrio');
+            Route::put('buzon/{conversacion}/mensajes/{mensaje}',[BuzonController::class,'editMessage'])->defaults('chat_context','electrofrio');
+            Route::delete('buzon/{conversacion}/mensajes/{mensaje}',[BuzonController::class,'deleteMessage'])->defaults('chat_context','electrofrio');
+            Route::post('buzon/{conversacion}/presencia',[BuzonController::class,'presence'])->defaults('chat_context','electrofrio');
+            Route::get('atencion/sesiones',[AtencionSesionController::class,'clientStatus'])->defaults('chat_context','electrofrio');
+            Route::post('atencion/solicitudes',[AtencionSesionController::class,'clientRequest'])->defaults('chat_context','electrofrio');
+            Route::post('atencion/sesiones/{sesion}/cancelar',[AtencionSesionController::class,'clientCancel'])->defaults('chat_context','electrofrio');
+        });
 
         Route::get('llamadas/entrante', [LlamadaController::class,'incoming']);
         Route::post('llamadas', [LlamadaController::class,'store']);
@@ -82,9 +98,12 @@ Route::prefix('v1')->group(function (): void {
                 Route::put('equipos/{id}', [ClientElectrofrioController::class, 'actualizarEquipo']);
                 Route::delete('equipos/{id}', [ClientElectrofrioController::class, 'eliminarEquipo']);
                 Route::get('tecnicos', [ClientElectrofrioController::class, 'tecnicos']);
+                Route::get('usuarios-negocio', [ClientElectrofrioController::class, 'usuariosNegocio']);
                 Route::post('tecnicos', [ClientElectrofrioController::class, 'guardarTecnico']);
                 Route::put('tecnicos/{id}', [ClientElectrofrioController::class, 'actualizarTecnico']);
                 Route::delete('tecnicos/{id}', [ClientElectrofrioController::class, 'eliminarTecnico']);
+                Route::post('clientes/{id}/acceso', [ClientElectrofrioController::class, 'guardarAccesoCliente']);
+                Route::delete('clientes/{id}/acceso', [ClientElectrofrioController::class, 'revocarAccesoCliente']);
                 Route::get('materiales', [ClientElectrofrioController::class, 'materiales']);
                 Route::post('materiales', [ClientElectrofrioController::class, 'guardarMaterial']);
                 Route::put('materiales/{id}', [ClientElectrofrioController::class, 'actualizarMaterial']);
@@ -102,16 +121,19 @@ Route::prefix('v1')->group(function (): void {
                 Route::get('garantias', [ClientElectrofrioController::class, 'garantias']);
                 Route::get('historial', [ClientElectrofrioController::class, 'historial']);
 
-                Route::get('buzon', [BuzonController::class,'clientIndex'])->defaults('chat_context','electrofrio');
-                Route::get('buzon/{conversacion}', [BuzonController::class,'clientShow'])->defaults('chat_context','electrofrio');
-                Route::post('buzon', [BuzonController::class,'clientStart'])->defaults('chat_context','electrofrio');
-                Route::post('buzon/{conversacion}/mensajes', [BuzonController::class,'clientSend'])->defaults('chat_context','electrofrio');
+                Route::get('buzon', [BuzonController::class,'businessIndex'])->defaults('chat_context','electrofrio');
+                Route::get('buzon/{conversacion}', [BuzonController::class,'businessShow'])->defaults('chat_context','electrofrio');
+                Route::post('buzon/{conversacion}/mensajes', [BuzonController::class,'businessSend'])->defaults('chat_context','electrofrio');
                 Route::put('buzon/{conversacion}/mensajes/{mensaje}', [BuzonController::class,'editMessage'])->defaults('chat_context','electrofrio');
                 Route::delete('buzon/{conversacion}/mensajes/{mensaje}', [BuzonController::class,'deleteMessage'])->defaults('chat_context','electrofrio');
                 Route::post('buzon/{conversacion}/presencia', [BuzonController::class,'presence'])->defaults('chat_context','electrofrio');
-                Route::get('atencion/sesiones', [AtencionSesionController::class,'clientStatus'])->defaults('chat_context','electrofrio');
-                Route::post('atencion/solicitudes', [AtencionSesionController::class,'clientRequest'])->defaults('chat_context','electrofrio');
-                Route::post('atencion/sesiones/{sesion}/cancelar', [AtencionSesionController::class,'clientCancel'])->defaults('chat_context','electrofrio');
+                Route::put('buzon/{conversacion}/estado',[BuzonController::class,'businessState'])->defaults('chat_context','electrofrio');
+                Route::delete('buzon/{conversacion}',[BuzonController::class,'businessDeleteConversation'])->defaults('chat_context','electrofrio');
+                Route::get('atencion/sesiones', [AtencionSesionController::class,'adminIndex'])->defaults('chat_context','electrofrio');
+                Route::post('atencion/sesiones', [AtencionSesionController::class,'adminCreate'])->defaults('chat_context','electrofrio');
+                Route::post('atencion/sesiones/{sesion}/aprobar', [AtencionSesionController::class,'approve'])->defaults('chat_context','electrofrio');
+                Route::post('atencion/sesiones/{sesion}/rechazar', [AtencionSesionController::class,'reject'])->defaults('chat_context','electrofrio');
+                Route::post('atencion/sesiones/{sesion}/finalizar', [AtencionSesionController::class,'finish'])->defaults('chat_context','electrofrio');
             });
 
             Route::get('solicitudes/{solicitud}.pdf', [ReporteController::class,'clienteSolicitud']);
@@ -186,9 +208,12 @@ Route::prefix('v1')->group(function (): void {
                 Route::delete('equipos/{id}', [ElectrofrioController::class, 'eliminarEquipo']);
 
                 Route::get('tecnicos', [ElectrofrioController::class, 'tecnicos']);
+                Route::get('usuarios-negocio', [ElectrofrioController::class, 'usuariosNegocio']);
                 Route::post('tecnicos', [ElectrofrioController::class, 'guardarTecnico']);
                 Route::put('tecnicos/{id}', [ElectrofrioController::class, 'actualizarTecnico']);
                 Route::delete('tecnicos/{id}', [ElectrofrioController::class, 'eliminarTecnico']);
+                Route::post('clientes/{id}/acceso', [ElectrofrioController::class, 'guardarAccesoCliente']);
+                Route::delete('clientes/{id}/acceso', [ElectrofrioController::class, 'revocarAccesoCliente']);
 
                 Route::get('materiales', [ElectrofrioController::class, 'materiales']);
                 Route::post('materiales', [ElectrofrioController::class, 'guardarMaterial']);
@@ -209,14 +234,14 @@ Route::prefix('v1')->group(function (): void {
                 Route::get('garantias', [ElectrofrioController::class, 'garantias']);
                 Route::get('historial', [ElectrofrioController::class, 'historial']);
 
-                Route::get('buzon', [BuzonController::class,'adminIndex'])->defaults('chat_context','electrofrio');
-                Route::get('buzon/{conversacion}', [BuzonController::class,'adminShow'])->defaults('chat_context','electrofrio');
-                Route::post('buzon/{conversacion}/mensajes', [BuzonController::class,'adminSend'])->defaults('chat_context','electrofrio');
+                Route::get('buzon', [BuzonController::class,'businessIndex'])->defaults('chat_context','electrofrio');
+                Route::get('buzon/{conversacion}', [BuzonController::class,'businessShow'])->defaults('chat_context','electrofrio');
+                Route::post('buzon/{conversacion}/mensajes', [BuzonController::class,'businessSend'])->defaults('chat_context','electrofrio');
                 Route::put('buzon/{conversacion}/mensajes/{mensaje}', [BuzonController::class,'editMessage'])->defaults('chat_context','electrofrio');
                 Route::delete('buzon/{conversacion}/mensajes/{mensaje}', [BuzonController::class,'deleteMessage'])->defaults('chat_context','electrofrio');
                 Route::post('buzon/{conversacion}/presencia', [BuzonController::class,'presence'])->defaults('chat_context','electrofrio');
-                Route::put('buzon/{conversacion}/estado', [BuzonController::class,'adminState'])->defaults('chat_context','electrofrio');
-                Route::delete('buzon/{conversacion}', [BuzonController::class,'adminDeleteConversation'])->defaults('chat_context','electrofrio');
+                Route::put('buzon/{conversacion}/estado', [BuzonController::class,'businessState'])->defaults('chat_context','electrofrio');
+                Route::delete('buzon/{conversacion}', [BuzonController::class,'businessDeleteConversation'])->defaults('chat_context','electrofrio');
                 Route::get('atencion/sesiones', [AtencionSesionController::class,'adminIndex'])->defaults('chat_context','electrofrio');
                 Route::post('atencion/sesiones', [AtencionSesionController::class,'adminCreate'])->defaults('chat_context','electrofrio');
                 Route::post('atencion/sesiones/{sesion}/aprobar', [AtencionSesionController::class,'approve'])->defaults('chat_context','electrofrio');
