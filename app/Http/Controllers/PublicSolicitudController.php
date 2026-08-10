@@ -2,15 +2,18 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{Cliente,Conversacion,Cuestionario,Empresa,SolicitudRespuesta,SolicitudSistema};
+use App\Models\{Cliente,Conversacion,Cuestionario,Empresa,PlanViti,SolicitudRespuesta,SolicitudSistema};
 use App\Support\Code;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class PublicSolicitudController extends Controller
 {
+    private const PAYMENT_OPTIONS = ['contado','50_50','tres_partes','por_definir'];
+
     public function start(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -127,6 +130,7 @@ class PublicSolicitudController extends Controller
                 'resumen' => $data['resumen'] ?? null,
                 'estado' => 'borrador',
                 'prioridad' => 'normal',
+                'acuerdo_comercial_requerido' => true,
             ]);
 
             return [$cliente, $empresa, $solicitud];
@@ -146,13 +150,24 @@ class PublicSolicitudController extends Controller
 
     public function show(string $token): JsonResponse
     {
-        $solicitud = $this->resolve($token);
-        return response()->json(['data'=>$solicitud->load([
+        $solicitud = $this->resolve($token)->load([
             'empresa:id,nombre_comercial,actividad,telefono,whatsapp,logo_path',
             'cliente:id,nombre,telefono,whatsapp',
             'cuestionario.secciones.preguntas',
             'respuestas.pregunta',
-        ])]);
+            'planViti:id,codigo,nombre,descripcion,precio_proyecto,modulos,max_usuarios,max_aplicaciones',
+        ]);
+
+        $data = $solicitud->toArray();
+        $data['planes_disponibles'] = PlanViti::query()
+            ->where('activo', true)
+            ->orderByRaw('precio_proyecto is null')
+            ->orderBy('precio_proyecto')
+            ->orderBy('id')
+            ->get(['id','codigo','nombre','descripcion','precio_proyecto','modulos','max_usuarios','max_aplicaciones'])
+            ->values();
+
+        return response()->json(['data'=>$data]);
     }
 
     public function save(Request $request, string $token): JsonResponse
@@ -166,6 +181,11 @@ class PublicSolicitudController extends Controller
             'declaracion_aceptada'=>['nullable','boolean'],
             'declaracion_nombre'=>['nullable','string','max:180'],
             'declaracion_fecha'=>['nullable','date'],
+            'plan_viti_id'=>['nullable','integer','exists:planes_viti,id'],
+            'forma_pago_preferida'=>['nullable',Rule::in(self::PAYMENT_OPTIONS)],
+            'acuerdo_comercial_aceptado'=>['nullable','boolean'],
+            'acuerdo_comercial_nombre'=>['nullable','string','max:180'],
+            'acuerdo_comercial_fecha'=>['nullable','date'],
         ]);
 
         DB::transaction(function () use ($data, $solicitud): void {
@@ -178,10 +198,20 @@ class PublicSolicitudController extends Controller
                         : ['respuesta_texto'=>$value===null?null:(string)$value,'respuesta_json'=>null]
                 );
             }
+
+            $selectedPlan = !empty($data['plan_viti_id']) ? PlanViti::query()->whereKey($data['plan_viti_id'])->where('activo', true)->first() : null;
+            abort_if(!empty($data['plan_viti_id']) && !$selectedPlan, 422, 'El plan seleccionado ya no está disponible.');
+
             $solicitud->update([
                 'declaracion_aceptada'=>(bool)($data['declaracion_aceptada']??false),
                 'declaracion_nombre'=>$data['declaracion_nombre']??null,
                 'declaracion_fecha'=>$data['declaracion_fecha']??null,
+                'plan_viti_id'=>$selectedPlan?->id,
+                'presupuesto_estimado'=>$selectedPlan?->precio_proyecto ?? $solicitud->presupuesto_estimado,
+                'forma_pago_preferida'=>$data['forma_pago_preferida']??null,
+                'acuerdo_comercial_aceptado'=>(bool)($data['acuerdo_comercial_aceptado']??false),
+                'acuerdo_comercial_nombre'=>$data['acuerdo_comercial_nombre']??null,
+                'acuerdo_comercial_fecha'=>$data['acuerdo_comercial_fecha']??null,
             ]);
         });
 
@@ -197,6 +227,17 @@ class PublicSolicitudController extends Controller
         $answered = $solicitud->respuestas()->whereIn('pregunta_id',$requiredIds)->get()->filter(fn($a)=>filled($a->respuesta_texto)||!empty($a->respuesta_json))->pluck('pregunta_id');
         abort_if($requiredIds->diff($answered)->isNotEmpty(),422,'Completa las preguntas obligatorias.');
         abort_unless($solicitud->declaracion_aceptada && filled($solicitud->declaracion_nombre) && $solicitud->declaracion_fecha,422,'Debes aceptar la declaración final.');
+
+        if ($solicitud->acuerdo_comercial_requerido) {
+            abort_unless($solicitud->plan_viti_id,422,'Selecciona el plan que prefieres para tu proyecto.');
+            abort_unless(filled($solicitud->forma_pago_preferida),422,'Selecciona una forma de pago preferida.');
+            abort_unless(
+                $solicitud->acuerdo_comercial_aceptado && filled($solicitud->acuerdo_comercial_nombre) && $solicitud->acuerdo_comercial_fecha,
+                422,
+                'Debes aceptar el acuerdo comercial inicial para enviar la solicitud.'
+            );
+        }
+
         ClientPortalController::syncCompany($solicitud->fresh(), $solicitud->cliente);
         $solicitud->update(['estado'=>'en_revision','enviado_at'=>now()]);
         $solicitud->cliente?->update(['estado'=>'informacion_recibida']);
