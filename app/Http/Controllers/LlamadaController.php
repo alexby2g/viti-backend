@@ -3,12 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Models\{AtencionSesion,Conversacion,Llamada,LlamadaSenal,Usuario};
+use App\Services\ChatChannelService;
 use App\Support\FirebasePush;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class LlamadaController extends Controller
 {
+    public function __construct(private ChatChannelService $channels) {}
+
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -47,7 +50,7 @@ class LlamadaController extends Controller
 
             $target = $conversation->responsable;
             if (!$target || $target->estado !== 'activo') {
-                $target = Usuario::where('estado','activo')->where('rol','superadmin')->orderBy('id')->first();
+                $target = Usuario::where('estado','activo')->whereIn('rol',['superadmin','administrador'])->orderByRaw("CASE WHEN rol = 'superadmin' THEN 0 ELSE 1 END")->orderBy('id')->first();
             }
         } else {
             $target = Usuario::where('estado','activo')
@@ -86,10 +89,10 @@ class LlamadaController extends Controller
         $isClientCaller = $user->rol === 'cliente';
         $title = $isClientCaller
             ? (($data['tipo']==='video'?'Videollamada':'Llamada').' de '.($user->nombre ?: 'Cliente'))
-            : (($data['tipo']==='video'?'Videollamada':'Llamada').' de Atención VITI');
+            : (($data['tipo']==='video'?'Videollamada':'Llamada').' de '.$this->channels->label($conversation->contexto));
         $path = $isClientCaller
-            ? '/buzon?c='.$conversation->id.'&call='.$call->id
-            : '/mi-buzon?c='.$conversation->id.'&call='.$call->id;
+            ? $this->channels->adminPath($conversation).'?c='.$conversation->id.'&call='.$call->id
+            : $this->channels->clientPath($conversation).'?c='.$conversation->id.'&call='.$call->id;
 
         FirebasePush::sendToUsers(
             [$target->id],
@@ -100,6 +103,7 @@ class LlamadaController extends Controller
                 'call_id'=>$call->id,
                 'call_type'=>$call->tipo,
                 'conversation_id'=>$conversation->id,
+                'contexto'=>$conversation->contexto,
                 'path'=>$path,
             ]
         );
@@ -203,7 +207,7 @@ class LlamadaController extends Controller
         abort_unless(
             (int) $call->iniciada_por_usuario_id === (int) $user->id ||
             (int) $call->receptor_usuario_id === (int) $user->id ||
-            $user->rol === 'superadmin',
+            $user->isPlatformAdmin(),
             403,
             'No tienes permiso para acceder a esta llamada.'
         );
