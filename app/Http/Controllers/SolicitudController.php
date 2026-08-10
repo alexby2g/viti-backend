@@ -12,9 +12,11 @@ use Illuminate\Support\Str;
 
 class SolicitudController extends Controller
 {
+    private const PAYMENT_OPTIONS = ['contado','50_50','tres_partes','por_definir'];
+
     public function index(Request $request): JsonResponse
     {
-        $query=SolicitudSistema::with(['empresa:id,nombre_comercial','cliente:id,nombre,telefono','asignado:id,nombre,apellido'])->latest();
+        $query=SolicitudSistema::with(['empresa:id,nombre_comercial','cliente:id,nombre,telefono','asignado:id,nombre,apellido','planViti:id,nombre,precio_proyecto'])->latest();
         if($request->filled('estado'))$query->where('estado',$request->string('estado'));
         if($request->filled('buscar')){$term='%'.$request->string('buscar').'%';$query->where(fn($q)=>$q->where('codigo','like',$term)->orWhere('titulo','like',$term)->orWhereHas('empresa',fn($e)=>$e->where('nombre_comercial','like',$term)));}
         return response()->json($query->paginate(min(max((int)$request->input('per_page',20),1),100)));
@@ -28,12 +30,12 @@ class SolicitudController extends Controller
         abort_unless($data['cuestionario_id'],422,'No existe un cuestionario activo.');
         $solicitud=SolicitudSistema::create($data+['codigo'=>Code::next('solicitudes_sistema','SOL'),'public_token'=>Str::random(48),'publico_habilitado'=>true]);
         Audit::log($request,'solicitud_creada',$solicitud,'Se creó una solicitud de sistema.');
-        return response()->json(['data'=>$solicitud->load(['empresa','cliente'])],201);
+        return response()->json(['data'=>$solicitud->load(['empresa','cliente','planViti'])],201);
     }
 
     public function show(SolicitudSistema $solicitud): JsonResponse
     {
-        return response()->json(['data'=>$solicitud->load(['empresa','cliente','cuestionario.secciones.preguntas','respuestas.pregunta','proyecto','archivos'])]);
+        return response()->json(['data'=>$solicitud->load(['empresa','cliente','planViti','cuestionario.secciones.preguntas','respuestas.pregunta','proyecto','archivos'])]);
     }
 
     public function update(Request $request, SolicitudSistema $solicitud): JsonResponse
@@ -42,7 +44,7 @@ class SolicitudController extends Controller
         abort_unless(Empresa::query()->whereKey($data['empresa_id'])->where('cliente_id',$data['cliente_id'])->exists(),422,'La empresa seleccionada no pertenece al cliente indicado.');
         $solicitud->update($data);
         Audit::log($request,'solicitud_actualizada',$solicitud,'Se actualizaron los datos generales de la solicitud.');
-        return response()->json(['data'=>$solicitud->fresh()->load(['empresa','cliente'])]);
+        return response()->json(['data'=>$solicitud->fresh()->load(['empresa','cliente','planViti'])]);
     }
 
     public function saveAnswers(Request $request, SolicitudSistema $solicitud): JsonResponse
@@ -102,6 +104,10 @@ class SolicitudController extends Controller
 
         abort_if($requiredIds->diff($answered)->isNotEmpty(), 422, 'Completa las preguntas obligatorias antes de enviar la solicitud.');
         abort_unless($solicitud->declaracion_aceptada && filled($solicitud->declaracion_nombre) && $solicitud->declaracion_fecha, 422, 'El cliente debe aceptar la declaración final.');
+        if ($solicitud->acuerdo_comercial_requerido) {
+            abort_unless($solicitud->plan_viti_id && filled($solicitud->forma_pago_preferida), 422, 'El cliente debe seleccionar plan y forma de pago.');
+            abort_unless($solicitud->acuerdo_comercial_aceptado && filled($solicitud->acuerdo_comercial_nombre) && $solicitud->acuerdo_comercial_fecha, 422, 'El cliente debe aceptar el acuerdo comercial inicial.');
+        }
     }
 
     public function destroy(Request $request, SolicitudSistema $solicitud): JsonResponse
@@ -117,6 +123,7 @@ class SolicitudController extends Controller
             'empresa_id'=>['required','integer','exists:empresas,id'],
             'cliente_id'=>['required','integer','exists:clientes,id'],
             'cuestionario_id'=>['nullable','integer','exists:cuestionarios,id'],
+            'plan_viti_id'=>['nullable','integer','exists:planes_viti,id'],
             'asignado_a'=>['nullable','integer','exists:usuarios,id'],
             'titulo'=>['required','string','max:200'],
             'resumen'=>['nullable','string','max:5000'],
@@ -124,6 +131,7 @@ class SolicitudController extends Controller
             'prioridad'=>['nullable',Rule::in(['baja','normal','alta','urgente'])],
             'fecha_limite_deseada'=>['nullable','date'],
             'presupuesto_estimado'=>['nullable','numeric','min:0'],
+            'forma_pago_preferida'=>['nullable',Rule::in(self::PAYMENT_OPTIONS)],
         ]);
     }
 }

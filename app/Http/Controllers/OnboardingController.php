@@ -233,6 +233,7 @@ class OnboardingController extends Controller
                         'public_token' => $solicitud->public_token ?: Str::random(48),
                         'publico_habilitado' => true,
                         'resumen' => $solicitud->resumen ?: ($data['resumen'] ?? null),
+                        'acuerdo_comercial_requerido' => true,
                     ]);
                 } else {
                     $solicitud = SolicitudSistema::create([
@@ -246,6 +247,7 @@ class OnboardingController extends Controller
                         'resumen' => $data['resumen'] ?? null,
                         'estado' => 'borrador',
                         'prioridad' => 'normal',
+                        'acuerdo_comercial_requerido' => true,
                     ]);
                 }
 

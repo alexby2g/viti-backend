@@ -24,7 +24,14 @@ class ProyectoController extends Controller
         $data=$this->validateData($request);
         $proyecto=DB::transaction(function()use($data,$request){
             $p=Proyecto::create($data+['codigo'=>Code::next('proyectos','PRO')]);
-            if(!empty($data['solicitud_id']))SolicitudSistema::whereKey($data['solicitud_id'])->update(['estado'=>'convertida','aprobado_at'=>now()]);
+            if(!empty($data['solicitud_id'])){
+                $solicitud=SolicitudSistema::with('planViti')->findOrFail($data['solicitud_id']);
+                abort_unless((int)$solicitud->empresa_id === (int)$data['empresa_id'] && (int)$solicitud->cliente_id === (int)$data['cliente_id'],422,'La solicitud no corresponde a la empresa o responsable seleccionados.');
+                if($solicitud->plan_viti_id){
+                    $solicitud->empresa()->update(['plan_viti_id'=>$solicitud->plan_viti_id]);
+                }
+                $solicitud->update(['estado'=>'convertida','aprobado_at'=>now()]);
+            }
             ProyectoAvance::create(['proyecto_id'=>$p->id,'creado_por'=>$request->user()->id,'fase'=>$p->fase,'titulo'=>'Proyecto creado','descripcion'=>'Se inició el proyecto en VITI.','progreso'=>$p->progreso]);
             return $p;
         });
@@ -34,7 +41,7 @@ class ProyectoController extends Controller
 
     public function show(Proyecto $proyecto): JsonResponse
     {
-        return response()->json(['data'=>$proyecto->load(['empresa','cliente','solicitud','responsable','avances.creador','avances.archivos','aplicacion','archivos'])]);
+        return response()->json(['data'=>$proyecto->load(['empresa','cliente','solicitud.planViti','responsable','avances.creador','avances.archivos','aplicacion','archivos'])]);
     }
 
     public function update(Request $request, Proyecto $proyecto): JsonResponse

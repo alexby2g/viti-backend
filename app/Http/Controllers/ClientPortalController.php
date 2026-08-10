@@ -91,14 +91,14 @@ class ClientPortalController extends Controller
     {
         $cliente = $this->client($request);
         $solicitud = SolicitudSistema::query()->where('cliente_id',$cliente->id)->latest()->first();
-        return response()->json(['data'=>$solicitud?->load(['empresa','cuestionario.secciones.preguntas','respuestas'])]);
+        return response()->json(['data'=>$solicitud?->load(['empresa','planViti','cuestionario.secciones.preguntas','respuestas'])]);
     }
 
     public function startRequest(Request $request): JsonResponse
     {
         $cliente = $this->client($request);
         $existing = SolicitudSistema::query()->where('cliente_id',$cliente->id)->whereNotIn('estado',['cerrada','rechazada'])->latest()->first();
-        if ($existing) return response()->json(['data'=>$existing->load(['empresa','cuestionario.secciones.preguntas','respuestas'])]);
+        if ($existing) return response()->json(['data'=>$existing->load(['empresa','planViti','cuestionario.secciones.preguntas','respuestas'])]);
 
         $cuestionario = Cuestionario::query()->where('activo',true)->latest('id')->first();
         abort_unless($cuestionario, 422, 'No hay un cuestionario activo disponible.');
@@ -114,6 +114,7 @@ class ClientPortalController extends Controller
                 'titulo'=>'Nueva solicitud de sistema',
                 'estado'=>'borrador',
                 'prioridad'=>'normal',
+                'acuerdo_comercial_requerido'=>true,
             ]);
 
             $map = [2=>$cliente->nombre, 3=>$cliente->telefono];
@@ -129,7 +130,7 @@ class ClientPortalController extends Controller
         });
 
         Audit::log($request,'solicitud_cliente_iniciada',$solicitud,'El cliente inició su levantamiento de requerimientos.');
-        return response()->json(['data'=>$solicitud->load(['cuestionario.secciones.preguntas','respuestas'])],201);
+        return response()->json(['data'=>$solicitud->load(['planViti','cuestionario.secciones.preguntas','respuestas'])],201);
     }
 
     public function syncFromQuestionnaire(Request $request, SolicitudSistema $solicitud): JsonResponse
