@@ -17,28 +17,32 @@ class MobileAuthController extends Controller
             'acceso' => ['required','string','max:160'],
             'password' => ['required','string'],
         ], [
-            'acceso.required' => 'Ingresa tu número de teléfono o usuario.',
+            'acceso.required' => 'Ingresa tu usuario, teléfono o número de CI.',
             'password.required' => 'Ingresa tu contraseña.',
         ]);
 
         $access = trim($data['acceso']);
         $username = Str::lower($access);
         $phoneDigits = preg_replace('/\D+/', '', $access);
-        $phone = preg_match('/^[0-9\s()+.-]+$/', $access) && strlen($phoneDigits) >= 7
+        $numericAccess = preg_match('/^[0-9\s()+.-]+$/', $access) && strlen($phoneDigits) >= 5
             ? $phoneDigits
             : null;
 
         $usuario = Usuario::query()
             ->where('estado', 'activo')
             ->where('rol', 'cliente')
-            ->where(function ($query) use ($username, $phone): void {
+            ->where(function ($query) use ($username, $numericAccess): void {
                 $query->whereRaw('LOWER(usuario) = ?', [$username]);
-                if ($phone !== null) $query->orWhere('telefono', $phone);
+                if ($numericAccess !== null) {
+                    $query->orWhere('telefono', $numericAccess)
+                        ->orWhere('documento', $numericAccess)
+                        ->orWhereHas('cliente', fn ($client) => $client->where('documento', $numericAccess));
+                }
             })
             ->first();
 
         if (!$usuario || !Hash::check($data['password'], $usuario->password)) {
-            return response()->json(['message' => 'El teléfono, usuario o contraseña no son correctos.'], 422);
+            return response()->json(['message' => 'El usuario, teléfono, CI o contraseña no son correctos.'], 422);
         }
 
         $usuario->tokens()->where('name', 'viti-mobile')->delete();
