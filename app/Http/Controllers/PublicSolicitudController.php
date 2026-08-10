@@ -51,18 +51,9 @@ class PublicSolicitudController extends Controller
 
             if ($cliente) {
                 if ($documento) {
-                    abort_if(
-                        Cliente::query()->where('documento', $documento)->whereKeyNot($cliente->id)->exists(),
-                        422,
-                        'Ese documento ya pertenece a otro cliente.'
-                    );
-                    abort_if(
-                        filled($cliente->documento) && $cliente->documento !== $documento,
-                        422,
-                        'El documento indicado no coincide con el cliente registrado para ese teléfono.'
-                    );
+                    abort_if(Cliente::query()->where('documento', $documento)->whereKeyNot($cliente->id)->exists(),422,'Ese documento ya pertenece a otro cliente.');
+                    abort_if(filled($cliente->documento) && $cliente->documento !== $documento,422,'El documento indicado no coincide con el cliente registrado para ese teléfono.');
                 }
-
                 $cliente->update([
                     'whatsapp' => $cliente->whatsapp ?: ($data['whatsapp'] ?? $data['telefono']),
                     'documento' => $cliente->documento ?: $documento,
@@ -72,12 +63,7 @@ class PublicSolicitudController extends Controller
                     'estado' => 'formulario_en_proceso',
                 ]);
             } else {
-                abort_if(
-                    $documento && Cliente::query()->where('documento', $documento)->exists(),
-                    422,
-                    'Ese documento ya está registrado con otro número de teléfono.'
-                );
-
+                abort_if($documento && Cliente::query()->where('documento', $documento)->exists(),422,'Ese documento ya está registrado con otro número de teléfono.');
                 $cliente = Cliente::create([
                     'nombre' => trim($data['nombre']),
                     'telefono' => $data['telefono'],
@@ -92,11 +78,7 @@ class PublicSolicitudController extends Controller
             }
 
             $empresaNombre = trim($data['empresa_nombre']);
-            $empresa = Empresa::query()
-                ->where('cliente_id', $cliente->id)
-                ->where('nombre_comercial', $empresaNombre)
-                ->first();
-
+            $empresa = Empresa::query()->where('cliente_id', $cliente->id)->where('nombre_comercial', $empresaNombre)->first();
             if ($empresa) {
                 $empresa->update([
                     'actividad' => $empresa->actividad ?: ($data['empresa_actividad'] ?? null),
@@ -155,7 +137,7 @@ class PublicSolicitudController extends Controller
             'cliente:id,nombre,telefono,whatsapp',
             'cuestionario.secciones.preguntas',
             'respuestas.pregunta',
-            'planViti:id,codigo,nombre,descripcion,precio_proyecto,modulos,max_usuarios,max_aplicaciones',
+            'planViti:id,codigo,nombre,descripcion,precio_proyecto,precio_mensual,dias_prueba,modulos,max_usuarios,max_aplicaciones',
         ]);
 
         $data = $solicitud->toArray();
@@ -164,7 +146,7 @@ class PublicSolicitudController extends Controller
             ->orderByRaw('precio_proyecto is null')
             ->orderBy('precio_proyecto')
             ->orderBy('id')
-            ->get(['id','codigo','nombre','descripcion','precio_proyecto','modulos','max_usuarios','max_aplicaciones'])
+            ->get(['id','codigo','nombre','descripcion','precio_proyecto','precio_mensual','dias_prueba','modulos','max_usuarios','max_aplicaciones'])
             ->values();
 
         return response()->json(['data'=>$data]);
@@ -194,8 +176,8 @@ class PublicSolicitudController extends Controller
                 SolicitudRespuesta::updateOrCreate(
                     ['solicitud_id'=>$solicitud->id,'pregunta_id'=>$item['pregunta_id']],
                     is_array($value)
-                        ? ['respuesta_json'=>$value,'respuesta_texto'=>null]
-                        : ['respuesta_texto'=>$value===null?null:(string)$value,'respuesta_json'=>null]
+                        ? ['respuesta_json'=>$value,'respuesta_texto'=>null,'origen'=>'cliente']
+                        : ['respuesta_texto'=>$value===null?null:(string)$value,'respuesta_json'=>null,'origen'=>'cliente']
                 );
             }
 
@@ -231,11 +213,7 @@ class PublicSolicitudController extends Controller
         if ($solicitud->acuerdo_comercial_requerido) {
             abort_unless($solicitud->plan_viti_id,422,'Selecciona el plan que prefieres para tu proyecto.');
             abort_unless(filled($solicitud->forma_pago_preferida),422,'Selecciona una forma de pago preferida.');
-            abort_unless(
-                $solicitud->acuerdo_comercial_aceptado && filled($solicitud->acuerdo_comercial_nombre) && $solicitud->acuerdo_comercial_fecha,
-                422,
-                'Debes aceptar el acuerdo comercial inicial para enviar la solicitud.'
-            );
+            abort_unless($solicitud->acuerdo_comercial_aceptado && filled($solicitud->acuerdo_comercial_nombre) && $solicitud->acuerdo_comercial_fecha,422,'Debes aceptar el acuerdo comercial inicial para enviar la solicitud.');
         }
 
         ClientPortalController::syncCompany($solicitud->fresh(), $solicitud->cliente);
