@@ -197,11 +197,16 @@ class PaymentProofReviewFlowTest extends TestCase
             'nombre_comercial'=>'Soporte Vital PC',
             'estado'=>'activo',
         ]);
-        $clientUser->negocios()->attach($company->id,[
+
+        // Los observers de VITI pueden crear esta membresía automáticamente.
+        // La prueba solo garantiza el rol correcto sin duplicar el pivote.
+        $clientUser->negocios()->syncWithoutDetaching([$company->id]);
+        $clientUser->negocios()->updateExistingPivot($company->id,[
             'rol_negocio'=>'propietario',
             'activo'=>true,
             'permisos'=>null,
         ]);
+
         $project=Proyecto::create([
             'empresa_id'=>$company->id,
             'cliente_id'=>$client->id,
