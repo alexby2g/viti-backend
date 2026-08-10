@@ -23,7 +23,7 @@ class ReporteController extends Controller
 
     public function solicitud(SolicitudSistema $solicitud): Response
     {
-        $solicitud->load(['empresa','cliente','cuestionario.secciones.preguntas','respuestas.pregunta']);
+        $solicitud->load(['empresa','cliente','planViti','cuestionario.secciones.preguntas','respuestas.pregunta']);
         $answers = $solicitud->respuestas->keyBy('pregunta_id');
         return Pdf::loadView('reports.solicitud', compact('solicitud','answers'))->setPaper('a4')->download($solicitud->codigo.'-cuestionario.pdf');
     }
@@ -31,7 +31,7 @@ class ReporteController extends Controller
     public function clienteSolicitud(Request $request, SolicitudSistema $solicitud): Response
     {
         abort_unless((int)$solicitud->cliente_id === (int)$request->user()->cliente_id, 403, 'No tienes permiso para descargar este documento.');
-        $solicitud->load(['empresa','cliente','cuestionario.secciones.preguntas','respuestas.pregunta']);
+        $solicitud->load(['empresa','cliente','planViti','cuestionario.secciones.preguntas','respuestas.pregunta']);
         $answers = $solicitud->respuestas->keyBy('pregunta_id');
         return Pdf::loadView('reports.solicitud', compact('solicitud','answers'))->setPaper('a4')->download($solicitud->codigo.'-cuestionario.pdf');
     }
