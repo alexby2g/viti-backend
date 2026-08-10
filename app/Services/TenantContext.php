@@ -14,7 +14,7 @@ class TenantContext
 
         $requested = (int)($request->header('X-VITI-Empresa') ?: $request->input('empresa_id',0));
 
-        if ($user->isSuperAdmin()) {
+        if ($user->isPlatformAdmin()) {
             abort_unless($requested,422,'Selecciona una empresa.');
             $business = Empresa::query()->with('planViti')->findOrFail($requested);
             $request->attributes->set('viti_empresa_id',$business->id);
@@ -34,12 +34,13 @@ class TenantContext
     public function role(Usuario $user, Empresa $empresa): ?string
     {
         if ($user->isSuperAdmin()) return 'superadmin';
+        if ($user->rol === 'administrador') return 'administrador_viti';
         return $user->negocios()->where('empresas.id',$empresa->id)->wherePivot('activo',true)->first()?->pivot?->rol_negocio;
     }
 
     public function canManage(Usuario $user, Empresa $empresa): bool
     {
-        return in_array($this->role($user,$empresa), ['superadmin','propietario','administrador'], true);
+        return in_array($this->role($user,$empresa), ['superadmin','administrador_viti','propietario','administrador'], true);
     }
 
     public function assertCanManage(Usuario $user, Empresa $empresa): void
