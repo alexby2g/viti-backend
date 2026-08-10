@@ -9,23 +9,25 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Throwable;
 
 class ClientPortalController extends Controller
 {
     public function profile(Request $request): JsonResponse
     {
-        $cliente = $this->client($request)->load(['empresas','solicitudes'=>fn($q)=>$q->latest()]);
+        $cliente = $this->client($request)->load(['usuario:id,cliente_id,usuario','empresas','solicitudes'=>fn($q)=>$q->latest()]);
         return response()->json(['data'=>$cliente]);
     }
 
     public function updateProfile(Request $request): JsonResponse
     {
         $cliente = $this->client($request);
+        $request->merge(['ci' => preg_replace('/\D+/', '', (string) $request->input('ci'))]);
         $data = $request->validate([
             'nombre' => ['required','string','max:180'],
             'whatsapp' => ['nullable','regex:/^[0-9]{7,15}$/'],
-            'ci' => ['required','string','max:50','unique:clientes,documento,'.$cliente->id],
+            'ci' => ['required','regex:/^[0-9]{5,15}$/','unique:clientes,documento,'.$cliente->id,Rule::unique('usuarios','documento')->ignore($request->user()->id)],
             'ci_expedido' => ['nullable','string','max:20'],
             'ciudad' => ['required','string','max:100'],
             'direccion' => ['nullable','string','max:255'],
@@ -33,6 +35,7 @@ class ClientPortalController extends Controller
             'nombre.required' => 'El nombre es obligatorio.',
             'whatsapp.regex' => 'El WhatsApp debe contener entre 7 y 15 dígitos.',
             'ci.required' => 'La cédula de identidad es obligatoria.',
+            'ci.regex' => 'El CI debe contener entre 5 y 15 dígitos.',
             'ci.unique' => 'Ese número de cédula ya está registrado.',
             'ciudad.required' => 'La ciudad o localidad es obligatoria.',
         ]);
@@ -40,7 +43,7 @@ class ClientPortalController extends Controller
             'nombre'=>$data['nombre'], 'whatsapp'=>$data['whatsapp']??null,
             'documento'=>$data['ci'], 'ci_expedido'=>$data['ci_expedido']??null, 'ciudad'=>$data['ciudad'], 'direccion'=>$data['direccion']??null,
         ]);
-        $request->user()->update(['nombre'=>$data['nombre']]);
+        $request->user()->update(['nombre'=>$data['nombre'],'documento'=>$data['ci']]);
         Audit::log($request,'cliente_perfil_actualizado',$cliente,'El cliente actualizó su perfil.');
         return response()->json(['data'=>$cliente->fresh()]);
     }
