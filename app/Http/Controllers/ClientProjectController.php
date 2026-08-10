@@ -16,7 +16,8 @@ class ClientProjectController extends Controller
         $proyecto = Proyecto::where('empresa_id',$empresa->id)
             ->latest()
             ->with([
-                'empresa:id,nombre_comercial',
+                'empresa'=>fn($q)=>$q->select('id','nombre_comercial','plan_viti_id')->with('planViti'),
+                'solicitud'=>fn($q)=>$q->select('id','plan_viti_id','presupuesto_estimado','forma_pago_preferida')->with('planViti'),
                 'avances'=>fn($q)=>$q->where('visible_cliente',true)->with(['creador:id,nombre,apellido','archivos'])->latest(),
                 'aplicacion.catalogo',
             ])->first();
