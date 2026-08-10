@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Middleware\{EnsureClient,EnsureElectrofrioCustomer,EnsurePlatformAdmin,EnsureSuperAdmin,ResolveTenant,SecurityHeaders};
+use App\Http\Middleware\{EnsureClient,EnsureElectrofrioCustomer,EnsurePeluqueriaTenant,EnsurePlatformAdmin,EnsureSuperAdmin,ResolveTenant,SecurityHeaders};
 use Illuminate\Foundation\Application;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -19,12 +19,14 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
         then: function (): void {
             Route::middleware('api')->prefix('api/v1')->group(base_path('routes/commercial.php'));
+            Route::middleware('api')->prefix('api/v1')->group(base_path('routes/peluqueria-admin.php'));
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustProxies(at: '*');
         $middleware->statefulApi();
         $middleware->append(SecurityHeaders::class);
+        $middleware->append(EnsurePeluqueriaTenant::class);
         $middleware->alias([
             'superadmin'=>EnsureSuperAdmin::class,
             'platform_admin'=>EnsurePlatformAdmin::class,
