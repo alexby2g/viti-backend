@@ -15,6 +15,8 @@ use Throwable;
 
 class ClientSaasController extends Controller
 {
+    private const PAYMENT_METHODS = ['qr','transferencia','efectivo','otro'];
+
     public function negocios(Request $request): JsonResponse
     {
         $items = $request->user()->negocios()
@@ -25,7 +27,7 @@ class ClientSaasController extends Controller
             ->get()
             ->map(fn(Empresa $e) => [
                 'id'=>$e->id,'codigo'=>$e->codigo,'nombre_comercial'=>$e->nombre_comercial,'actividad'=>$e->actividad,
-                'logo_url'=>$e->logo_url,'moneda'=>$e->moneda,'zona_horaria'=>$e->zona_horaria,
+                'logo_url'=>$e->logo_url,'moneda'=>$e->moneda,'metodo_pago_preferido'=>$e->metodo_pago_preferido ?: 'qr','zona_horaria'=>$e->zona_horaria,
                 'rol'=>$e->pivot?->rol_negocio,'aplicaciones_count'=>$e->aplicaciones_count,'plan'=>$e->planViti,
             ]);
         return response()->json(['data'=>$items]);
@@ -48,7 +50,7 @@ class ClientSaasController extends Controller
         $data = $request->validate([
             'nombre_comercial'=>['required','string','max:180'],'razon_social'=>['nullable','string','max:200'],'actividad'=>['nullable','string','max:200'],
             'telefono'=>['nullable','string','max:30'],'whatsapp'=>['nullable','string','max:30'],'ciudad'=>['nullable','string','max:100'],'direccion'=>['nullable','string','max:255'],
-            'moneda'=>['required','string','size:3'],'zona_horaria'=>['required','string','max:80'],
+            'moneda'=>['required','string','size:3'],'metodo_pago_preferido'=>['sometimes',Rule::in(self::PAYMENT_METHODS)],'zona_horaria'=>['required','string','max:80'],
         ]);
         $empresa->update($data);
         Audit::log($request,'negocio_actualizado',$empresa,'El cliente actualizó la configuración de su negocio.');
@@ -79,6 +81,7 @@ class ClientSaasController extends Controller
         $items = $empresa->usuarios()->orderBy('nombre')->get()->map(fn(Usuario $u) => [
             'id'=>$u->id,'nombre'=>$u->nombre,'apellido'=>$u->apellido,'usuario'=>$u->usuario,'telefono'=>$u->telefono,'documento'=>$u->documento,
             'estado'=>$u->estado,'rol_negocio'=>$u->pivot?->rol_negocio,'permisos'=>$this->permissions($u->pivot?->permisos),'activo'=>(bool)$u->pivot?->activo,
+            'metodo_pago_negocio'=>$empresa->metodo_pago_preferido ?: 'qr',
         ]);
         return response()->json(['data'=>$items]);
     }
