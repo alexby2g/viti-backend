@@ -6,9 +6,11 @@ use App\Models\{Proyecto,ProyectoPago,Suscripcion,SuscripcionPago};
 use App\Services\{SubscriptionAccessService,TenantContext};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 class ClientPaymentController extends Controller
 {
@@ -33,24 +35,46 @@ class ClientPaymentController extends Controller
         $data = $this->validateSubmission($request,$expected,false);
         $proof = $this->storeProof($request,'proyectos/'.$proyecto->id);
 
-        $payment = ProyectoPago::create([
-            'proyecto_id'=>$proyecto->id,
-            'empresa_id'=>$empresa->id,
-            'pagador_usuario_id'=>$request->user()->id,
-            'tipo'=>$type,
-            'monto'=>$data['monto'],
-            'metodo'=>$data['metodo'],
-            'fecha_pago'=>$data['fecha_pago'],
-            'referencia'=>$data['referencia'] ?? null,
-            'observaciones'=>$data['observaciones'] ?? null,
-            'comprobante_path'=>$proof['path'],
-            'comprobante_nombre'=>$proof['name'],
-            'comprobante_mime'=>$proof['mime'],
-            'registrado_por'=>$request->user()->id,
-            'estado_revision'=>'pendiente_revision',
-            'origen'=>'cliente',
-            'enviado_at'=>now(),
-        ]);
+        try {
+            $payment = DB::transaction(function () use ($request,$proyecto,$empresa,$data,$proof): ProyectoPago {
+                // Serializa los envíos del mismo proyecto. Dos clics simultáneos ya no
+                // pueden crear dos comprobantes pendientes antes de verse entre sí.
+                $lockedProject = Proyecto::query()->lockForUpdate()->findOrFail($proyecto->id);
+                abort_unless((int)$lockedProject->empresa_id === (int)$empresa->id,403,'Este proyecto no pertenece a tu negocio.');
+                abort_unless($lockedProject->precio_acordado !== null,422,'El proyecto todavía no tiene un precio acordado.');
+                abort_if(
+                    ProyectoPago::query()->where('proyecto_id',$lockedProject->id)->where('estado_revision','pendiente_revision')->exists(),
+                    422,
+                    'Ya existe un comprobante de este proyecto pendiente de revisión.'
+                );
+
+                [$type,$currentExpected] = $this->projectDue($lockedProject);
+                abort_if($currentExpected <= 0,422,'Este proyecto no tiene un pago pendiente.');
+                $this->assertAmount((float)$data['monto'],$currentExpected,false);
+
+                return ProyectoPago::create([
+                    'proyecto_id'=>$lockedProject->id,
+                    'empresa_id'=>$empresa->id,
+                    'pagador_usuario_id'=>$request->user()->id,
+                    'tipo'=>$type,
+                    'monto'=>$data['monto'],
+                    'metodo'=>$data['metodo'],
+                    'fecha_pago'=>$data['fecha_pago'],
+                    'referencia'=>$data['referencia'] ?? null,
+                    'observaciones'=>$data['observaciones'] ?? null,
+                    'comprobante_path'=>$proof['path'],
+                    'comprobante_nombre'=>$proof['name'],
+                    'comprobante_mime'=>$proof['mime'],
+                    'registrado_por'=>$request->user()->id,
+                    'estado_revision'=>'pendiente_revision',
+                    'origen'=>'cliente',
+                    'enviado_at'=>now(),
+                ]);
+            },3);
+        } catch (Throwable $e) {
+            $this->deleteProof($proof['path']);
+            throw $e;
+        }
 
         return response()->json([
             'message'=>'Comprobante enviado. El pago quedará aplicado cuando AGR Studio lo confirme.',
@@ -78,23 +102,45 @@ class ClientPaymentController extends Controller
         $data = $this->validateSubmission($request,$expected,true);
         $proof = $this->storeProof($request,'suscripciones/'.$suscripcion->id);
 
-        $payment = SuscripcionPago::create([
-            'suscripcion_id'=>$suscripcion->id,
-            'empresa_id'=>$empresa->id,
-            'pagador_usuario_id'=>$request->user()->id,
-            'monto'=>$data['monto'],
-            'metodo'=>$data['metodo'],
-            'fecha_pago'=>$data['fecha_pago'],
-            'referencia'=>$data['referencia'] ?? null,
-            'observaciones'=>$data['observaciones'] ?? null,
-            'comprobante_path'=>$proof['path'],
-            'comprobante_nombre'=>$proof['name'],
-            'comprobante_mime'=>$proof['mime'],
-            'registrado_por'=>$request->user()->id,
-            'estado_revision'=>'pendiente_revision',
-            'origen'=>'cliente',
-            'enviado_at'=>now(),
-        ]);
+        try {
+            $payment = DB::transaction(function () use ($request,$suscripcion,$empresa,$access,$data,$proof): SuscripcionPago {
+                $lockedSubscription = Suscripcion::query()->lockForUpdate()->findOrFail($suscripcion->id);
+                abort_unless((int)$lockedSubscription->empresa_id === (int)$empresa->id,403,'Esta suscripción no pertenece a tu negocio.');
+                abort_if($lockedSubscription->estado === 'cancelada',422,'Esta suscripción está cancelada.');
+
+                $lockedStatus = $access->statusFor($lockedSubscription->aplicacion);
+                abort_if($lockedStatus['en_prueba'] ?? false,422,'Todavía estás dentro del periodo de prueba gratuita. El cobro comenzará después del '.$lockedStatus['prueba_hasta'].'.');
+                abort_if(
+                    SuscripcionPago::query()->where('suscripcion_id',$lockedSubscription->id)->where('estado_revision','pendiente_revision')->exists(),
+                    422,
+                    'Ya existe un comprobante de suscripción pendiente de revisión.'
+                );
+
+                $currentExpected = $this->subscriptionDue($lockedSubscription);
+                $this->assertAmount((float)$data['monto'],$currentExpected,true);
+
+                return SuscripcionPago::create([
+                    'suscripcion_id'=>$lockedSubscription->id,
+                    'empresa_id'=>$empresa->id,
+                    'pagador_usuario_id'=>$request->user()->id,
+                    'monto'=>$data['monto'],
+                    'metodo'=>$data['metodo'],
+                    'fecha_pago'=>$data['fecha_pago'],
+                    'referencia'=>$data['referencia'] ?? null,
+                    'observaciones'=>$data['observaciones'] ?? null,
+                    'comprobante_path'=>$proof['path'],
+                    'comprobante_nombre'=>$proof['name'],
+                    'comprobante_mime'=>$proof['mime'],
+                    'registrado_por'=>$request->user()->id,
+                    'estado_revision'=>'pendiente_revision',
+                    'origen'=>'cliente',
+                    'enviado_at'=>now(),
+                ]);
+            },3);
+        } catch (Throwable $e) {
+            $this->deleteProof($proof['path']);
+            throw $e;
+        }
 
         return response()->json([
             'message'=>'Comprobante de suscripción enviado. Se aplicará cuando AGR Studio lo confirme.',
@@ -132,16 +178,20 @@ class ClientPaymentController extends Controller
             'comprobante.mimes'=>'El comprobante debe ser una imagen JPG/PNG/WEBP o un PDF.',
         ]);
 
-        $amount=(float)$data['monto'];
+        $this->assertAmount((float)$data['monto'],$expected,$exactAmount);
+        if ($data['metodo'] !== 'efectivo') {
+            abort_unless($request->hasFile('comprobante'),422,'Adjunta el comprobante del pago realizado.');
+        }
+        return $data;
+    }
+
+    private function assertAmount(float $amount, float $expected, bool $exactAmount): void
+    {
         if($exactAmount){
             abort_if(abs($amount-$expected)>0.001,422,'La suscripción requiere el monto exacto de '.number_format($expected,2).' Bs.');
         }else{
             abort_if($amount > $expected + 0.001,422,'El monto indicado supera el importe pendiente de '.number_format($expected,2).' Bs.');
         }
-        if ($data['metodo'] !== 'efectivo') {
-            abort_unless($request->hasFile('comprobante'),422,'Adjunta el comprobante del pago realizado.');
-        }
-        return $data;
     }
 
     private function projectDue(Proyecto $project): array
@@ -172,7 +222,18 @@ class ClientPaymentController extends Controller
         }
         $file = $request->file('comprobante');
         $path = $file->store('pagos/comprobantes/'.$folder,'private_uploads');
+        abort_unless($path,503,'No pudimos almacenar el comprobante. Inténtalo nuevamente.');
         return ['path'=>$path,'name'=>$file->getClientOriginalName(),'mime'=>$file->getMimeType()];
+    }
+
+    private function deleteProof(?string $path): void
+    {
+        if (!$path) return;
+        try {
+            if (Storage::disk('private_uploads')->exists($path)) Storage::disk('private_uploads')->delete($path);
+        } catch (Throwable $e) {
+            report($e);
+        }
     }
 
     private function streamProof(?string $path, ?string $name, ?string $mime): StreamedResponse
