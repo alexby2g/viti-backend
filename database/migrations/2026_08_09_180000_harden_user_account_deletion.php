@@ -16,7 +16,14 @@ return new class extends Migration
         }
 
         DB::table('usuarios')->update(['usuario' => DB::raw('LOWER(usuario)')]);
-        DB::statement('CREATE UNIQUE INDEX usuarios_usuario_lower_unique ON usuarios (LOWER(usuario))');
+
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement('CREATE UNIQUE INDEX usuarios_usuario_lower_unique ON usuarios (LOWER(usuario))');
+        } else {
+            // SQLite already receives normalized lowercase usernames and does not
+            // compile functional index expressions consistently in every CI build.
+            DB::statement('CREATE UNIQUE INDEX usuarios_usuario_lower_unique ON usuarios (usuario)');
+        }
 
         $this->replaceForeignKey('usuarios', 'cliente_id', 'clientes', 'cascade');
         $this->replaceForeignKey('empresas', 'cliente_id', 'clientes', 'cascade');
