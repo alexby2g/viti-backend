@@ -33,19 +33,6 @@ jobs:
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist --no-progress
 
-      # Temporary bootstrap: the resulting Composer files are downloaded from
-      # this run and committed, then this step is removed.
-      - name: Generate Laravel test dependency lock
-        run: composer require --dev mockery/mockery --no-interaction --prefer-dist --no-progress
-
-      - name: Save generated Composer files
-        uses: actions/upload-artifact@v4
-        with:
-          name: composer-test-dependencies
-          path: |
-            composer.json
-            composer.lock
-
       - name: Validate PHP syntax
         run: find app bootstrap config database routes -name '*.php' -print0 | xargs -0 -n1 php -l
 
