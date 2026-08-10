@@ -24,18 +24,18 @@ return new class extends Migration
                 [
                     'codigo' => 'basico-1800',
                     'nombre' => 'Plan Inicial',
-                    'descripcion' => 'Para negocios que necesitan organizar clientes, equipos, agenda, órdenes e historial con una aplicación VITI.',
+                    'descripcion' => 'Para negocios que necesitan organizar clientes, equipos, técnicos, agenda, órdenes e historial con una aplicación VITI.',
                     'precio_proyecto' => 1800,
                     'precio_mensual' => 35,
                     'dias_prueba' => 14,
-                    'modulos' => ['inicio','agenda','ordenes','clientes','equipos','historial','buzon'],
-                    'max_usuarios' => 3,
+                    'modulos' => ['inicio','agenda','ordenes','clientes','equipos','tecnicos','historial','buzon'],
+                    'max_usuarios' => null,
                     'max_aplicaciones' => 1,
                 ],
                 [
                     'codigo' => 'profesional-1950',
                     'nombre' => 'Plan Profesional',
-                    'descripcion' => 'Para servicios técnicos que además necesitan técnicos, pagos, garantías e historial completo. Incluye hasta 6 usuarios.',
+                    'descripcion' => 'Para servicios técnicos que además necesitan control de pagos, garantías e historial completo. Incluye hasta 6 usuarios.',
                     'precio_proyecto' => 1950,
                     'precio_mensual' => 50,
                     'dias_prueba' => 14,
@@ -57,6 +57,7 @@ return new class extends Migration
             ];
 
             foreach ($plans as $plan) {
+                $existing = DB::table('planes_viti')->where('codigo', $plan['codigo'])->first();
                 DB::table('planes_viti')->updateOrInsert(
                     ['codigo' => $plan['codigo']],
                     [
@@ -70,7 +71,7 @@ return new class extends Migration
                         'max_aplicaciones' => $plan['max_aplicaciones'],
                         'activo' => true,
                         'updated_at' => $now,
-                        'created_at' => $now,
+                        'created_at' => $existing?->created_at ?? $now,
                     ]
                 );
             }
