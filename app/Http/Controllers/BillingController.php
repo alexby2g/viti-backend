@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{Aplicacion,ConfiguracionPago,Proyecto,ProyectoPago,Suscripcion,SuscripcionPago};
+use App\Models\{Aplicacion,ConfiguracionPago,Empresa,Proyecto,ProyectoPago,Suscripcion,SuscripcionPago};
 use App\Services\SubscriptionAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,15 +13,33 @@ use Illuminate\Validation\Rule;
 
 class BillingController extends Controller
 {
+    private const PAYMENT_METHODS = ['qr','transferencia','efectivo','otro'];
+
     public function index(SubscriptionAccessService $access): JsonResponse
     {
+        $companyWithAccounts = fn ($q) => $q
+            ->select('id','nombre_comercial','metodo_pago_preferido')
+            ->with(['usuarios' => fn ($users) => $users
+                ->wherePivot('activo',true)
+                ->select('usuarios.id','usuarios.nombre','usuarios.apellido','usuarios.usuario','usuarios.telefono')
+                ->orderBy('usuarios.nombre')]);
+
         $projects = Proyecto::query()
-            ->with(['empresa:id,nombre_comercial','cliente:id,nombre,telefono','aplicacion:id,proyecto_id,nombre,estado,acceso_cliente','pagos'])
+            ->with([
+                'empresa'=>$companyWithAccounts,
+                'cliente:id,nombre,telefono',
+                'aplicacion:id,proyecto_id,nombre,estado,acceso_cliente',
+                'pagos.pagador:id,nombre,apellido,usuario,telefono',
+            ])
             ->latest('id')->limit(150)->get()
             ->map(fn (Proyecto $p) => $this->projectRow($p));
 
         $subscriptions = Suscripcion::query()
-            ->with(['aplicacion:id,empresa_id,proyecto_id,nombre,estado,acceso_cliente','empresa:id,nombre_comercial','pagos'])
+            ->with([
+                'aplicacion:id,empresa_id,proyecto_id,nombre,estado,acceso_cliente',
+                'empresa'=>$companyWithAccounts,
+                'pagos.pagador:id,nombre,apellido,usuario,telefono',
+            ])
             ->latest('id')->get()
             ->map(function (Suscripcion $s) use ($access): array {
                 $s = $access->refresh($s);
@@ -71,30 +89,36 @@ class BillingController extends Controller
         ]);
 
         $this->refreshProjectPaymentStatus($proyecto);
-        return response()->json(['data'=>$this->projectRow($proyecto->fresh()->load(['empresa','cliente','aplicacion','pagos']))]);
+        return response()->json(['data'=>$this->projectRow($this->reloadProject($proyecto))]);
     }
 
     public function registrarPagoProyecto(Request $request, Proyecto $proyecto): JsonResponse
     {
         abort_unless($proyecto->precio_acordado !== null,422,'Primero registra el acuerdo económico del proyecto.');
+        abort_unless($proyecto->empresa_id,422,'El proyecto debe estar asociado a una empresa antes de registrar pagos.');
         $data = $request->validate([
             'tipo'=>['required',Rule::in(['anticipo','saldo_final','otro'])],
             'monto'=>['required','numeric','min:0.01'],
-            'metodo'=>['required',Rule::in(['qr','transferencia','efectivo','otro'])],
+            'metodo'=>['required',Rule::in(self::PAYMENT_METHODS)],
             'fecha_pago'=>['required','date'],
             'referencia'=>['nullable','string','max:180'],
             'observaciones'=>['nullable','string','max:3000'],
+            'pagador_usuario_id'=>['nullable','integer','exists:usuarios,id'],
         ]);
+
+        $empresa = Empresa::findOrFail($proyecto->empresa_id);
+        $this->assertPayerBelongsToCompany($empresa,$data['pagador_usuario_id'] ?? null);
 
         ProyectoPago::create([
             ...$data,
             'proyecto_id'=>$proyecto->id,
-            'empresa_id'=>$proyecto->empresa_id,
+            'empresa_id'=>$empresa->id,
             'registrado_por'=>$request->user()?->id,
         ]);
+        $empresa->update(['metodo_pago_preferido'=>$data['metodo']]);
 
         $this->refreshProjectPaymentStatus($proyecto);
-        return response()->json(['data'=>$this->projectRow($proyecto->fresh()->load(['empresa','cliente','aplicacion','pagos']))],201);
+        return response()->json(['data'=>$this->projectRow($this->reloadProject($proyecto))],201);
     }
 
     public function guardarSuscripcion(Request $request, Aplicacion $aplicacion, SubscriptionAccessService $access): JsonResponse
@@ -131,23 +155,28 @@ class BillingController extends Controller
         );
 
         $subscription = $access->refresh($subscription->fresh());
-        return response()->json(['data'=>$this->subscriptionRow($subscription->load(['aplicacion','empresa','pagos']))]);
+        return response()->json(['data'=>$this->subscriptionRow($this->reloadSubscription($subscription))]);
     }
 
     public function registrarPagoSuscripcion(Request $request, Suscripcion $suscripcion, SubscriptionAccessService $access): JsonResponse
     {
         $data = $request->validate([
             'monto'=>['required','numeric','min:0.01'],
-            'metodo'=>['required',Rule::in(['qr','transferencia','efectivo','otro'])],
+            'metodo'=>['required',Rule::in(self::PAYMENT_METHODS)],
             'fecha_pago'=>['required','date'],
             'referencia'=>['nullable','string','max:180'],
             'observaciones'=>['nullable','string','max:3000'],
+            'pagador_usuario_id'=>['nullable','integer','exists:usuarios,id'],
         ]);
 
-        DB::transaction(function () use ($request,$suscripcion,$data): void {
+        $empresa = Empresa::findOrFail($suscripcion->empresa_id);
+        $this->assertPayerBelongsToCompany($empresa,$data['pagador_usuario_id'] ?? null);
+
+        DB::transaction(function () use ($request,$suscripcion,$empresa,$data): void {
             SuscripcionPago::create([
                 ...$data,
                 'suscripcion_id'=>$suscripcion->id,
+                'empresa_id'=>$empresa->id,
                 'registrado_por'=>$request->user()?->id,
             ]);
 
@@ -156,10 +185,11 @@ class BillingController extends Controller
                 : Carbon::parse($data['fecha_pago']);
             $next = $suscripcion->frecuencia === 'anual' ? $base->addYear() : $base->addMonth();
             $suscripcion->update(['fecha_vencimiento'=>$next->toDateString(),'estado'=>'activa']);
+            $empresa->update(['metodo_pago_preferido'=>$data['metodo']]);
         });
 
         $suscripcion = $access->refresh($suscripcion->fresh());
-        return response()->json(['data'=>$this->subscriptionRow($suscripcion->load(['aplicacion','empresa','pagos']))],201);
+        return response()->json(['data'=>$this->subscriptionRow($this->reloadSubscription($suscripcion))],201);
     }
 
     public function actualizarConfiguracion(Request $request): JsonResponse
@@ -242,7 +272,9 @@ class BillingController extends Controller
         $paid = round($initialPaid + $balancePaid,2);
         $total = (float)($p->precio_acordado ?? 0);
         return [
-            'id'=>$p->id,'codigo'=>$p->codigo,'nombre'=>$p->nombre,'empresa'=>$p->empresa,'cliente'=>$p->cliente,'aplicacion'=>$p->aplicacion,
+            'id'=>$p->id,'codigo'=>$p->codigo,'nombre'=>$p->nombre,
+            'empresa'=>$this->companyRow($p->empresa),'cuentas_empresa'=>$this->companyAccounts($p->empresa),
+            'cliente'=>$p->cliente,'aplicacion'=>$p->aplicacion,
             'precio_acordado'=>$p->precio_acordado !== null ? (float)$p->precio_acordado : null,
             'anticipo_monto'=>$p->anticipo_monto !== null ? (float)$p->anticipo_monto : null,
             'saldo_monto'=>$p->saldo_monto !== null ? (float)$p->saldo_monto : null,
@@ -255,11 +287,58 @@ class BillingController extends Controller
     private function subscriptionRow(Suscripcion $s): array
     {
         return [
-            'id'=>$s->id,'aplicacion'=>$s->aplicacion,'empresa'=>$s->empresa,'plan'=>$s->plan,'monto'=>(float)$s->monto,
+            'id'=>$s->id,'aplicacion'=>$s->aplicacion,
+            'empresa'=>$this->companyRow($s->empresa),'cuentas_empresa'=>$this->companyAccounts($s->empresa),
+            'plan'=>$s->plan,'monto'=>(float)$s->monto,
             'frecuencia'=>$s->frecuencia,'moneda'=>$s->moneda,'fecha_inicio'=>$s->fecha_inicio?->format('Y-m-d'),
             'fecha_vencimiento'=>$s->fecha_vencimiento?->format('Y-m-d'),'dias_gracia'=>(int)$s->dias_gracia,'estado'=>$s->estado,
             'pagos'=>$s->pagos->values(),
         ];
+    }
+
+    private function reloadProject(Proyecto $project): Proyecto
+    {
+        return $project->fresh()->load([
+            'empresa'=>fn($q)=>$q->select('id','nombre_comercial','metodo_pago_preferido')->with(['usuarios'=>fn($users)=>$users->wherePivot('activo',true)->select('usuarios.id','usuarios.nombre','usuarios.apellido','usuarios.usuario','usuarios.telefono')->orderBy('usuarios.nombre')]),
+            'cliente:id,nombre,telefono','aplicacion:id,proyecto_id,nombre,estado,acceso_cliente','pagos.pagador:id,nombre,apellido,usuario,telefono',
+        ]);
+    }
+
+    private function reloadSubscription(Suscripcion $subscription): Suscripcion
+    {
+        return $subscription->fresh()->load([
+            'aplicacion:id,empresa_id,proyecto_id,nombre,estado,acceso_cliente',
+            'empresa'=>fn($q)=>$q->select('id','nombre_comercial','metodo_pago_preferido')->with(['usuarios'=>fn($users)=>$users->wherePivot('activo',true)->select('usuarios.id','usuarios.nombre','usuarios.apellido','usuarios.usuario','usuarios.telefono')->orderBy('usuarios.nombre')]),
+            'pagos.pagador:id,nombre,apellido,usuario,telefono',
+        ]);
+    }
+
+    private function companyRow(?Empresa $empresa): ?array
+    {
+        if (!$empresa) return null;
+        return ['id'=>$empresa->id,'nombre_comercial'=>$empresa->nombre_comercial,'metodo_pago_preferido'=>$empresa->metodo_pago_preferido ?: 'qr'];
+    }
+
+    private function companyAccounts(?Empresa $empresa): array
+    {
+        if (!$empresa) return [];
+        return $empresa->usuarios->map(fn($user)=>[
+            'id'=>$user->id,
+            'nombre'=>trim($user->nombre.' '.($user->apellido ?? '')),
+            'usuario'=>$user->usuario,
+            'telefono'=>$user->telefono,
+            'rol_negocio'=>$user->pivot?->rol_negocio,
+        ])->values()->all();
+    }
+
+    private function assertPayerBelongsToCompany(Empresa $empresa, ?int $userId): void
+    {
+        if (!$userId) return;
+        abort_unless(
+            $empresa->usuarios()->where('usuarios.id',$userId)->wherePivot('activo',true)->exists(),
+            422,
+            'La cuenta seleccionada no pertenece a esta empresa o está inactiva.'
+        );
     }
 
     private function configRow(ConfiguracionPago $config): array
