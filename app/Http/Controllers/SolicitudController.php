@@ -61,11 +61,16 @@ class SolicitudController extends Controller
         DB::transaction(function()use($data,$solicitud):void{
             foreach($data['respuestas'] as $item){
                 $value=$item['valor']??null;
+                $existing=SolicitudRespuesta::query()
+                    ->where('solicitud_id',$solicitud->id)
+                    ->where('pregunta_id',$item['pregunta_id'])
+                    ->first();
+                $origin=$existing?->origen ?: 'tecnico';
                 SolicitudRespuesta::updateOrCreate(
                     ['solicitud_id'=>$solicitud->id,'pregunta_id'=>$item['pregunta_id']],
                     is_array($value)
-                        ? ['respuesta_json'=>$value,'respuesta_texto'=>null]
-                        : ['respuesta_texto'=>$value===null?null:(string)$value,'respuesta_json'=>null]
+                        ? ['respuesta_json'=>$value,'respuesta_texto'=>null,'origen'=>$origin]
+                        : ['respuesta_texto'=>$value===null?null:(string)$value,'respuesta_json'=>null,'origen'=>$origin]
                 );
             }
         });
