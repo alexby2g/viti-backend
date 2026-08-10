@@ -3,6 +3,7 @@
 return [
     App\Providers\AppServiceProvider::class,
     App\Providers\PeluqueriaAppServiceProvider::class,
+    App\Providers\ElectrofrioAppServiceProvider::class,
     App\Providers\BillingServiceProvider::class,
     App\Providers\SaasServiceProvider::class,
 ];
