@@ -63,4 +63,29 @@ class TenantContext
         $current = $empresa->aplicaciones()->whereNotIn('estado',['retirado'])->count();
         abort_if($current >= $limit,422,'Este negocio alcanzó el límite de aplicaciones de su plan VITI.');
     }
+
+    public function modules(Empresa $empresa): ?array
+    {
+        $modules = $empresa->planViti?->modulos;
+        if ($modules === null || $modules === []) return null;
+
+        return array_values(array_unique(array_filter(
+            array_map(fn ($module) => trim((string) $module), (array) $modules)
+        )));
+    }
+
+    public function hasModule(Empresa $empresa, string $module): bool
+    {
+        $modules = $this->modules($empresa);
+        return $modules === null || in_array($module, $modules, true);
+    }
+
+    public function assertModule(Empresa $empresa, string $module): void
+    {
+        abort_unless(
+            $this->hasModule($empresa, $module),
+            403,
+            'Este módulo no forma parte del plan VITI asignado a tu negocio.'
+        );
+    }
 }
