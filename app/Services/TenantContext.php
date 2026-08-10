@@ -69,7 +69,7 @@ class TenantContext
 
     public function assertCanUse(Usuario $user, Empresa $empresa, string $module): void
     {
-        abort_unless($this->canUse($user,$empresa,$module),403,'Tu rol no tiene permiso para usar este módulo de Electrofrío.');
+        abort_unless($this->canUse($user,$empresa,$module),403,'Tu rol no tiene permiso para usar este módulo de la aplicación VITI.');
     }
 
     public function assertUserLimit(Empresa $empresa): void
