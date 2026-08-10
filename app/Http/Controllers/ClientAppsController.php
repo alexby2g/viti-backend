@@ -19,7 +19,13 @@ class ClientAppsController extends Controller
 
         $items = $apps->map(function (Aplicacion $app) use ($lifecycle): array {
             $cycle = $lifecycle->status($app);
-            $internalRoute = $app->catalogo?->ruta_base;
+            $key = $app->catalogo?->clave;
+            $internalRoute = match ($key) {
+                'peluqueria' => '/mi-apps/peluqueria/inicio',
+                'electrofrio' => '/mi-apps/electrofrio/inicio',
+                'servicio-tecnico' => '/mi-apps/servicio-tecnico/inicio',
+                default => $app->catalogo?->ruta_base,
+            };
             $externalUrl = filter_var($app->url, FILTER_VALIDATE_URL) && str_starts_with((string)$app->url, 'https://')
                 ? $app->url
                 : null;
