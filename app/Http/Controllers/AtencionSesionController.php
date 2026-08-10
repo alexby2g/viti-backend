@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{AtencionSesion,Conversacion,Usuario};
+use App\Services\ChatChannelService;
 use App\Support\{Audit,FirebasePush};
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -10,10 +11,11 @@ use Illuminate\Http\Request;
 
 class AtencionSesionController extends Controller
 {
+    public function __construct(private ChatChannelService $channels) {}
+
     public function clientStatus(Request $request): JsonResponse
     {
-        $clientId = (int) $request->user()->cliente_id;
-        $conversation = $this->primaryConversation($clientId);
+        $conversation = $this->channels->clientChannel($request);
 
         $items = AtencionSesion::query()
             ->where('conversacion_id', $conversation->id)
@@ -49,7 +51,7 @@ class AtencionSesionController extends Controller
         ]);
 
         $clientId = (int) $request->user()->cliente_id;
-        $conversation = $this->primaryConversation($clientId);
+        $conversation = $this->channels->clientChannel($request);
 
         $alreadyPending = AtencionSesion::query()
             ->where('conversacion_id', $conversation->id)
@@ -78,14 +80,16 @@ class AtencionSesionController extends Controller
             $targetIds,
             'Nueva solicitud de atención',
             ($request->user()->nombre ?: 'Un cliente').' solicita '.($data['modalidad'] === 'pantalla' ? 'asistencia con pantalla' : ($data['modalidad'] === 'video' ? 'videollamada' : 'llamada de voz')).'.',
-            ['type'=>'atencion','conversation_id'=>$conversation->id,'session_id'=>$session->id,'path'=>'/buzon?c='.$conversation->id]
+            ['type'=>'atencion','contexto'=>$conversation->contexto,'conversation_id'=>$conversation->id,'session_id'=>$session->id,'path'=>$this->channels->adminPath($conversation).'?c='.$conversation->id]
         );
 
-        return response()->json(['message'=>'Solicitud enviada. El equipo VITI la revisará antes de habilitar la llamada.','data'=>$session], 201);
+        return response()->json(['message'=>'Solicitud enviada. El equipo responsable la revisará antes de habilitar la llamada.','data'=>$session], 201);
     }
 
     public function clientCancel(Request $request, AtencionSesion $sesion): JsonResponse
     {
+        $sesion->loadMissing('conversacion');
+        $this->channels->assertClient($request, $sesion->conversacion, $this->channels->context($request));
         abort_unless((int)$sesion->cliente_id === (int)$request->user()->cliente_id, 403, 'No tienes permiso para modificar esta solicitud.');
         abort_unless(in_array($sesion->estado, ['solicitada','aprobada'], true), 422, 'Esta sesión ya no puede cancelarse.');
         $sesion->update(['estado'=>'cancelada']);
@@ -96,6 +100,7 @@ class AtencionSesionController extends Controller
     {
         $query = AtencionSesion::query()
             ->with(['cliente:id,nombre,telefono,foto_path','solicitante:id,nombre,apellido,rol','aprobador:id,nombre,apellido,rol'])
+            ->whereHas('conversacion', fn ($conversation) => $conversation->where('contexto', $this->channels->context($request))->where('canal_principal', true))
             ->latest('id');
 
         if ($request->filled('conversacion_id')) {
@@ -116,6 +121,7 @@ class AtencionSesionController extends Controller
         ]);
 
         $conversation = Conversacion::findOrFail($data['conversacion_id']);
+        $this->channels->assertContext($conversation, $this->channels->context($request));
         $session = $this->createApproved(
             $request,
             $conversation,
@@ -130,6 +136,8 @@ class AtencionSesionController extends Controller
 
     public function approve(Request $request, AtencionSesion $sesion): JsonResponse
     {
+        $sesion->loadMissing('conversacion');
+        $this->channels->assertContext($sesion->conversacion, $this->channels->context($request));
         abort_unless($sesion->estado === 'solicitada', 422, 'Esta solicitud ya fue revisada.');
         $data = $request->validate([
             'programada_para' => ['nullable','date'],
@@ -153,13 +161,15 @@ class AtencionSesionController extends Controller
         ]);
 
         Audit::log($request, 'atencion_aprobada', $sesion, 'Se aprobó una sesión de atención.');
-        $this->pushClient($sesion->fresh(), 'Atención VITI aprobada', 'Tu sesión fue aprobada para '.$start->format('d/m/Y H:i').'.');
+        $this->pushClient($sesion->fresh(), $this->channels->label($sesion->conversacion->contexto).' · atención aprobada', 'Tu sesión fue aprobada para '.$start->format('d/m/Y H:i').'.');
 
         return response()->json(['message'=>'Solicitud aprobada.','data'=>$sesion->fresh()]);
     }
 
     public function reject(Request $request, AtencionSesion $sesion): JsonResponse
     {
+        $sesion->loadMissing('conversacion');
+        $this->channels->assertContext($sesion->conversacion, $this->channels->context($request));
         abort_unless($sesion->estado === 'solicitada', 422, 'Esta solicitud ya fue revisada.');
         $data = $request->validate(['nota_admin'=>['nullable','string','max:1000']]);
         $sesion->update([
@@ -173,6 +183,8 @@ class AtencionSesionController extends Controller
 
     public function finish(Request $request, AtencionSesion $sesion): JsonResponse
     {
+        $sesion->loadMissing('conversacion');
+        $this->channels->assertContext($sesion->conversacion, $this->channels->context($request));
         abort_unless(in_array($sesion->estado, ['aprobada'], true), 422, 'La sesión ya no está activa.');
         $sesion->update(['estado'=>'finalizada','habilitada_hasta'=>now()]);
         return response()->json(['message'=>'Sesión finalizada.','data'=>$sesion->fresh()]);
@@ -194,12 +206,13 @@ class AtencionSesionController extends Controller
             'habilitada_hasta'=>$start->copy()->addMinutes($minutes),
             'aprobada_at'=>now(),
         ]);
-        $this->pushClient($session, 'Atención VITI habilitada', 'El equipo VITI habilitó una sesión de atención para '.$start->format('d/m/Y H:i').'.');
+        $this->pushClient($session, $this->channels->label($conversation->contexto).' · atención habilitada', 'Se habilitó una sesión de atención para '.$start->format('d/m/Y H:i').'.');
         return $session;
     }
 
     private function pushClient(AtencionSesion $session, string $title, string $body): void
     {
+        $session->loadMissing('conversacion');
         $targetIds = Usuario::where('estado','activo')
             ->where('rol','cliente')
             ->where('cliente_id',$session->cliente_id)
@@ -208,17 +221,8 @@ class AtencionSesionController extends Controller
             'type'=>'atencion',
             'conversation_id'=>$session->conversacion_id,
             'session_id'=>$session->id,
-            'path'=>'/mi-buzon?c='.$session->conversacion_id,
+            'contexto'=>$session->conversacion?->contexto,
+            'path'=>$this->channels->clientPath($session->conversacion).'?c='.$session->conversacion_id,
         ]);
-    }
-
-    private function primaryConversation(int $clientId): Conversacion
-    {
-        $conversation = Conversacion::query()
-            ->where('cliente_id',$clientId)
-            ->where('canal_principal',true)
-            ->first();
-        abort_unless($conversation, 404, 'Tu canal de Atención VITI todavía no está disponible.');
-        return $conversation;
     }
 }
