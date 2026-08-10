@@ -130,14 +130,31 @@ class BillingController extends Controller
             'frecuencia'=>['required',Rule::in(['mensual','anual'])],
             'fecha_inicio'=>['required','date'],
             'fecha_vencimiento'=>['nullable','date','after_or_equal:fecha_inicio'],
+            'dias_prueba'=>['nullable','integer','min:0','max:60'],
             'dias_gracia'=>['required','integer','min:0','max:60'],
             'estado'=>['nullable',Rule::in(['activa','gracia','suspendida','cancelada'])],
         ]);
 
+        $empresa = Empresa::with('planViti')->findOrFail($aplicacion->empresa_id);
         $start = Carbon::parse($data['fecha_inicio'])->startOfDay();
+        $trialDays = (int)($data['dias_prueba'] ?? $empresa->planViti?->dias_prueba ?? 14);
+        $trialEnd = $trialDays > 0 ? $start->copy()->addDays($trialDays - 1) : null;
+        $firstBillStart = $trialEnd ? $trialEnd->copy()->addDay() : $start->copy();
+        $firstBillEnd = null;
+        $firstAmount = null;
+
+        if ($data['frecuencia'] === 'mensual') {
+            $firstBillEnd = $firstBillStart->copy()->endOfMonth()->startOfDay();
+            $billableDays = $firstBillStart->diffInDays($firstBillEnd) + 1;
+            $daysInMonth = $firstBillStart->daysInMonth;
+            $firstAmount = round(((float)$data['monto'] * $billableDays) / $daysInMonth, 2);
+        }
+
         $due = !empty($data['fecha_vencimiento'])
             ? Carbon::parse($data['fecha_vencimiento'])->startOfDay()
-            : ($data['frecuencia'] === 'anual' ? $start->copy()->addYear() : $start->copy()->addMonth());
+            : ($data['frecuencia'] === 'anual'
+                ? $firstBillStart->copy()->addYear()
+                : $firstBillEnd);
 
         $subscription = Suscripcion::updateOrCreate(
             ['aplicacion_id'=>$aplicacion->id],
@@ -148,7 +165,12 @@ class BillingController extends Controller
                 'frecuencia'=>$data['frecuencia'],
                 'moneda'=>'BOB',
                 'fecha_inicio'=>$start->toDateString(),
-                'fecha_vencimiento'=>$due->toDateString(),
+                'prueba_hasta'=>$trialEnd?->toDateString(),
+                'primer_cobro_monto'=>$firstAmount,
+                'primer_cobro_desde'=>$data['frecuencia'] === 'mensual' ? $firstBillStart->toDateString() : null,
+                'primer_cobro_hasta'=>$firstBillEnd?->toDateString(),
+                'primer_cobro_pagado'=>false,
+                'fecha_vencimiento'=>$due?->toDateString(),
                 'dias_gracia'=>$data['dias_gracia'],
                 'estado'=>$data['estado'] ?? 'activa',
             ]
@@ -180,11 +202,20 @@ class BillingController extends Controller
                 'registrado_por'=>$request->user()?->id,
             ]);
 
+            $firstPaymentDone = (bool)$suscripcion->primer_cobro_pagado;
+            if (!$firstPaymentDone && $suscripcion->primer_cobro_monto !== null) {
+                $firstPaymentDone = ((float)$data['monto'] + 0.001) >= (float)$suscripcion->primer_cobro_monto;
+            }
+
             $base = $suscripcion->fecha_vencimiento && $suscripcion->fecha_vencimiento->isFuture()
                 ? $suscripcion->fecha_vencimiento->copy()
                 : Carbon::parse($data['fecha_pago']);
             $next = $suscripcion->frecuencia === 'anual' ? $base->addYear() : $base->addMonth();
-            $suscripcion->update(['fecha_vencimiento'=>$next->toDateString(),'estado'=>'activa']);
+            $suscripcion->update([
+                'fecha_vencimiento'=>$next->toDateString(),
+                'primer_cobro_pagado'=>$firstPaymentDone,
+                'estado'=>'activa',
+            ]);
             $empresa->update(['metodo_pago_preferido'=>$data['metodo']]);
         });
 
@@ -291,6 +322,11 @@ class BillingController extends Controller
             'empresa'=>$this->companyRow($s->empresa),'cuentas_empresa'=>$this->companyAccounts($s->empresa),
             'plan'=>$s->plan,'monto'=>(float)$s->monto,
             'frecuencia'=>$s->frecuencia,'moneda'=>$s->moneda,'fecha_inicio'=>$s->fecha_inicio?->format('Y-m-d'),
+            'prueba_hasta'=>$s->prueba_hasta?->format('Y-m-d'),
+            'primer_cobro_monto'=>$s->primer_cobro_monto !== null ? (float)$s->primer_cobro_monto : null,
+            'primer_cobro_desde'=>$s->primer_cobro_desde?->format('Y-m-d'),
+            'primer_cobro_hasta'=>$s->primer_cobro_hasta?->format('Y-m-d'),
+            'primer_cobro_pagado'=>(bool)$s->primer_cobro_pagado,
             'fecha_vencimiento'=>$s->fecha_vencimiento?->format('Y-m-d'),'dias_gracia'=>(int)$s->dias_gracia,'estado'=>$s->estado,
             'pagos'=>$s->pagos->values(),
         ];
