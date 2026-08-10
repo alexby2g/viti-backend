@@ -23,12 +23,29 @@ class ClientBillingController extends Controller
             ])
             ->latest('id')->get()
             ->map(function (Proyecto $project) use ($access): array {
-                $initialPaid = (float)$project->pagos->where('tipo','anticipo')->sum('monto');
-                $balancePaid = (float)$project->pagos->whereIn('tipo',['saldo_final','otro'])->sum('monto');
+                $confirmed = $project->pagos->where('estado_revision','confirmado');
+                $initialPaid = (float)$confirmed->where('tipo','anticipo')->sum('monto');
+                $balancePaid = (float)$confirmed->whereIn('tipo',['saldo_final','otro'])->sum('monto');
                 $paid = round($initialPaid+$balancePaid,2);
                 $total = (float)($project->precio_acordado ?? 0);
+                $initialTarget=(float)($project->anticipo_monto??0);
+                $nextType=$initialPaid+0.001<$initialTarget?'anticipo':'saldo_final';
+                $nextAmount=$nextType==='anticipo'
+                    ? max(0,round($initialTarget-$initialPaid,2))
+                    : max(0,round($total-$paid,2));
+                $pendingProjectProof=$project->pagos->firstWhere('estado_revision','pendiente_revision');
+
                 $app = $project->aplicacion;
                 $subscription = $app ? $access->statusFor($app) : null;
+                $subscriptionModel=$app?->suscripcion;
+                $pendingSubscriptionProof=$subscriptionModel?->pagos?->firstWhere('estado_revision','pendiente_revision');
+                $subscriptionDue = null;
+                if ($subscriptionModel) {
+                    $subscriptionDue = !$subscriptionModel->primer_cobro_pagado && $subscriptionModel->primer_cobro_monto !== null
+                        ? (float)$subscriptionModel->primer_cobro_monto
+                        : (float)$subscriptionModel->monto;
+                }
+
                 return [
                     'id'=>$project->id,'codigo'=>$project->codigo,'nombre'=>$project->nombre,
                     'empresa'=>[
@@ -39,9 +56,27 @@ class ClientBillingController extends Controller
                     'precio_acordado'=>$project->precio_acordado !== null ? (float)$project->precio_acordado : null,
                     'anticipo_monto'=>$project->anticipo_monto !== null ? (float)$project->anticipo_monto : null,
                     'saldo_monto'=>$project->saldo_monto !== null ? (float)$project->saldo_monto : null,
-                    'estado_pago'=>$project->estado_pago,'pagado'=>$paid,'pendiente'=>max(0,round($total-$paid,2)),'pagos'=>$project->pagos->values(),
+                    'estado_pago'=>$project->estado_pago,
+                    'pagado'=>$paid,
+                    'pendiente'=>max(0,round($total-$paid,2)),
+                    'siguiente_pago'=>[
+                        'tipo'=>$nextType,
+                        'monto'=>$nextAmount,
+                        'puede_enviar'=>$project->precio_acordado !== null && $nextAmount>0 && !$pendingProjectProof,
+                        'comprobante_pendiente_id'=>$pendingProjectProof?->id,
+                    ],
+                    'pagos'=>$project->pagos->values(),
                     'aplicacion'=>$app ? ['id'=>$app->id,'nombre'=>$app->nombre,'estado'=>$app->estado,'acceso_cliente'=>(bool)$app->acceso_cliente] : null,
-                    'suscripcion'=>$subscription,'pagos_suscripcion'=>$app?->suscripcion?->pagos?->values() ?? [],
+                    'suscripcion'=>$subscription ? [
+                        ...$subscription,
+                        'importe_pendiente'=>$subscriptionDue,
+                        'puede_enviar_comprobante'=>!($subscription['en_prueba']??false)
+                            && ($subscription['estado']??null)!=='cancelada'
+                            && $subscriptionDue>0
+                            && !$pendingSubscriptionProof,
+                        'comprobante_pendiente_id'=>$pendingSubscriptionProof?->id,
+                    ] : null,
+                    'pagos_suscripcion'=>$subscriptionModel?->pagos?->values() ?? [],
                 ];
             });
 
