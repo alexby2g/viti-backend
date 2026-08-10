@@ -30,6 +30,7 @@ class BillingController extends Controller
                 'cliente:id,nombre,telefono',
                 'aplicacion:id,proyecto_id,nombre,estado,acceso_cliente',
                 'pagos.pagador:id,nombre,apellido,usuario,telefono',
+                'pagos.revisor:id,nombre,apellido,usuario',
             ])
             ->latest('id')->limit(150)->get()
             ->map(fn (Proyecto $p) => $this->projectRow($p));
@@ -39,6 +40,7 @@ class BillingController extends Controller
                 'aplicacion:id,empresa_id,proyecto_id,nombre,estado,acceso_cliente',
                 'empresa'=>$companyWithAccounts,
                 'pagos.pagador:id,nombre,apellido,usuario,telefono',
+                'pagos.revisor:id,nombre,apellido,usuario',
             ])
             ->latest('id')->get()
             ->map(function (Suscripcion $s) use ($access): array {
@@ -50,6 +52,8 @@ class BillingController extends Controller
         $monthlyRecurring = $subscriptions->where('estado','!=','cancelada')->sum(function (array $s): float {
             return $s['frecuencia'] === 'anual' ? round($s['monto'] / 12, 2) : $s['monto'];
         });
+        $proofsPending = $projects->sum(fn(array $p)=>collect($p['pagos'])->where('estado_revision','pendiente_revision')->count())
+            + $subscriptions->sum(fn(array $s)=>collect($s['pagos'])->where('estado_revision','pendiente_revision')->count());
 
         $config = ConfiguracionPago::query()->where('activo',true)->first();
 
@@ -60,6 +64,7 @@ class BillingController extends Controller
                 'suscripciones_gracia'=>$subscriptions->where('estado','gracia')->count(),
                 'suscripciones_suspendidas'=>$subscriptions->where('estado','suspendida')->count(),
                 'ingreso_recurrente_mensual'=>round($monthlyRecurring,2),
+                'comprobantes_pendientes'=>$proofsPending,
             ],
             'configuracion'=>$config ? $this->configRow($config) : null,
             'proyectos'=>$projects->values(),
@@ -96,6 +101,7 @@ class BillingController extends Controller
     {
         abort_unless($proyecto->precio_acordado !== null,422,'Primero registra el acuerdo económico del proyecto.');
         abort_unless($proyecto->empresa_id,422,'El proyecto debe estar asociado a una empresa antes de registrar pagos.');
+        abort_if($proyecto->pagos()->where('estado_revision','pendiente_revision')->exists(),422,'Hay un comprobante del cliente pendiente de revisión. Confírmalo o recházalo antes de registrar otro pago.');
         $data = $request->validate([
             'tipo'=>['required',Rule::in(['anticipo','saldo_final','otro'])],
             'monto'=>['required','numeric','min:0.01'],
@@ -114,6 +120,10 @@ class BillingController extends Controller
             'proyecto_id'=>$proyecto->id,
             'empresa_id'=>$empresa->id,
             'registrado_por'=>$request->user()?->id,
+            'estado_revision'=>'confirmado',
+            'origen'=>'admin',
+            'revisado_at'=>now(),
+            'revisado_por'=>$request->user()?->id,
         ]);
         $empresa->update(['metodo_pago_preferido'=>$data['metodo']]);
 
@@ -182,6 +192,7 @@ class BillingController extends Controller
 
     public function registrarPagoSuscripcion(Request $request, Suscripcion $suscripcion, SubscriptionAccessService $access): JsonResponse
     {
+        abort_if($suscripcion->pagos()->where('estado_revision','pendiente_revision')->exists(),422,'Hay un comprobante del cliente pendiente de revisión. Confírmalo o recházalo antes de registrar otro pago.');
         $data = $request->validate([
             'monto'=>['required','numeric','min:0.01'],
             'metodo'=>['required',Rule::in(self::PAYMENT_METHODS)],
@@ -200,17 +211,22 @@ class BillingController extends Controller
                 'suscripcion_id'=>$suscripcion->id,
                 'empresa_id'=>$empresa->id,
                 'registrado_por'=>$request->user()?->id,
+                'estado_revision'=>'confirmado',
+                'origen'=>'admin',
+                'revisado_at'=>now(),
+                'revisado_por'=>$request->user()?->id,
             ]);
 
             $firstPaymentDone = (bool)$suscripcion->primer_cobro_pagado;
             if (!$firstPaymentDone && $suscripcion->primer_cobro_monto !== null) {
-                $firstPaymentDone = ((float)$data['monto'] + 0.001) >= (float)$suscripcion->primer_cobro_monto;
+                $confirmed = (float)$suscripcion->pagos()->where('estado_revision','confirmado')->sum('monto');
+                $firstPaymentDone = $confirmed + 0.001 >= (float)$suscripcion->primer_cobro_monto;
             }
 
             $base = $suscripcion->fecha_vencimiento && $suscripcion->fecha_vencimiento->isFuture()
                 ? $suscripcion->fecha_vencimiento->copy()
                 : Carbon::parse($data['fecha_pago']);
-            $next = $suscripcion->frecuencia === 'anual' ? $base->addYear() : $base->addMonth();
+            $next = $suscripcion->frecuencia === 'anual' ? $base->addYear() : $base->addMonthNoOverflow();
             $suscripcion->update([
                 'fecha_vencimiento'=>$next->toDateString(),
                 'primer_cobro_pagado'=>$firstPaymentDone,
@@ -285,10 +301,11 @@ class BillingController extends Controller
             return;
         }
 
+        $confirmed = $project->pagos->where('estado_revision','confirmado');
         $initialTarget = (float)($project->anticipo_monto ?? 0);
         $balanceTarget = (float)($project->saldo_monto ?? 0);
-        $initialPaid = (float)$project->pagos->where('tipo','anticipo')->sum('monto');
-        $balancePaid = (float)$project->pagos->whereIn('tipo',['saldo_final','otro'])->sum('monto');
+        $initialPaid = (float)$confirmed->where('tipo','anticipo')->sum('monto');
+        $balancePaid = (float)$confirmed->whereIn('tipo',['saldo_final','otro'])->sum('monto');
 
         $status = 'pendiente_anticipo';
         if ($initialPaid + 0.001 >= $initialTarget) $status = 'pendiente_saldo';
@@ -298,8 +315,9 @@ class BillingController extends Controller
 
     private function projectRow(Proyecto $p): array
     {
-        $initialPaid = (float)$p->pagos->where('tipo','anticipo')->sum('monto');
-        $balancePaid = (float)$p->pagos->whereIn('tipo',['saldo_final','otro'])->sum('monto');
+        $confirmed = $p->pagos->where('estado_revision','confirmado');
+        $initialPaid = (float)$confirmed->where('tipo','anticipo')->sum('monto');
+        $balancePaid = (float)$confirmed->whereIn('tipo',['saldo_final','otro'])->sum('monto');
         $paid = round($initialPaid + $balancePaid,2);
         $total = (float)($p->precio_acordado ?? 0);
         return [
@@ -336,7 +354,7 @@ class BillingController extends Controller
     {
         return $project->fresh()->load([
             'empresa'=>fn($q)=>$q->select('id','nombre_comercial','metodo_pago_preferido')->with(['usuarios'=>fn($users)=>$users->wherePivot('activo',true)->select('usuarios.id','usuarios.nombre','usuarios.apellido','usuarios.usuario','usuarios.telefono')->orderBy('usuarios.nombre')]),
-            'cliente:id,nombre,telefono','aplicacion:id,proyecto_id,nombre,estado,acceso_cliente','pagos.pagador:id,nombre,apellido,usuario,telefono',
+            'cliente:id,nombre,telefono','aplicacion:id,proyecto_id,nombre,estado,acceso_cliente','pagos.pagador:id,nombre,apellido,usuario,telefono','pagos.revisor:id,nombre,apellido,usuario',
         ]);
     }
 
@@ -345,7 +363,7 @@ class BillingController extends Controller
         return $subscription->fresh()->load([
             'aplicacion:id,empresa_id,proyecto_id,nombre,estado,acceso_cliente',
             'empresa'=>fn($q)=>$q->select('id','nombre_comercial','metodo_pago_preferido')->with(['usuarios'=>fn($users)=>$users->wherePivot('activo',true)->select('usuarios.id','usuarios.nombre','usuarios.apellido','usuarios.usuario','usuarios.telefono')->orderBy('usuarios.nombre')]),
-            'pagos.pagador:id,nombre,apellido,usuario,telefono',
+            'pagos.pagador:id,nombre,apellido,usuario,telefono','pagos.revisor:id,nombre,apellido,usuario',
         ]);
     }
 
