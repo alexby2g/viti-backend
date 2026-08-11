@@ -1,5 +1,6 @@
 <?php
 namespace App\Models;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 class Conversacion extends Model
@@ -19,4 +20,18 @@ class Conversacion extends Model
     public function llamadas(){return $this->hasMany(Llamada::class);}
     public function sesionesAtencion(){return $this->hasMany(AtencionSesion::class);}
     public function presencias(){return $this->hasMany(ChatPresencia::class);}
+
+    public function setRelation($relation, $value)
+    {
+        if ($relation === 'mensajes' && $value instanceof EloquentCollection && $value->count() > 1) {
+            $value = $value->sort(function ($left, $right): int {
+                $leftDate = $left->created_at?->format('Y-m-d H:i:s.u') ?? '';
+                $rightDate = $right->created_at?->format('Y-m-d H:i:s.u') ?? '';
+                $dateComparison = $leftDate <=> $rightDate;
+                return $dateComparison !== 0 ? $dateComparison : ((int) $left->id <=> (int) $right->id);
+            })->values();
+        }
+
+        return parent::setRelation($relation, $value);
+    }
 }
