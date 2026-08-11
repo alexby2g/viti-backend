@@ -1,10 +1,11 @@
 <?php
 
-use App\Http\Controllers\{AplicacionController,BillingController,ClientBillingController,ClientPaymentController,PaymentReviewController,SaasController};
+use App\Http\Controllers\{AplicacionController,BillingController,ClientBillingController,ClientPaymentController,ClientPortalController,PaymentReviewController,SaasController};
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:sanctum','throttle:api'])->group(function (): void {
     Route::middleware('cliente')->group(function (): void {
+        Route::get('mi/solicitudes', [ClientPortalController::class,'requests']);
         Route::get('mi/pagos', [ClientBillingController::class,'index']);
         Route::post('mi/pagos/proyectos/{proyecto}/comprobante', [ClientPaymentController::class,'proyecto']);
         Route::post('mi/pagos/suscripciones/{suscripcion}/comprobante', [ClientPaymentController::class,'suscripcion']);
