@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Models\{Cliente,Conversacion,Cuestionario,Empresa,Mantenimiento,Proyecto,SolicitudSistema,Usuario};
+use App\Models\{Aplicacion,CatalogoAplicacion,Cliente,Conversacion,Cuestionario,Empresa,Mantenimiento,Proyecto,SolicitudSistema,Usuario};
 use Database\Seeders\CuestionarioSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -11,6 +11,22 @@ use Tests\TestCase;
 class InternalSupportAccessTest extends TestCase
 {
     use RefreshDatabase;
+
+    private function appFor(Empresa $company, string $suffix): Aplicacion
+    {
+        $catalog = CatalogoAplicacion::query()->firstOrFail();
+        return Aplicacion::create([
+            'empresa_id'=>$company->id,
+            'catalogo_aplicacion_id'=>$catalog->id,
+            'nombre'=>'App Soporte '.$suffix,
+            'slug'=>'app-soporte-'.strtolower($suffix).'-'.Str::lower(Str::random(4)),
+            'version'=>'1.0.0',
+            'tipo'=>'web',
+            'entorno'=>'produccion',
+            'estado'=>'activo',
+            'acceso_cliente'=>true,
+        ]);
+    }
 
     public function test_support_only_sees_assigned_work_and_cannot_enter_platform_admin(): void
     {
@@ -37,6 +53,7 @@ class InternalSupportAccessTest extends TestCase
         ]);
         $client = Cliente::create(['nombre'=>'Cliente Uno','telefono'=>'71110001','estado'=>'informacion_recibida']);
         $company = Empresa::create(['cliente_id'=>$client->id,'codigo'=>'EMP-SOP-1','nombre_comercial'=>'Empresa Soporte','estado'=>'activo']);
+        $app = $this->appFor($company, 'uno');
 
         $request = SolicitudSistema::create([
             'empresa_id'=>$company->id,
@@ -75,6 +92,7 @@ class InternalSupportAccessTest extends TestCase
             'progreso'=>40,
         ]);
         Mantenimiento::create([
+            'aplicacion_id'=>$app->id,
             'empresa_id'=>$company->id,
             'cliente_id'=>$client->id,
             'asignado_a'=>$support->id,
@@ -133,12 +151,13 @@ class InternalSupportAccessTest extends TestCase
         ]);
         $client = Cliente::create(['nombre'=>'Cliente Dos','telefono'=>'71110002','estado'=>'informacion_recibida']);
         $company = Empresa::create(['cliente_id'=>$client->id,'codigo'=>'EMP-SOP-2','nombre_comercial'=>'Empresa Dos','estado'=>'activo']);
+        $app = $this->appFor($company, 'dos');
         $own = Mantenimiento::create([
-            'empresa_id'=>$company->id,'cliente_id'=>$client->id,'asignado_a'=>$support->id,'codigo'=>'MAN-SOP-2',
+            'aplicacion_id'=>$app->id,'empresa_id'=>$company->id,'cliente_id'=>$client->id,'asignado_a'=>$support->id,'codigo'=>'MAN-SOP-2',
             'titulo'=>'Propio','tipo'=>'soporte','prioridad'=>'normal','estado'=>'abierto',
         ]);
         $foreign = Mantenimiento::create([
-            'empresa_id'=>$company->id,'cliente_id'=>$client->id,'asignado_a'=>$other->id,'codigo'=>'MAN-SOP-3',
+            'aplicacion_id'=>$app->id,'empresa_id'=>$company->id,'cliente_id'=>$client->id,'asignado_a'=>$other->id,'codigo'=>'MAN-SOP-3',
             'titulo'=>'Ajeno','tipo'=>'soporte','prioridad'=>'normal','estado'=>'abierto',
         ]);
 
