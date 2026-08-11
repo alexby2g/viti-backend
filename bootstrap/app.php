@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Middleware\{EnsureClient,EnsureElectrofrioCustomer,EnsurePeluqueriaTenant,EnsurePlatformAdmin,EnsurePrivateVitiCommunication,EnsureServicioTecnicoClientAccess,EnsureSuperAdmin,ResolveTenant,SecurityHeaders};
+use App\Http\Middleware\{EnsureClient,EnsureElectrofrioCustomer,EnsureInternalSupport,EnsurePeluqueriaTenant,EnsurePlatformAdmin,EnsurePrivateVitiCommunication,EnsureServicioTecnicoClientAccess,EnsureSuperAdmin,ResolveTenant,SecurityHeaders};
 use Illuminate\Foundation\Application;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -22,6 +22,7 @@ return Application::configure(basePath: dirname(__DIR__))
             Route::middleware('api')->prefix('api/v1')->group(base_path('routes/peluqueria-admin.php'));
             Route::middleware('api')->prefix('api/v1')->group(base_path('routes/servicio-tecnico.php'));
             Route::middleware('api')->prefix('api/v1')->group(base_path('routes/chat-privacy.php'));
+            Route::middleware('api')->prefix('api/v1')->group(base_path('routes/support.php'));
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
@@ -33,6 +34,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'superadmin'=>EnsureSuperAdmin::class,
             'platform_admin'=>EnsurePlatformAdmin::class,
+            'soporte'=>EnsureInternalSupport::class,
             'cliente'=>EnsureClient::class,
             'electrofrio_customer'=>EnsureElectrofrioCustomer::class,
             'servicio_tecnico_client'=>EnsureServicioTecnicoClientAccess::class,
