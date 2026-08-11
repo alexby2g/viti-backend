@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{BillingController,ClientBillingController,ClientPaymentController,PaymentReviewController,SaasController};
+use App\Http\Controllers\{AplicacionController,BillingController,ClientBillingController,ClientPaymentController,PaymentReviewController,SaasController};
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:sanctum','throttle:api'])->group(function (): void {
@@ -10,6 +10,10 @@ Route::middleware(['auth:sanctum','throttle:api'])->group(function (): void {
         Route::post('mi/pagos/suscripciones/{suscripcion}/comprobante', [ClientPaymentController::class,'suscripcion']);
         Route::get('mi/pagos/proyecto-pagos/{pago}/comprobante', [ClientPaymentController::class,'comprobanteProyecto']);
         Route::get('mi/pagos/suscripcion-pagos/{pago}/comprobante', [ClientPaymentController::class,'comprobanteSuscripcion']);
+    });
+
+    Route::middleware('platform_admin')->group(function (): void {
+        Route::put('aplicaciones/{aplicacion}/ciclo', [AplicacionController::class,'actualizarCiclo']);
     });
 
     Route::middleware(['platform_admin','superadmin'])->group(function (): void {

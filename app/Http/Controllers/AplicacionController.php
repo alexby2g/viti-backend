@@ -13,7 +13,12 @@ class AplicacionController extends Controller
 {
     public function index(Request $r): JsonResponse
     {
-        $q=Aplicacion::with(['empresa:id,nombre_comercial','proyecto:id,nombre,codigo,precio_acordado,estado_pago','catalogo'])->latest();
+        $q=Aplicacion::with([
+            'empresa:id,nombre_comercial',
+            'proyecto:id,nombre,codigo,precio_acordado,estado_pago',
+            'catalogo',
+            'suscripcion:id,aplicacion_id,estado,prueba_hasta,fecha_vencimiento,dias_gracia',
+        ])->latest();
         if($r->filled('buscar')){$t='%'.$r->string('buscar').'%';$q->where(fn($x)=>$x->where('nombre','like',$t)->orWhereHas('empresa',fn($e)=>$e->where('nombre_comercial','like',$t)));}
         return response()->json($q->paginate(20));
     }
@@ -36,6 +41,24 @@ class AplicacionController extends Controller
         $aplicacion->update($this->data($r,$aplicacion));
         Audit::log($r,'aplicacion_actualizada',$aplicacion,'Se actualizó una aplicación.');
         return response()->json(['data'=>$aplicacion->fresh()->load('empresa')]);
+    }
+
+    public function actualizarCiclo(Request $r,Aplicacion $aplicacion): JsonResponse
+    {
+        $data=$r->validate([
+            'entorno'=>['required',Rule::in(['desarrollo','beta','produccion'])],
+            'estado'=>['required',Rule::in(['en_pruebas','activo','pausado','retirado'])],
+        ]);
+
+        // El ciclo técnico/operativo es una decisión administrativa. La prueba gratuita
+        // y el estado de la suscripción nunca promueven una app automáticamente a producción.
+        $aplicacion->update($data);
+        Audit::log($r,'aplicacion_ciclo_actualizado',$aplicacion,'Se actualizó manualmente el ciclo técnico y operativo de la aplicación.');
+
+        return response()->json([
+            'message'=>'Estado de la aplicación actualizado.',
+            'data'=>$aplicacion->fresh()->load(['empresa','suscripcion']),
+        ]);
     }
 
     public function entregar(Request $r,Aplicacion $aplicacion): JsonResponse
