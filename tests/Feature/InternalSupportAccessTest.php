@@ -154,11 +154,11 @@ class InternalSupportAccessTest extends TestCase
         $app = $this->appFor($company, 'dos');
         $own = Mantenimiento::create([
             'aplicacion_id'=>$app->id,'empresa_id'=>$company->id,'cliente_id'=>$client->id,'asignado_a'=>$support->id,'codigo'=>'MAN-SOP-2',
-            'titulo'=>'Propio','tipo'=>'soporte','prioridad'=>'normal','estado'=>'abierto',
+            'titulo'=>'Propio','descripcion'=>'Caso propio de soporte','tipo'=>'soporte','prioridad'=>'normal','estado'=>'abierto',
         ]);
         $foreign = Mantenimiento::create([
             'aplicacion_id'=>$app->id,'empresa_id'=>$company->id,'cliente_id'=>$client->id,'asignado_a'=>$other->id,'codigo'=>'MAN-SOP-3',
-            'titulo'=>'Ajeno','tipo'=>'soporte','prioridad'=>'normal','estado'=>'abierto',
+            'titulo'=>'Ajeno','descripcion'=>'Caso asignado a otra cuenta','tipo'=>'soporte','prioridad'=>'normal','estado'=>'abierto',
         ]);
 
         $this->actingAs($support)
