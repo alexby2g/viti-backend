@@ -70,7 +70,7 @@ class SupportWorkspaceController extends Controller
     {
         abort_unless((int)$mantenimiento->asignado_a === (int)$request->user()->id, 403, 'Este caso no está asignado a tu cuenta.');
         $data = $request->validate([
-            'estado'=>['required', Rule::in(['abierto','en_proceso','esperando_cliente','resuelto','cerrado'])],
+            'estado'=>['required', Rule::in(['abierto','en_proceso','en_espera','resuelto','cerrado'])],
         ]);
         $mantenimiento->update($data);
         return response()->json(['data'=>$mantenimiento->fresh()->load(['empresa:id,nombre_comercial','aplicacion:id,nombre'])]);
