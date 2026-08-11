@@ -1,10 +1,14 @@
 <?php
 
-use App\Http\Controllers\{AplicacionController,BillingController,ClientBillingController,ClientPaymentController,PaymentReviewController,SaasController};
+use App\Http\Controllers\{AplicacionController,BillingController,ChatDocumentController,ClientBillingController,ClientPaymentController,ClientPortalController,PaymentReviewController,SaasController};
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:sanctum','throttle:api'])->group(function (): void {
     Route::middleware('cliente')->group(function (): void {
+        Route::get('mi/solicitudes', [ClientPortalController::class,'requests']);
+        Route::post('mi/buzon/{conversacion}/documentos', [ChatDocumentController::class,'store'])->defaults('chat_access','viti-client');
+        Route::post('mi/apps/electrofrio/buzon/{conversacion}/documentos', [ChatDocumentController::class,'store'])->defaults('chat_access','electro-business');
+
         Route::get('mi/pagos', [ClientBillingController::class,'index']);
         Route::post('mi/pagos/proyectos/{proyecto}/comprobante', [ClientPaymentController::class,'proyecto']);
         Route::post('mi/pagos/suscripciones/{suscripcion}/comprobante', [ClientPaymentController::class,'suscripcion']);
@@ -12,8 +16,17 @@ Route::middleware(['auth:sanctum','throttle:api'])->group(function (): void {
         Route::get('mi/pagos/suscripcion-pagos/{pago}/comprobante', [ClientPaymentController::class,'comprobanteSuscripcion']);
     });
 
+    Route::middleware('electrofrio_customer')->group(function (): void {
+        Route::post('portal/electrofrio/buzon/{conversacion}/documentos', [ChatDocumentController::class,'store'])->defaults('chat_access','electro-customer');
+    });
+
     Route::middleware('platform_admin')->group(function (): void {
         Route::put('aplicaciones/{aplicacion}/ciclo', [AplicacionController::class,'actualizarCiclo']);
+        Route::post('apps/electrofrio/buzon/{conversacion}/documentos', [ChatDocumentController::class,'store'])->defaults('chat_access','electro-admin');
+    });
+
+    Route::middleware('superadmin')->group(function (): void {
+        Route::post('buzon/{conversacion}/documentos', [ChatDocumentController::class,'store'])->defaults('chat_access','viti-admin');
     });
 
     Route::middleware(['platform_admin','superadmin'])->group(function (): void {

@@ -16,7 +16,14 @@ class ClientPortalController extends Controller
 {
     public function profile(Request $request): JsonResponse
     {
-        $cliente = $this->client($request)->load(['usuario:id,cliente_id,usuario','empresas','solicitudes'=>fn($q)=>$q->latest()]);
+        $cliente = $this->client($request)->load([
+            'usuario:id,cliente_id,usuario',
+            'empresas',
+            'solicitudes'=>fn($q)=>$q->with([
+                'empresa:id,nombre_comercial',
+                'proyecto:id,solicitud_id,codigo,nombre,fase,progreso,estado',
+            ])->latest('id'),
+        ]);
         return response()->json(['data'=>$cliente]);
     }
 
@@ -90,16 +97,32 @@ class ClientPortalController extends Controller
     public function currentRequest(Request $request): JsonResponse
     {
         $cliente = $this->client($request);
-        $solicitud = SolicitudSistema::query()->where('cliente_id',$cliente->id)->latest()->first();
-        return response()->json(['data'=>$solicitud?->load(['empresa','planViti','cuestionario.secciones.preguntas','respuestas'])]);
+        $solicitud = SolicitudSistema::query()->where('cliente_id',$cliente->id)->latest('id')->first();
+        return response()->json(['data'=>$solicitud?->load(['empresa','planViti','proyecto','cuestionario.secciones.preguntas','respuestas'])]);
+    }
+
+    public function requests(Request $request): JsonResponse
+    {
+        $cliente = $this->client($request);
+        $query = SolicitudSistema::query()
+            ->where('cliente_id',$cliente->id)
+            ->with([
+                'empresa:id,nombre_comercial',
+                'planViti:id,nombre,precio_proyecto',
+                'proyecto:id,solicitud_id,codigo,nombre,fase,progreso,estado',
+            ])
+            ->latest('id');
+
+        if ($request->filled('estado')) {
+            $query->where('estado',$request->string('estado'));
+        }
+
+        return response()->json(['data'=>$query->limit(100)->get()]);
     }
 
     public function startRequest(Request $request): JsonResponse
     {
         $cliente = $this->client($request);
-        $existing = SolicitudSistema::query()->where('cliente_id',$cliente->id)->whereNotIn('estado',['cerrada','rechazada'])->latest()->first();
-        if ($existing) return response()->json(['data'=>$existing->load(['empresa','planViti','cuestionario.secciones.preguntas','respuestas'])]);
-
         $cuestionario = Cuestionario::query()->where('activo',true)->latest('id')->first();
         abort_unless($cuestionario, 422, 'No hay un cuestionario activo disponible.');
 
@@ -129,7 +152,7 @@ class ClientPortalController extends Controller
             return $solicitud;
         });
 
-        Audit::log($request,'solicitud_cliente_iniciada',$solicitud,'El cliente inició su levantamiento de requerimientos.');
+        Audit::log($request,'solicitud_cliente_iniciada',$solicitud,'El cliente inició una nueva solicitud independiente.');
         return response()->json(['data'=>$solicitud->load(['planViti','cuestionario.secciones.preguntas','respuestas'])],201);
     }
 

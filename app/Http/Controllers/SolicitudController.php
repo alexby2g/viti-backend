@@ -17,8 +17,18 @@ class SolicitudController extends Controller
     public function index(Request $request): JsonResponse
     {
         $query=SolicitudSistema::with(['empresa:id,nombre_comercial','cliente:id,nombre,telefono','asignado:id,nombre,apellido','planViti:id,nombre,precio_proyecto'])->latest();
+        if($request->filled('cliente_id'))$query->where('cliente_id',(int)$request->input('cliente_id'));
+        if($request->filled('empresa_id'))$query->where('empresa_id',(int)$request->input('empresa_id'));
         if($request->filled('estado'))$query->where('estado',$request->string('estado'));
-        if($request->filled('buscar')){$term='%'.$request->string('buscar').'%';$query->where(fn($q)=>$q->where('codigo','like',$term)->orWhere('titulo','like',$term)->orWhereHas('empresa',fn($e)=>$e->where('nombre_comercial','like',$term)));}
+        if($request->filled('buscar')){
+            $term='%'.$request->string('buscar').'%';
+            $query->where(fn($q)=>$q
+                ->where('codigo','like',$term)
+                ->orWhere('titulo','like',$term)
+                ->orWhereHas('empresa',fn($e)=>$e->where('nombre_comercial','like',$term))
+                ->orWhereHas('cliente',fn($c)=>$c->where('nombre','like',$term)->orWhere('telefono','like',$term))
+            );
+        }
         return response()->json($query->paginate(min(max((int)$request->input('per_page',20),1),100)));
     }
 

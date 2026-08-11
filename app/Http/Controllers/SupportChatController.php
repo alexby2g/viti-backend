@@ -59,27 +59,32 @@ class SupportChatController extends Controller
         $this->assertAssigned($request, $conversacion);
         $data = $request->validate([
             'mensaje'=>['nullable','string','max:5000','required_without:archivo'],
-            'archivo'=>['nullable','image','mimes:jpg,jpeg,png,webp','max:8192','required_without:mensaje'],
+            'archivo'=>['nullable','file','mimes:jpg,jpeg,png,webp,pdf,doc,docx,xls,xlsx,txt','max:10240','required_without:mensaje'],
+        ],[
+            'archivo.mimes'=>'Puedes adjuntar imágenes, PDF, Word, Excel o TXT.',
+            'archivo.max'=>'El archivo no puede superar 10 MB.',
         ]);
 
         $path = null;
-        if ($request->hasFile('archivo')) {
-            $path = $request->file('archivo')->store('chat/soporte','private_uploads');
+        $file = $request->file('archivo');
+        if ($file) {
+            $path = $file->store('chat/soporte','private_uploads');
         }
 
+        $isImage = $file && str_starts_with((string)$file->getMimeType(),'image/');
         $message = Mensaje::create([
             'conversacion_id'=>$conversacion->id,
             'usuario_id'=>$request->user()->id,
-            'tipo'=>$path ? 'imagen' : 'texto',
+            'tipo'=>$path ? ($isImage ? 'imagen' : 'archivo') : 'texto',
             'mensaje'=>trim((string)($data['mensaje'] ?? '')),
             'archivo_path'=>$path,
-            'archivo_nombre'=>$request->file('archivo')?->getClientOriginalName(),
-            'archivo_mime'=>$request->file('archivo')?->getClientMimeType(),
-            'archivo_tamano'=>$request->file('archivo')?->getSize(),
+            'archivo_nombre'=>$file?->getClientOriginalName(),
+            'archivo_mime'=>$file?->getMimeType(),
+            'archivo_tamano'=>$file?->getSize(),
             'entregado_at'=>now(),
         ]);
         $conversacion->update(['ultimo_mensaje_at'=>now(),'estado'=>'abierta']);
-        Audit::log($request,'soporte_mensaje_enviado',$conversacion,'Soporte interno respondió una conversación asignada.');
+        Audit::log($request,'soporte_mensaje_enviado',$conversacion,$path ? 'Soporte interno adjuntó un archivo en una conversación asignada.' : 'Soporte interno respondió una conversación asignada.');
 
         return response()->json(['data'=>$this->present($message->load('usuario:id,nombre,apellido,rol'), $request)],201);
     }
