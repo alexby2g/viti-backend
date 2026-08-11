@@ -7,6 +7,7 @@ use App\Services\ChatChannelService;
 use App\Support\{Audit,FirebasePush};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class ChatDocumentController extends Controller
 {
@@ -46,7 +47,7 @@ class ChatDocumentController extends Controller
                 'archivo_tamano'=>$file->getSize(),
             ]);
         } catch (\Throwable $e) {
-            try { \Storage::disk('private_uploads')->delete($path); } catch (\Throwable) {}
+            try { Storage::disk('private_uploads')->delete($path); } catch (\Throwable) {}
             throw $e;
         }
 
