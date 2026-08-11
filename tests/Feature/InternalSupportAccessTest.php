@@ -81,7 +81,7 @@ class InternalSupportAccessTest extends TestCase
             'codigo'=>'MAN-SOP-1',
             'titulo'=>'Caso asignado',
             'descripcion'=>'Revisar incidencia',
-            'tipo'=>'correctivo',
+            'tipo'=>'soporte',
             'prioridad'=>'normal',
             'estado'=>'abierto',
         ]);
@@ -135,11 +135,11 @@ class InternalSupportAccessTest extends TestCase
         $company = Empresa::create(['cliente_id'=>$client->id,'codigo'=>'EMP-SOP-2','nombre_comercial'=>'Empresa Dos','estado'=>'activo']);
         $own = Mantenimiento::create([
             'empresa_id'=>$company->id,'cliente_id'=>$client->id,'asignado_a'=>$support->id,'codigo'=>'MAN-SOP-2',
-            'titulo'=>'Propio','tipo'=>'correctivo','prioridad'=>'normal','estado'=>'abierto',
+            'titulo'=>'Propio','tipo'=>'soporte','prioridad'=>'normal','estado'=>'abierto',
         ]);
         $foreign = Mantenimiento::create([
             'empresa_id'=>$company->id,'cliente_id'=>$client->id,'asignado_a'=>$other->id,'codigo'=>'MAN-SOP-3',
-            'titulo'=>'Ajeno','tipo'=>'correctivo','prioridad'=>'normal','estado'=>'abierto',
+            'titulo'=>'Ajeno','tipo'=>'soporte','prioridad'=>'normal','estado'=>'abierto',
         ]);
 
         $this->actingAs($support)
