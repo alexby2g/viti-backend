@@ -58,8 +58,8 @@ class SubscriptionTrialProrationTest extends TestCase
         ]);
 
         $response = $this->actingAs($admin)->putJson("/api/v1/aplicaciones/{$app->id}/suscripcion", [
-            'plan'=>'Plan Profesional',
-            'monto'=>50,
+            'plan'=>'VITI Profesional',
+            'monto'=>(float)$plan->precio_mensual,
             'frecuencia'=>'mensual',
             'fecha_inicio'=>'2026-08-24',
             'dias_gracia'=>7,
@@ -70,19 +70,53 @@ class SubscriptionTrialProrationTest extends TestCase
             ->assertJsonPath('data.prueba_hasta','2026-09-06')
             ->assertJsonPath('data.primer_cobro_desde','2026-09-07')
             ->assertJsonPath('data.primer_cobro_hasta','2026-09-30')
-            ->assertJsonPath('data.primer_cobro_monto',40)
-            ->assertJsonPath('data.monto',50);
+            ->assertJsonPath('data.primer_cobro_monto',103.2)
+            ->assertJsonPath('data.monto',129);
 
         $this->assertDatabaseHas('suscripciones', [
             'aplicacion_id'=>$app->id,
             'empresa_id'=>$company->id,
-            'plan'=>'Plan Profesional',
-            'monto'=>50,
+            'plan'=>'VITI Profesional',
+            'monto'=>129,
             'prueba_hasta'=>'2026-09-06',
             'primer_cobro_desde'=>'2026-09-07',
             'primer_cobro_hasta'=>'2026-09-30',
-            'primer_cobro_monto'=>40,
+            'primer_cobro_monto'=>103.2,
         ]);
+    }
+
+    public function test_professional_annual_subscription_uses_annual_plan_price(): void
+    {
+        $admin = Usuario::create([
+            'nombre'=>'Admin Anual',
+            'usuario'=>'admin_anual',
+            'documento'=>'99881123',
+            'telefono'=>'70009989',
+            'password'=>'Prueba1234',
+            'rol'=>'superadmin',
+            'estado'=>'activo',
+        ]);
+        $client = Cliente::create(['nombre'=>'Cliente Anual','telefono'=>'73998812','estado'=>'informacion_recibida']);
+        $plan = PlanViti::query()->where('codigo','profesional-1950')->firstOrFail();
+        $company = Empresa::create(['cliente_id'=>$client->id,'plan_viti_id'=>$plan->id,'codigo'=>'EMP-ANUAL-TEST','nombre_comercial'=>'Empresa Anual','estado'=>'activo']);
+        $catalog = CatalogoAplicacion::create([
+            'clave'=>'servicio-tecnico-anual','nombre'=>'Servicio Técnico Anual','descripcion'=>'Prueba anual','icono'=>'computer','tipo'=>'web','ruta_base'=>'/apps/servicio-tecnico','activo'=>true,'solicitable'=>false,'orden'=>98,
+        ]);
+        $app = Aplicacion::create([
+            'empresa_id'=>$company->id,'catalogo_aplicacion_id'=>$catalog->id,'nombre'=>'Servicio Técnico Anual','slug'=>'servicio-tecnico-anual-test','version'=>'1.0.0','tipo'=>'web','entorno'=>'produccion','estado'=>'activo','acceso_cliente'=>true,
+        ]);
+
+        $this->actingAs($admin)->putJson("/api/v1/aplicaciones/{$app->id}/suscripcion", [
+            'plan'=>'VITI Profesional',
+            'monto'=>(float)$plan->precio_anual,
+            'frecuencia'=>'anual',
+            'fecha_inicio'=>'2026-08-24',
+            'dias_gracia'=>7,
+            'estado'=>'activa',
+        ])->assertOk()
+          ->assertJsonPath('data.prueba_hasta','2026-09-06')
+          ->assertJsonPath('data.monto',1290)
+          ->assertJsonPath('data.frecuencia','anual');
     }
 
     public function test_commercial_saas_routes_are_connected(): void
