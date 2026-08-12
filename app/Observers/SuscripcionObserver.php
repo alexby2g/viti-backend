@@ -23,9 +23,17 @@ class SuscripcionObserver
         $suscripcion->monto = (float) $price;
 
         if ($suscripcion->frecuencia === 'anual') {
-            $suscripcion->primer_cobro_monto = null;
-            $suscripcion->primer_cobro_desde = null;
-            $suscripcion->primer_cobro_hasta = null;
+            $start = $suscripcion->prueba_hasta
+                ? Carbon::parse($suscripcion->prueba_hasta)->startOfDay()->addDay()
+                : Carbon::parse($suscripcion->fecha_inicio)->startOfDay();
+
+            $suscripcion->primer_cobro_monto = (float) $price;
+            $suscripcion->primer_cobro_desde = $start->toDateString();
+            $suscripcion->primer_cobro_hasta = $start->copy()->addYear()->subDay()->toDateString();
+
+            if (!$suscripcion->primer_cobro_pagado) {
+                $suscripcion->fecha_vencimiento = $start->toDateString();
+            }
             return;
         }
 
