@@ -16,7 +16,7 @@ class SolicitudController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $query=SolicitudSistema::with(['empresa:id,nombre_comercial','cliente:id,nombre,telefono','asignado:id,nombre,apellido','planViti:id,nombre,precio_proyecto'])->latest();
+        $query=SolicitudSistema::with(['empresa:id,nombre_comercial','cliente:id,nombre,telefono','asignado:id,nombre,apellido','planViti:id,nombre,precio_proyecto,precio_mensual,precio_anual'])->latest();
         if($request->filled('cliente_id'))$query->where('cliente_id',(int)$request->input('cliente_id'));
         if($request->filled('empresa_id'))$query->where('empresa_id',(int)$request->input('empresa_id'));
         if($request->filled('estado'))$query->where('estado',$request->string('estado'));
@@ -120,7 +120,11 @@ class SolicitudController extends Controller
         abort_if($requiredIds->diff($answered)->isNotEmpty(), 422, 'Completa las preguntas obligatorias antes de enviar la solicitud.');
         abort_unless($solicitud->declaracion_aceptada && filled($solicitud->declaracion_nombre) && $solicitud->declaracion_fecha, 422, 'El cliente debe aceptar la declaración final.');
         if ($solicitud->acuerdo_comercial_requerido) {
+            $solicitud->loadMissing('planViti');
             abort_unless($solicitud->plan_viti_id && filled($solicitud->forma_pago_preferida), 422, 'El cliente debe seleccionar plan y forma de pago.');
+            if ($solicitud->planViti && ($solicitud->planViti->precio_mensual !== null || $solicitud->planViti->precio_anual !== null)) {
+                abort_unless(filled($solicitud->frecuencia_suscripcion_preferida), 422, 'El cliente debe seleccionar modalidad mensual o anual de suscripción.');
+            }
             abort_unless($solicitud->acuerdo_comercial_aceptado && filled($solicitud->acuerdo_comercial_nombre) && $solicitud->acuerdo_comercial_fecha, 422, 'El cliente debe aceptar el acuerdo comercial inicial.');
         }
     }
@@ -147,6 +151,7 @@ class SolicitudController extends Controller
             'fecha_limite_deseada'=>['nullable','date'],
             'presupuesto_estimado'=>['nullable','numeric','min:0'],
             'forma_pago_preferida'=>['nullable',Rule::in(self::PAYMENT_OPTIONS)],
+            'frecuencia_suscripcion_preferida'=>['nullable',Rule::in(['mensual','anual'])],
         ]);
     }
 }
