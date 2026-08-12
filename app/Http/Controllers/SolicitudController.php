@@ -45,7 +45,7 @@ class SolicitudController extends Controller
 
     public function show(SolicitudSistema $solicitud): JsonResponse
     {
-        return response()->json(['data'=>$solicitud->load(['empresa','cliente','planViti','cuestionario.secciones.preguntas','respuestas.pregunta','proyecto','archivos'])]);
+        return response()->json(['data'=>$solicitud->load(['empresa','cliente','planViti','cuestionario.secciones.preguntas','respuestas.pregunta','proyecto','conversacion:id,solicitud_id,cliente_id,empresa_id,asunto,estado','archivos'])]);
     }
 
     public function update(Request $request, SolicitudSistema $solicitud): JsonResponse
@@ -90,8 +90,8 @@ class SolicitudController extends Controller
             'declaracion_fecha' => $data['declaracion_fecha'] ?? null,
         ]);
         ClientPortalController::syncCompany($solicitud->fresh(), $solicitud->cliente);
-        Audit::log($request,'cuestionario_guardado',$solicitud,'Se guardaron respuestas del cuestionario.');
-        return response()->json(['message'=>'Cuestionario guardado.']);
+        Audit::log($request,'cuestionario_guardado',$solicitud,'Se guardaron respuestas de la solicitud.');
+        return response()->json(['message'=>'Respuestas guardadas.']);
     }
 
     public function submit(Request $request, SolicitudSistema $solicitud): JsonResponse
