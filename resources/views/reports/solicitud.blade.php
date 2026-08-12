@@ -5,6 +5,10 @@ $frequencyLabels=['mensual'=>'Mensual','anual'=>'Anual'];
 $moduleLabels=['inicio'=>'Inicio','agenda'=>'Agenda','ordenes'=>'Órdenes','clientes'=>'Clientes','equipos'=>'Equipos','tecnicos'=>'Técnicos','inventario'=>'Inventario técnico','pagos'=>'Pagos y saldos','garantias'=>'Garantías','historial'=>'Historial y reportes','buzon'=>'Mensajes'];
 $annualSaving=$solicitud->planViti?->precio_mensual !== null && $solicitud->planViti?->precio_anual !== null ? max(0,((float)$solicitud->planViti->precio_mensual*12)-(float)$solicitud->planViti->precio_anual) : null;
 $sections=$solicitud->cuestionario?->secciones ?? collect();
+$included=[];
+if($solicitud->planViti && is_array($solicitud->planViti->modulos)){
+    foreach($solicitud->planViti->modulos as $module){$included[]=$moduleLabels[$module]??ucfirst((string)$module);}
+}
 $formatAnswer=function($answer){
     if(!$answer)return '';
     $json=$answer->respuesta_json;
@@ -54,13 +58,7 @@ $answeredQuestions=$seccion->preguntas->filter(function($pregunta) use ($answers
 <p><strong>Modalidad preferida:</strong> {{ $frequencyLabels[$solicitud->frecuencia_suscripcion_preferida] ?? 'Sin definir' }}.</p>
 @if($solicitud->frecuencia_suscripcion_preferida==='mensual')<p class="muted">Después de la prueba, el primer cobro mensual se calcula proporcionalmente por los días restantes del mes.</p>@elseif($solicitud->frecuencia_suscripcion_preferida==='anual')<p class="muted">Después de la prueba se aplica la anualidad completa.</p>@endif
 @endif
-@if(is_array($solicitud->planViti?->modulos) && count($solicitud->planViti->modulos))
-@php
-$included=[];
-foreach($solicitud->planViti->modulos as $module){$included[]=$moduleLabels[$module]??ucfirst((string)$module);}
-@endphp
-<p><strong>Incluye:</strong> {{ implode(', ',$included) }}</p>
-@endif
+@if(count($included))<p><strong>Incluye:</strong> {{ implode(', ',$included) }}</p>@endif
 <p><strong>Forma de pago de la implementación:</strong> {{ $paymentLabels[$solicitud->forma_pago_preferida] ?? 'Sin definir' }}</p>
 <p><strong>Aceptación:</strong> {{ $solicitud->acuerdo_comercial_aceptado ? 'Aceptada' : 'Pendiente' }}@if($solicitud->acuerdo_comercial_nombre) · {{ $solicitud->acuerdo_comercial_nombre }}@endif @if($solicitud->acuerdo_comercial_fecha) · {{ $solicitud->acuerdo_comercial_fecha->format('d/m/Y') }}@endif</p>
 </div>
