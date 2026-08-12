@@ -2,8 +2,8 @@
 
 namespace App\Providers;
 
-use App\Models\{Empresa,Usuario};
-use App\Observers\{EmpresaObserver,UsuarioObserver};
+use App\Models\{Empresa,Suscripcion,Usuario};
+use App\Observers\{EmpresaObserver,SuscripcionObserver,UsuarioObserver};
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -17,6 +17,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Empresa::observe(EmpresaObserver::class);
+        Suscripcion::observe(SuscripcionObserver::class);
         Usuario::observe(UsuarioObserver::class);
         if (app()->environment('production')) URL::forceScheme('https');
 

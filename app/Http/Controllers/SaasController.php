@@ -74,6 +74,7 @@ class SaasController extends Controller
             'descripcion'=>['nullable','string','max:2000'],
             'precio_proyecto'=>['nullable','numeric','min:0','max:9999999999'],
             'precio_mensual'=>['nullable','numeric','min:0','max:9999999999'],
+            'precio_anual'=>['nullable','numeric','min:0','max:9999999999'],
             'dias_prueba'=>['nullable','integer','min:0','max:60'],
             'modulos'=>['nullable','array'],
             'modulos.*'=>['string',Rule::in(['inicio','agenda','ordenes','clientes','equipos','tecnicos','inventario','pagos','garantias','historial','buzon'])],
