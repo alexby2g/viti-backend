@@ -22,6 +22,8 @@ Route::middleware(['auth:sanctum','throttle:api'])->group(function (): void {
 
     Route::middleware('platform_admin')->group(function (): void {
         Route::put('aplicaciones/{aplicacion}/ciclo', [AplicacionController::class,'actualizarCiclo']);
+        Route::post('aplicaciones/{aplicacion}/entregar', [AplicacionController::class,'entregar']);
+        Route::post('aplicaciones/{aplicacion}/revocar', [AplicacionController::class,'revocar']);
         Route::post('apps/electrofrio/buzon/{conversacion}/documentos', [ChatDocumentController::class,'store'])->defaults('chat_access','electro-admin');
     });
 
