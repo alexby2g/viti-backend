@@ -165,6 +165,7 @@ class PublicSolicitudController extends Controller
             'declaracion_fecha'=>['nullable','date'],
             'plan_viti_id'=>['nullable','integer','exists:planes_viti,id'],
             'forma_pago_preferida'=>['nullable',Rule::in(self::PAYMENT_OPTIONS)],
+            'frecuencia_suscripcion_preferida'=>['nullable',Rule::in(['mensual','anual'])],
             'acuerdo_comercial_aceptado'=>['nullable','boolean'],
             'acuerdo_comercial_nombre'=>['nullable','string','max:180'],
             'acuerdo_comercial_fecha'=>['nullable','date'],
@@ -191,6 +192,7 @@ class PublicSolicitudController extends Controller
                 'plan_viti_id'=>$selectedPlan?->id,
                 'presupuesto_estimado'=>$selectedPlan?->precio_proyecto,
                 'forma_pago_preferida'=>$data['forma_pago_preferida']??null,
+                'frecuencia_suscripcion_preferida'=>$data['frecuencia_suscripcion_preferida']??null,
                 'acuerdo_comercial_aceptado'=>(bool)($data['acuerdo_comercial_aceptado']??false),
                 'acuerdo_comercial_nombre'=>$data['acuerdo_comercial_nombre']??null,
                 'acuerdo_comercial_fecha'=>$data['acuerdo_comercial_fecha']??null,
@@ -204,7 +206,7 @@ class PublicSolicitudController extends Controller
 
     public function submit(Request $request, string $token): JsonResponse
     {
-        $solicitud = $this->resolve($token);
+        $solicitud = $this->resolve($token)->load('planViti');
         $requiredIds = $solicitud->cuestionario->secciones()->with('preguntas')->get()->flatMap(fn($s)=>$s->preguntas)->where('obligatoria',true)->pluck('id');
         $answered = $solicitud->respuestas()->whereIn('pregunta_id',$requiredIds)->get()->filter(fn($a)=>filled($a->respuesta_texto)||!empty($a->respuesta_json))->pluck('pregunta_id');
         abort_if($requiredIds->diff($answered)->isNotEmpty(),422,'Completa las preguntas obligatorias.');
@@ -213,6 +215,9 @@ class PublicSolicitudController extends Controller
         if ($solicitud->acuerdo_comercial_requerido) {
             abort_unless($solicitud->plan_viti_id,422,'Selecciona el plan que prefieres para tu proyecto.');
             abort_unless(filled($solicitud->forma_pago_preferida),422,'Selecciona una forma de pago preferida.');
+            if ($solicitud->planViti && ($solicitud->planViti->precio_mensual !== null || $solicitud->planViti->precio_anual !== null)) {
+                abort_unless(filled($solicitud->frecuencia_suscripcion_preferida),422,'Selecciona si prefieres la suscripción mensual o anual.');
+            }
             abort_unless($solicitud->acuerdo_comercial_aceptado && filled($solicitud->acuerdo_comercial_nombre) && $solicitud->acuerdo_comercial_fecha,422,'Debes aceptar el acuerdo comercial inicial para enviar la solicitud.');
         }
 
