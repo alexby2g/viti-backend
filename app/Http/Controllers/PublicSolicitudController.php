@@ -119,7 +119,7 @@ class PublicSolicitudController extends Controller
         });
 
         return response()->json([
-            'message' => 'Tus datos fueron registrados. Ahora completa el diagnóstico para que VITI pueda orientarte hacia el plan adecuado.',
+            'message' => 'Tus datos fueron registrados. Ahora elige el plan VITI que mejor se ajuste a tu negocio.',
             'data' => [
                 'cliente' => $cliente,
                 'empresa' => $empresa,
@@ -207,10 +207,10 @@ class PublicSolicitudController extends Controller
     public function submit(Request $request, string $token): JsonResponse
     {
         $solicitud = $this->resolve($token)->load('planViti');
-        $requiredIds = $solicitud->cuestionario->secciones()->with('preguntas')->get()->flatMap(fn($s)=>$s->preguntas)->where('obligatoria',true)->pluck('id');
-        $answered = $solicitud->respuestas()->whereIn('pregunta_id',$requiredIds)->get()->filter(fn($a)=>filled($a->respuesta_texto)||!empty($a->respuesta_json))->pluck('pregunta_id');
-        abort_if($requiredIds->diff($answered)->isNotEmpty(),422,'Completa las preguntas obligatorias.');
-        abort_unless($solicitud->declaracion_aceptada && filled($solicitud->declaracion_nombre) && $solicitud->declaracion_fecha,422,'Debes aceptar la declaración final.');
+
+        // El registro ya contiene la información principal. La configuración operativa
+        // es deliberadamente opcional y puede completarse durante la revisión con AGR Studio.
+        abort_unless($solicitud->declaracion_aceptada && filled($solicitud->declaracion_nombre) && $solicitud->declaracion_fecha,422,'Debes confirmar que los datos de tu solicitud son correctos.');
 
         if ($solicitud->acuerdo_comercial_requerido) {
             abort_unless($solicitud->plan_viti_id,422,'Selecciona el plan que prefieres para tu proyecto.');
