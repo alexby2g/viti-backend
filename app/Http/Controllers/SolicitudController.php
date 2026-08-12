@@ -104,21 +104,9 @@ class SolicitudController extends Controller
 
     private function validateCompletion(SolicitudSistema $solicitud): void
     {
-        $requiredIds = $solicitud->cuestionario->secciones()
-            ->with('preguntas')
-            ->get()
-            ->flatMap(fn ($section) => $section->preguntas)
-            ->where('obligatoria', true)
-            ->pluck('id');
-
-        $answered = $solicitud->respuestas()
-            ->whereIn('pregunta_id', $requiredIds)
-            ->get()
-            ->filter(fn ($answer) => filled($answer->respuesta_texto) || !empty($answer->respuesta_json))
-            ->pluck('pregunta_id');
-
-        abort_if($requiredIds->diff($answered)->isNotEmpty(), 422, 'Completa las preguntas obligatorias antes de enviar la solicitud.');
-        abort_unless($solicitud->declaracion_aceptada && filled($solicitud->declaracion_nombre) && $solicitud->declaracion_fecha, 422, 'El cliente debe aceptar la declaración final.');
+        // El registro y el resumen inicial ya contienen el contexto principal.
+        // Las preguntas operativas son opcionales y se completan en la revisión si hace falta.
+        abort_unless($solicitud->declaracion_aceptada && filled($solicitud->declaracion_nombre) && $solicitud->declaracion_fecha, 422, 'El cliente debe confirmar los datos de la solicitud.');
         if ($solicitud->acuerdo_comercial_requerido) {
             $solicitud->loadMissing('planViti');
             abort_unless($solicitud->plan_viti_id && filled($solicitud->forma_pago_preferida), 422, 'El cliente debe seleccionar plan y forma de pago.');
