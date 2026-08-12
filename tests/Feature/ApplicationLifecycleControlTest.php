@@ -12,16 +12,7 @@ class ApplicationLifecycleControlTest extends TestCase
 
     public function test_platform_admin_can_change_cycle_without_delivering_app(): void
     {
-        $admin=Usuario::create([
-            'nombre'=>'Admin Ciclo','usuario'=>'admin_ciclo','documento'=>'90000001','telefono'=>'70000001',
-            'password'=>'PruebaSegura123','rol'=>'administrador','estado'=>'activo',
-        ]);
-        $client=Cliente::create(['nombre'=>'Cliente Ciclo','telefono'=>'71111111','estado'=>'informacion_recibida']);
-        $company=Empresa::create(['cliente_id'=>$client->id,'codigo'=>'EMP-CICLO','nombre_comercial'=>'Empresa Ciclo','estado'=>'activo']);
-        $app=Aplicacion::create([
-            'empresa_id'=>$company->id,'nombre'=>'Sistema Ciclo','slug'=>'sistema-ciclo','version'=>'0.8.0',
-            'tipo'=>'web','entorno'=>'beta','estado'=>'en_pruebas','acceso_cliente'=>false,
-        ]);
+        [$admin,$app]=$this->fixture();
 
         $this->actingAs($admin)
             ->putJson("/api/v1/aplicaciones/{$app->id}/ciclo",['entorno'=>'produccion','estado'=>'activo'])
@@ -33,5 +24,58 @@ class ApplicationLifecycleControlTest extends TestCase
         $this->assertDatabaseHas('aplicaciones',[
             'id'=>$app->id,'entorno'=>'produccion','estado'=>'activo','acceso_cliente'=>false,
         ]);
+    }
+
+    public function test_native_client_can_use_post_cycle_then_admin_can_deliver_and_revoke_access(): void
+    {
+        [$admin,$app]=$this->fixture('native');
+
+        $this->actingAs($admin)
+            ->postJson("/api/v1/aplicaciones/{$app->id}/ciclo",['entorno'=>'produccion','estado'=>'activo'])
+            ->assertOk()
+            ->assertJsonPath('data.entorno','produccion')
+            ->assertJsonPath('data.estado','activo');
+
+        $this->actingAs($admin)
+            ->postJson("/api/v1/aplicaciones/{$app->id}/entregar")
+            ->assertOk()
+            ->assertJsonPath('data.acceso_cliente',true);
+
+        $this->assertDatabaseHas('aplicaciones',['id'=>$app->id,'acceso_cliente'=>true]);
+
+        $this->actingAs($admin)
+            ->postJson("/api/v1/aplicaciones/{$app->id}/revocar")
+            ->assertOk()
+            ->assertJsonPath('data.acceso_cliente',false);
+
+        $this->assertDatabaseHas('aplicaciones',['id'=>$app->id,'acceso_cliente'=>false]);
+    }
+
+    public function test_delivery_requires_active_production_cycle(): void
+    {
+        [$admin,$app]=$this->fixture('blocked');
+
+        $this->actingAs($admin)
+            ->postJson("/api/v1/aplicaciones/{$app->id}/entregar")
+            ->assertStatus(422);
+
+        $this->assertDatabaseHas('aplicaciones',['id'=>$app->id,'acceso_cliente'=>false]);
+    }
+
+    private function fixture(string $suffix='cycle'): array
+    {
+        $admin=Usuario::create([
+            'nombre'=>'Admin Ciclo','usuario'=>'admin_'.$suffix,'documento'=>'90'.str_pad((string)random_int(1,999999),6,'0',STR_PAD_LEFT),
+            'telefono'=>'70'.str_pad((string)random_int(1,999999),6,'0',STR_PAD_LEFT),
+            'password'=>'PruebaSegura123','rol'=>'administrador','estado'=>'activo',
+        ]);
+        $client=Cliente::create(['nombre'=>'Cliente Ciclo','telefono'=>'71'.str_pad((string)random_int(1,999999),6,'0',STR_PAD_LEFT),'estado'=>'informacion_recibida']);
+        $company=Empresa::create(['cliente_id'=>$client->id,'codigo'=>'EMP-'.strtoupper($suffix),'nombre_comercial'=>'Empresa Ciclo '.$suffix,'estado'=>'activo']);
+        $app=Aplicacion::create([
+            'empresa_id'=>$company->id,'nombre'=>'Sistema Ciclo '.$suffix,'slug'=>'sistema-ciclo-'.$suffix,'version'=>'0.8.0',
+            'tipo'=>'web','entorno'=>'beta','estado'=>'en_pruebas','acceso_cliente'=>false,
+        ]);
+
+        return [$admin,$app];
     }
 }
