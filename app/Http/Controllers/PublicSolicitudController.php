@@ -119,7 +119,7 @@ class PublicSolicitudController extends Controller
         });
 
         return response()->json([
-            'message' => 'Tus datos fueron registrados. Ahora completa el formulario de requerimientos.',
+            'message' => 'Tus datos fueron registrados. Ahora completa el diagnóstico para que VITI pueda orientarte hacia el plan adecuado.',
             'data' => [
                 'cliente' => $cliente,
                 'empresa' => $empresa,
@@ -137,7 +137,7 @@ class PublicSolicitudController extends Controller
             'cliente:id,nombre,telefono,whatsapp',
             'cuestionario.secciones.preguntas',
             'respuestas.pregunta',
-            'planViti:id,codigo,nombre,descripcion,precio_proyecto,precio_mensual,dias_prueba,modulos,max_usuarios,max_aplicaciones',
+            'planViti:id,codigo,nombre,descripcion,precio_proyecto,precio_mensual,precio_anual,dias_prueba,modulos,max_usuarios,max_aplicaciones',
         ]);
 
         $data = $solicitud->toArray();
@@ -146,7 +146,7 @@ class PublicSolicitudController extends Controller
             ->orderByRaw('precio_proyecto is null')
             ->orderBy('precio_proyecto')
             ->orderBy('id')
-            ->get(['id','codigo','nombre','descripcion','precio_proyecto','precio_mensual','dias_prueba','modulos','max_usuarios','max_aplicaciones'])
+            ->get(['id','codigo','nombre','descripcion','precio_proyecto','precio_mensual','precio_anual','dias_prueba','modulos','max_usuarios','max_aplicaciones'])
             ->values();
 
         return response()->json(['data'=>$data]);
@@ -189,7 +189,7 @@ class PublicSolicitudController extends Controller
                 'declaracion_nombre'=>$data['declaracion_nombre']??null,
                 'declaracion_fecha'=>$data['declaracion_fecha']??null,
                 'plan_viti_id'=>$selectedPlan?->id,
-                'presupuesto_estimado'=>$selectedPlan?->precio_proyecto ?? $solicitud->presupuesto_estimado,
+                'presupuesto_estimado'=>$selectedPlan?->precio_proyecto,
                 'forma_pago_preferida'=>$data['forma_pago_preferida']??null,
                 'acuerdo_comercial_aceptado'=>(bool)($data['acuerdo_comercial_aceptado']??false),
                 'acuerdo_comercial_nombre'=>$data['acuerdo_comercial_nombre']??null,
