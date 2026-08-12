@@ -8,7 +8,7 @@ class SolicitudSistema extends Model
     protected $table='solicitudes_sistema';
     protected $fillable=[
         'empresa_id','cliente_id','cuestionario_id','plan_viti_id','asignado_a','codigo','public_token','publico_habilitado','titulo','resumen','estado','prioridad',
-        'fecha_limite_deseada','presupuesto_estimado','forma_pago_preferida','acuerdo_comercial_requerido','acuerdo_comercial_aceptado',
+        'fecha_limite_deseada','presupuesto_estimado','forma_pago_preferida','frecuencia_suscripcion_preferida','acuerdo_comercial_requerido','acuerdo_comercial_aceptado',
         'acuerdo_comercial_nombre','acuerdo_comercial_fecha','enviado_at','aprobado_at','declaracion_aceptada','declaracion_nombre','declaracion_fecha'
     ];
     protected $hidden=['public_token'];
