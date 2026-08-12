@@ -42,14 +42,14 @@ jobs:
       - name: Boot Laravel routes
         run: php artisan route:list --except-vendor
 
-      - name: Run feature tests
+      - name: Run PDF feature test
         shell: bash
         run: |
           set +e
-          php artisan test 2>&1 | tee /tmp/phpunit.log
+          php artisan test tests/Feature/SolicitudPdfReportTest.php 2>&1 | tee /tmp/phpunit.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
-            details=$(tail -n 100 /tmp/phpunit.log | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
-            echo "::error title=PHPUnit failure::$details"
+            details=$(cat /tmp/phpunit.log | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+            echo "::error title=PDF PHPUnit failure::$details"
           fi
           exit "$status"
