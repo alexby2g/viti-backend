@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Models\{AlertaSaas,Aplicacion,Suscripcion,Usuario};
+use App\Models\{AlertaSaas,Aplicacion,SolicitudSistema,Suscripcion,Usuario};
 use Illuminate\Support\Carbon;
 
 class SaasAlertService
@@ -17,6 +17,45 @@ class SaasAlertService
 
     private function syncAdmin(Usuario $user): void
     {
+        Usuario::query()
+            ->where('rol','cliente')
+            ->where('created_at','>=',now()->subDay())
+            ->latest('id')
+            ->limit(25)
+            ->get(['id','cliente_id','nombre','usuario','created_at'])
+            ->each(function (Usuario $client) use ($user): void {
+                $this->ensure(
+                    $user,
+                    'usuario_registrado_'.$client->id,
+                    'registro',
+                    'Nuevo usuario registrado',
+                    trim($client->nombre ?: 'Cliente').' · @'.$client->usuario,
+                    '/clientes'
+                );
+            });
+
+        SolicitudSistema::query()
+            ->with(['cliente:id,nombre','empresa:id,nombre_comercial'])
+            ->where('estado','en_revision')
+            ->whereNotNull('enviado_at')
+            ->where('enviado_at','>=',now()->subDay())
+            ->latest('enviado_at')
+            ->limit(25)
+            ->get()
+            ->each(function (SolicitudSistema $request) use ($user): void {
+                $business = $request->empresa?->nombre_comercial ?: 'Empresa sin nombre';
+                $client = $request->cliente?->nombre ?: 'Cliente';
+                $this->ensure(
+                    $user,
+                    'solicitud_enviada_'.$request->id,
+                    'solicitud',
+                    'Nueva solicitud enviada',
+                    $request->codigo.' · '.$business.' · '.$client,
+                    '/solicitudes/'.$request->id,
+                    $request->empresa_id
+                );
+            });
+
         Aplicacion::query()->with('empresa:id,nombre_comercial')->where('estado','activo')->where('entorno','produccion')->where('acceso_cliente',false)->get()->each(function (Aplicacion $app) use ($user): void {
             $this->ensure($user,'entrega_'.$app->id,'entrega','Aplicación lista para entregar',($app->empresa?->nombre_comercial ?: 'Negocio').' · '.$app->nombre,'/aplicaciones',$app->empresa_id,$app->id);
         });
