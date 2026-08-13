@@ -3,7 +3,7 @@
 namespace App\Providers;
 
 use App\Models\{Empresa,Proyecto,SolicitudSistema,Suscripcion,Usuario};
-use App\Observers\{EmpresaObserver,ProyectoWorkflowObserver,SolicitudSistemaObserver,SuscripcionObserver,UsuarioObserver};
+use App\Observers\{EmpresaObserver,ProyectoWorkflowObserver,SolicitudSistemaObserver,SolicitudWorkflowObserver,SuscripcionObserver,UsuarioObserver};
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -18,6 +18,7 @@ class AppServiceProvider extends ServiceProvider
     {
         Empresa::observe(EmpresaObserver::class);
         Proyecto::observe(ProyectoWorkflowObserver::class);
+        SolicitudSistema::observe(SolicitudWorkflowObserver::class);
         SolicitudSistema::observe(SolicitudSistemaObserver::class);
         Suscripcion::observe(SuscripcionObserver::class);
         Usuario::observe(UsuarioObserver::class);
