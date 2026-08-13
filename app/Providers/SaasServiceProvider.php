@@ -2,7 +2,7 @@
 
 namespace App\Providers;
 
-use App\Http\Controllers\{ClientCatalogRequestController,ClientSaasController,NotificationCenterController,SaasController,SystemHealthController};
+use App\Http\Controllers\{ClientCatalogRequestController,ClientSaasController,NotificationCenterController,SaasController,SystemBackupController,SystemHealthController};
 use App\Http\Middleware\AuditBusinessAccessChange;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -49,6 +49,9 @@ class SaasServiceProvider extends ServiceProvider
             ->prefix('api/v1/system')
             ->group(function (): void {
                 Route::get('health', SystemHealthController::class);
+                Route::get('backups', [SystemBackupController::class,'index']);
+                Route::post('backups', [SystemBackupController::class,'store'])->middleware('throttle:6,1');
+                Route::post('backups/{backup}/verify', [SystemBackupController::class,'verify'])->middleware('throttle:12,1');
             });
     }
 }
