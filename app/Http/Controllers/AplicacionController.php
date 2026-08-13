@@ -38,7 +38,9 @@ class AplicacionController extends Controller
 
     public function update(Request $r,Aplicacion $aplicacion): JsonResponse
     {
-        $aplicacion->update($this->data($r,$aplicacion));
+        $data=$this->data($r,$aplicacion);
+        unset($data['entorno'],$data['estado'],$data['acceso_cliente']);
+        $aplicacion->update($data);
         Audit::log($r,'aplicacion_actualizada',$aplicacion,'Se actualizó una aplicación.');
         return response()->json(['data'=>$aplicacion->fresh()->load('empresa')]);
     }
@@ -49,6 +51,25 @@ class AplicacionController extends Controller
             'entorno'=>['required',Rule::in(['desarrollo','beta','produccion'])],
             'estado'=>['required',Rule::in(['en_pruebas','activo','pausado','retirado'])],
         ]);
+
+        abort_if(
+            $aplicacion->estado==='retirado' && $data['estado']!=='retirado',
+            422,
+            'Una aplicación retirada no puede reactivarse desde el ciclo normal. Crea una nueva versión o aplicación si debe volver a operar.'
+        );
+
+        if($aplicacion->entregado_at){
+            abort_unless(
+                $data['entorno']==='produccion',
+                422,
+                'Una aplicación ya entregada debe mantenerse en producción. Revoca el acceso si necesitas intervenirla.'
+            );
+            abort_if(
+                $data['estado']==='en_pruebas',
+                422,
+                'Una aplicación ya entregada no puede volver al estado en pruebas mediante una edición normal.'
+            );
+        }
 
         // El ciclo técnico/operativo es una decisión administrativa. La prueba gratuita
         // y el estado de la suscripción nunca promueven una app automáticamente a producción.
