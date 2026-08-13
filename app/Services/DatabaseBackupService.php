@@ -37,6 +37,10 @@ class DatabaseBackupService
                 throw new RuntimeException('pg_dump terminó sin producir un archivo de respaldo válido.');
             }
 
+            // Un checksum solo demuestra que los bytes no cambiaron. Antes de subir una copia,
+            // PostgreSQL también debe poder interpretar el archivo como un archive restaurable.
+            $this->assertArchiveReadable($tmpPath);
+
             $size = filesize($tmpPath);
             $checksum = hash_file('sha256', $tmpPath);
             if ($checksum === false) throw new RuntimeException('No se pudo calcular la huella SHA-256 del respaldo.');
@@ -56,17 +60,19 @@ class DatabaseBackupService
                 throw new RuntimeException('El almacenamiento privado no confirmó la carga del respaldo.');
             }
 
-            $remoteChecksum = $this->checksumRemote($remotePath);
-            if (!hash_equals($checksum, $remoteChecksum)) {
-                $disk->delete($remotePath);
-                throw new RuntimeException('La verificación SHA-256 del respaldo remoto no coincide con el archivo original.');
-            }
-
+            // Guardamos primero la identidad esperada del archivo y verificamos de nuevo la copia
+            // descargada desde el almacenamiento privado. La verificación final siempre recae sobre
+            // el objeto remoto, no sobre el temporal que acabamos de crear.
             $backup->update([
-                'status' => 'verified',
                 'path' => $remotePath,
                 'checksum_sha256' => $checksum,
                 'size_bytes' => $size,
+            ]);
+
+            $this->assertRemoteArchive($backup->fresh());
+
+            $backup->update([
+                'status' => 'verified',
                 'completed_at' => now(),
                 'verified_at' => now(),
                 'failure_reason' => null,
@@ -92,21 +98,25 @@ class DatabaseBackupService
             throw new RuntimeException('Este respaldo no tiene ruta o checksum registrado para verificar.');
         }
 
-        $diskName = $backup->disk ?: 'private_uploads';
-        $disk = Storage::disk($diskName);
-        if (!$disk->exists($backup->path)) {
-            $backup->update(['status' => 'failed', 'failure_reason' => 'El archivo de respaldo ya no existe en el almacenamiento privado.']);
-            throw new RuntimeException('El archivo de respaldo ya no existe en el almacenamiento privado.');
+        try {
+            $this->assertRemoteArchive($backup);
+            $backup->update(['status' => 'verified', 'verified_at' => now(), 'failure_reason' => null]);
+            return $backup->fresh();
+        } catch (Throwable $e) {
+            $backup->update(['status' => 'failed', 'failure_reason' => $this->safeFailure($e->getMessage())]);
+            throw $e;
         }
+    }
 
-        $remoteChecksum = $this->checksumRemote($backup->path, $diskName);
-        if (!hash_equals($backup->checksum_sha256, $remoteChecksum)) {
-            $backup->update(['status' => 'failed', 'failure_reason' => 'El checksum remoto ya no coincide con el registrado.']);
-            throw new RuntimeException('El respaldo existe, pero su checksum ya no coincide con el registrado.');
-        }
-
-        $backup->update(['status' => 'verified', 'verified_at' => now(), 'failure_reason' => null]);
-        return $backup->fresh();
+    public function retentionPolicy(): array
+    {
+        return [
+            'minimum_verified_copies' => 7,
+            'freshness_hours' => 48,
+            'suggested_retention_days' => 30,
+            'automatic_pruning' => false,
+            'message' => 'VITI conserva las copias verificadas. El borrado automático permanece desactivado hasta completar simulacros de restauración periódicos.',
+        ];
     }
 
     private function runPgDump(array $connection, string $tmpPath): void
@@ -121,6 +131,63 @@ class DatabaseBackupService
 
         if (!$process->isSuccessful()) {
             throw new RuntimeException('pg_dump no pudo completar el respaldo (código '.$process->getExitCode().').');
+        }
+    }
+
+    private function assertArchiveReadable(string $path): void
+    {
+        $process = new Process(['pg_restore', '--list', $path]);
+        $process->setTimeout(60);
+        $process->run();
+
+        if (!$process->isSuccessful() || trim($process->getOutput()) === '') {
+            throw new RuntimeException('pg_restore no pudo interpretar el archivo de respaldo como un archive PostgreSQL restaurable.');
+        }
+    }
+
+    private function assertRemoteArchive(SystemBackup $backup): void
+    {
+        $diskName = $backup->disk ?: 'private_uploads';
+        $disk = Storage::disk($diskName);
+
+        if (!$backup->path || !$disk->exists($backup->path)) {
+            throw new RuntimeException('El archivo de respaldo ya no existe en el almacenamiento privado.');
+        }
+
+        $tmpDir = storage_path('app/tmp/backups/verify');
+        File::ensureDirectoryExists($tmpDir);
+        $tmpPath = $tmpDir.'/verify-'.$backup->id.'-'.bin2hex(random_bytes(6)).'.dump';
+        $remote = $disk->readStream($backup->path);
+        if ($remote === false) throw new RuntimeException('No se pudo leer el respaldo remoto para verificar su integridad.');
+
+        $local = fopen($tmpPath, 'wb');
+        if ($local === false) {
+            fclose($remote);
+            throw new RuntimeException('No se pudo crear el archivo temporal de verificación.');
+        }
+
+        try {
+            if (stream_copy_to_stream($remote, $local) === false) {
+                throw new RuntimeException('No se pudo completar la descarga temporal del respaldo remoto.');
+            }
+        } finally {
+            fclose($remote);
+            fclose($local);
+        }
+
+        try {
+            $remoteChecksum = hash_file('sha256', $tmpPath);
+            if ($remoteChecksum === false || !$backup->checksum_sha256 || !hash_equals($backup->checksum_sha256, $remoteChecksum)) {
+                throw new RuntimeException('El checksum remoto ya no coincide con el registrado.');
+            }
+
+            if ($backup->size_bytes !== null && filesize($tmpPath) !== (int) $backup->size_bytes) {
+                throw new RuntimeException('El tamaño remoto del respaldo ya no coincide con el registrado.');
+            }
+
+            $this->assertArchiveReadable($tmpPath);
+        } finally {
+            if (is_file($tmpPath)) @unlink($tmpPath);
         }
     }
 
@@ -148,20 +215,6 @@ class DatabaseBackupService
         }
 
         return compact('host','port','username','password','database','sslmode');
-    }
-
-    private function checksumRemote(string $path, string $diskName = 'private_uploads'): string
-    {
-        $stream = Storage::disk($diskName)->readStream($path);
-        if ($stream === false) throw new RuntimeException('No se pudo leer el respaldo remoto para verificar su integridad.');
-
-        try {
-            $hash = hash_init('sha256');
-            hash_update_stream($hash, $stream);
-            return hash_final($hash);
-        } finally {
-            fclose($stream);
-        }
     }
 
     private function safeFailure(string $message): string
