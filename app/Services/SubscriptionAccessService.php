@@ -7,6 +7,8 @@ use App\Models\Suscripcion;
 
 class SubscriptionAccessService
 {
+    private const DUE_SOON_DAYS = 5;
+
     public function refresh(?Suscripcion $subscription): ?Suscripcion
     {
         if (!$subscription) return null;
@@ -48,7 +50,12 @@ class SubscriptionAccessService
 
         $today = now()->startOfDay();
         $trialEnd = $subscription->prueba_hasta?->copy()->startOfDay();
+        $due = $subscription->fecha_vencimiento?->copy()->startOfDay();
+        $graceEnd = $due?->copy()->addDays((int)$subscription->dias_gracia);
         $inTrial = $trialEnd && $today->lte($trialEnd);
+        $daysToDue = $due && $today->lte($due) ? $today->diffInDays($due) : null;
+        $daysLate = $due && $today->gt($due) ? $due->diffInDays($today) : 0;
+        $stage = $this->stage($subscription,$inTrial,$daysToDue);
 
         return [
             'id'=>$subscription->id,
@@ -65,8 +72,14 @@ class SubscriptionAccessService
             'primer_cobro_pagado'=>(bool)$subscription->primer_cobro_pagado,
             'fecha_vencimiento'=>$subscription->fecha_vencimiento?->format('Y-m-d'),
             'dias_gracia'=>(int)$subscription->dias_gracia,
+            'gracia_hasta'=>$graceEnd?->format('Y-m-d'),
+            'dias_para_vencer'=>$daysToDue,
+            'dias_mora'=>(int)$daysLate,
             'estado'=>$subscription->estado,
+            'etapa_cobro'=>$stage,
+            'requiere_pago'=>!$inTrial && $subscription->estado !== 'cancelada',
             'puede_usar'=>$inTrial || in_array($subscription->estado,['activa','gracia'],true),
+            'mensaje_cobro'=>$this->message($stage,$daysToDue,(int)$daysLate,$graceEnd?->format('Y-m-d')),
         ];
     }
 
@@ -76,5 +89,27 @@ class SubscriptionAccessService
         if (!$status) return;
 
         abort_unless($status['puede_usar'], 402, 'Tu suscripción VITI está suspendida. Regulariza el pago para volver a utilizar la aplicación.');
+    }
+
+    private function stage(Suscripcion $subscription, bool $inTrial, ?int $daysToDue): string
+    {
+        if ($subscription->estado === 'cancelada') return 'cancelada';
+        if ($inTrial) return 'prueba';
+        if ($subscription->estado === 'suspendida') return 'suspendida';
+        if ($subscription->estado === 'gracia') return 'gracia';
+        if ($daysToDue !== null && $daysToDue <= self::DUE_SOON_DAYS) return 'por_vencer';
+        return 'al_dia';
+    }
+
+    private function message(string $stage, ?int $daysToDue, int $daysLate, ?string $graceEnd): string
+    {
+        return match ($stage) {
+            'prueba' => 'La suscripción está dentro del periodo de prueba gratuito.',
+            'por_vencer' => $daysToDue === 0 ? 'La suscripción vence hoy.' : "La suscripción vence en {$daysToDue} día(s).",
+            'gracia' => "El pago está vencido hace {$daysLate} día(s). El acceso continúa en periodo de gracia hasta {$graceEnd}.",
+            'suspendida' => 'La suscripción superó el periodo de gracia y el acceso está suspendido.',
+            'cancelada' => 'La suscripción está cancelada.',
+            default => 'La suscripción está al día.',
+        };
     }
 }
