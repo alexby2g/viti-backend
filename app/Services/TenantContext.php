@@ -9,6 +9,8 @@ class TenantContext
 {
     private const EMPLOYEE_DEFAULT_MODULES = ['inicio','agenda','ordenes'];
 
+    public function __construct(private FeatureGateService $features) {}
+
     public function resolve(Request $request): Empresa
     {
         $user = $request->user();
@@ -70,54 +72,39 @@ class TenantContext
 
     public function canUse(Usuario $user, Empresa $empresa, string $module): bool
     {
+        if (!$this->features->hasModule($empresa,$module)) return false;
         $permissions = $this->permissions($user,$empresa);
         return $permissions === null || in_array($module,$permissions,true);
     }
 
     public function assertCanUse(Usuario $user, Empresa $empresa, string $module): void
     {
-        abort_unless($this->canUse($user,$empresa,$module),403,'Tu rol no tiene permiso para usar este módulo de la aplicación VITI.');
+        abort_unless($this->canUse($user,$empresa,$module),403,'Tu rol o plan no tiene permiso para usar este módulo de la aplicación VITI.');
     }
 
     public function assertUserLimit(Empresa $empresa): void
     {
-        $limit = $empresa->planViti?->max_usuarios;
-        if ($limit === null) return;
-        $current = $empresa->usuarios()->wherePivot('activo',true)->count();
-        abort_if($current >= $limit,422,'Este negocio alcanzó el límite de usuarios de su plan VITI.');
+        $this->features->assertUserLimit($empresa);
     }
 
     public function assertAppLimit(Empresa $empresa): void
     {
-        $limit = $empresa->planViti?->max_aplicaciones;
-        if ($limit === null) return;
-        $current = $empresa->aplicaciones()->whereNotIn('estado',['retirado'])->count();
-        abort_if($current >= $limit,422,'Este negocio alcanzó el límite de aplicaciones de su plan VITI.');
+        $this->features->assertAppLimit($empresa);
     }
 
     public function modules(Empresa $empresa): ?array
     {
-        $modules = $empresa->planViti?->modulos;
-        if ($modules === null || $modules === []) return null;
-
-        return array_values(array_unique(array_filter(
-            array_map(fn ($module) => trim((string) $module), (array) $modules)
-        )));
+        return $this->features->modules($empresa);
     }
 
     public function hasModule(Empresa $empresa, string $module): bool
     {
-        $modules = $this->modules($empresa);
-        return $modules === null || in_array($module, $modules, true);
+        return $this->features->hasModule($empresa,$module);
     }
 
     public function assertModule(Empresa $empresa, string $module): void
     {
-        abort_unless(
-            $this->hasModule($empresa, $module),
-            403,
-            'Este módulo no forma parte del plan VITI asignado a tu negocio.'
-        );
+        $this->features->assertModule($empresa,$module);
     }
 
     public function effectiveModules(Usuario $user, Empresa $empresa): ?array
@@ -129,11 +116,22 @@ class TenantContext
         return array_values(array_intersect($plan,$permissions));
     }
 
+    public function featureSnapshot(Usuario $user, Empresa $empresa): array
+    {
+        return [
+            ...$this->features->snapshot($empresa),
+            'rol'=>$this->role($user,$empresa),
+            'puede_administrar'=>$this->canManage($user,$empresa),
+            'modulos_efectivos'=>$this->effectiveModules($user,$empresa),
+        ];
+    }
+
     private function pivotPermissions(mixed $value): ?array
     {
         if ($value === null || $value === '') return null;
         if (is_string($value)) $value = json_decode($value,true);
         if (!is_array($value)) return [];
-        return array_values(array_unique(array_filter(array_map(fn ($permission) => trim((string)$permission),$value))));
+        $clean = array_values(array_unique(array_filter(array_map(fn ($permission) => trim((string)$permission),$value))));
+        return array_values(array_intersect(FeatureGateService::MODULES,$clean));
     }
 }

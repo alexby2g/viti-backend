@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{Aplicacion,CatalogoAplicacion,Empresa,Mantenimiento,PlanViti,Proyecto,SolicitudSistema,Suscripcion,Usuario};
-use App\Services\{AppLifecycleService,TenantContext};
+use App\Services\{AppLifecycleService,FeatureGateService,TenantContext};
 use App\Support\Audit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -77,7 +77,7 @@ class SaasController extends Controller
             'precio_anual'=>['nullable','numeric','min:0','max:9999999999'],
             'dias_prueba'=>['nullable','integer','min:0','max:60'],
             'modulos'=>['nullable','array'],
-            'modulos.*'=>['string',Rule::in(['inicio','agenda','ordenes','clientes','equipos','tecnicos','inventario','pagos','garantias','historial','buzon'])],
+            'modulos.*'=>['string',Rule::in(FeatureGateService::MODULES)],
             'max_usuarios'=>['nullable','integer','min:1','max:10000'],'max_aplicaciones'=>['nullable','integer','min:1','max:10000'],'activo'=>['sometimes','boolean'],
         ]);
         $plan ??= new PlanViti(); $plan->fill($data)->save();

@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{CatalogoAplicacion,Empresa,Usuario};
-use App\Services\TenantContext;
+use App\Services\{FeatureGateService,TenantContext};
 use App\Support\Audit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,7 +17,7 @@ class ClientSaasController extends Controller
 {
     private const PAYMENT_METHODS = ['qr','transferencia','efectivo','otro'];
 
-    public function negocios(Request $request): JsonResponse
+    public function negocios(Request $request, TenantContext $tenants): JsonResponse
     {
         $items = $request->user()->negocios()
             ->wherePivot('activo',true)
@@ -29,6 +29,7 @@ class ClientSaasController extends Controller
                 'id'=>$e->id,'codigo'=>$e->codigo,'nombre_comercial'=>$e->nombre_comercial,'actividad'=>$e->actividad,
                 'logo_url'=>$e->logo_url,'moneda'=>$e->moneda,'metodo_pago_preferido'=>$e->metodo_pago_preferido ?: 'qr','zona_horaria'=>$e->zona_horaria,
                 'rol'=>$e->pivot?->rol_negocio,'aplicaciones_count'=>$e->aplicaciones_count,'plan'=>$e->planViti,
+                'features'=>$tenants->featureSnapshot($request->user(),$e),
             ]);
         return response()->json(['data'=>$items]);
     }
@@ -40,6 +41,7 @@ class ClientSaasController extends Controller
             'empresa'=>$empresa->load('planViti'),
             'rol'=>$tenants->role($request->user(),$empresa),
             'puede_administrar'=>$tenants->canManage($request->user(),$empresa),
+            'features'=>$tenants->featureSnapshot($request->user(),$empresa),
         ]]);
     }
 
@@ -97,7 +99,7 @@ class ClientSaasController extends Controller
             'usuario'=>['required','string','alpha_dash','min:4','max:80','not_regex:/^\d+$/','unique:usuarios,usuario'],'telefono'=>['nullable','string','max:30','unique:usuarios,telefono'],
             'documento'=>['required','regex:/^[0-9]{5,15}$/','unique:usuarios,documento'],
             'password'=>['required','confirmed',Password::min(8)->letters()->numbers()],'rol_negocio'=>['required',Rule::in(['propietario','administrador','empleado'])],
-            'permisos'=>['nullable','array'],'permisos.*'=>['string',Rule::in($tenants->modules($empresa) ?? ['inicio','agenda','ordenes','clientes','equipos','tecnicos','inventario','pagos','garantias','historial','buzon'])],
+            'permisos'=>['nullable','array'],'permisos.*'=>['string',Rule::in($tenants->modules($empresa) ?? FeatureGateService::MODULES)],
         ]);
         $role = $data['rol_negocio'];
         $requesterRole = $tenants->role($request->user(),$empresa);
@@ -118,7 +120,7 @@ class ClientSaasController extends Controller
         $tenants->assertCanManage($request->user(),$empresa);
         $membership = $empresa->usuarios()->where('usuarios.id',$usuario->id)->first();
         abort_unless($membership,404,'Ese usuario no pertenece a este negocio.');
-        $data = $request->validate(['rol_negocio'=>['required',Rule::in(['propietario','administrador','empleado'])],'activo'=>['required','boolean'],'password'=>['nullable','confirmed',Password::min(8)->letters()->numbers()],'permisos'=>['nullable','array'],'permisos.*'=>['string',Rule::in($tenants->modules($empresa) ?? ['inicio','agenda','ordenes','clientes','equipos','tecnicos','inventario','pagos','garantias','historial','buzon'])]]);
+        $data = $request->validate(['rol_negocio'=>['required',Rule::in(['propietario','administrador','empleado'])],'activo'=>['required','boolean'],'password'=>['nullable','confirmed',Password::min(8)->letters()->numbers()],'permisos'=>['nullable','array'],'permisos.*'=>['string',Rule::in($tenants->modules($empresa) ?? FeatureGateService::MODULES)]]);
         $requesterRole = $tenants->role($request->user(),$empresa);
         $canManageOwners = $this->canManageOwners($requesterRole);
         abort_if($membership->pivot?->rol_negocio === 'propietario' && !$canManageOwners,403,'Solo un propietario o administrador de plataforma puede modificar a otro propietario.');
