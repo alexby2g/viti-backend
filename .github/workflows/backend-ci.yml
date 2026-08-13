@@ -44,3 +44,86 @@ jobs:
 
       - name: Run feature tests
         run: php artisan test
+
+  backup-restore-drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      APP_ENV: testing
+      APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      APP_DEBUG: "false"
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_DATABASE: viti_ci
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      DB_SSLMODE: disable
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: PHP 8.4 with PostgreSQL
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, pdo_pgsql
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Start isolated PostgreSQL 17
+        run: |
+          docker run -d --name viti-pg \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=viti_ci \
+            -p 5432:5432 postgres:17
+          for i in $(seq 1 30); do
+            if docker exec viti-pg pg_isready -U postgres -d viti_ci >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs viti-pg
+          exit 1
+
+      - name: Build VITI schema and recovery marker
+        run: |
+          php artisan migrate:fresh --force
+          docker exec viti-pg psql -U postgres -d viti_ci -v ON_ERROR_STOP=1 -c \
+            "CREATE TABLE backup_recovery_marker (id integer PRIMARY KEY, value text NOT NULL); INSERT INTO backup_recovery_marker (id, value) VALUES (1, 'viti-recovery-ok');"
+
+      - name: Create and inspect PostgreSQL archive
+        run: |
+          docker exec viti-pg pg_dump -U postgres -d viti_ci \
+            --format=custom --no-owner --no-privileges --file=/tmp/viti-ci.dump
+          docker exec viti-pg pg_restore --list /tmp/viti-ci.dump > restore-archive.list
+          test -s restore-archive.list
+          grep -q "backup_recovery_marker" restore-archive.list
+          grep -q "system_backups" restore-archive.list
+
+      - name: Restore into a clean database
+        run: |
+          docker exec viti-pg createdb -U postgres viti_restore
+          docker exec viti-pg pg_restore -U postgres -d viti_restore \
+            --no-owner --no-privileges /tmp/viti-ci.dump
+
+      - name: Verify restored schema and data
+        run: |
+          marker="$(docker exec viti-pg psql -U postgres -d viti_restore -tAc "SELECT value FROM backup_recovery_marker WHERE id = 1")"
+          migrations="$(docker exec viti-pg psql -U postgres -d viti_restore -tAc "SELECT count(*) FROM migrations")"
+          backups_table="$(docker exec viti-pg psql -U postgres -d viti_restore -tAc "SELECT to_regclass('public.system_backups') IS NOT NULL")"
+          test "$marker" = "viti-recovery-ok"
+          test "$migrations" -gt 0
+          test "$backups_table" = "t"
+
+      - name: Recovery drill summary
+        run: |
+          echo "PostgreSQL 17 dump: OK"
+          echo "pg_restore archive listing: OK"
+          echo "Restore into clean database: OK"
+          echo "Schema and sentinel data verification: OK"
