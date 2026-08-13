@@ -123,37 +123,56 @@ class ClientPortalController extends Controller
     public function startRequest(Request $request): JsonResponse
     {
         $cliente = $this->client($request);
+        $data = $request->validate([
+            'empresa_id'=>['nullable','integer','exists:empresas,id'],
+        ]);
         $cuestionario = Cuestionario::query()->where('activo',true)->latest('id')->first();
         abort_unless($cuestionario, 422, 'No hay un cuestionario activo disponible.');
 
-        $solicitud = DB::transaction(function () use ($cliente,$cuestionario): SolicitudSistema {
+        $empresas = $cliente->empresas()->orderBy('id')->get();
+        abort_if($empresas->isEmpty(), 422, 'Primero debes tener un negocio registrado para iniciar una nueva solicitud.');
+
+        if (!empty($data['empresa_id'])) {
+            $empresa = $empresas->firstWhere('id', (int)$data['empresa_id']);
+            abort_unless($empresa, 403, 'El negocio seleccionado no pertenece a tu cuenta.');
+        } else {
+            abort_if($empresas->count() > 1, 422, 'Selecciona el negocio al que corresponde esta nueva solicitud.');
+            $empresa = $empresas->first();
+        }
+
+        $solicitud = DB::transaction(function () use ($cliente,$cuestionario,$empresa): SolicitudSistema {
             $solicitud = SolicitudSistema::create([
-                'empresa_id'=>null,
+                'empresa_id'=>$empresa->id,
                 'cliente_id'=>$cliente->id,
                 'cuestionario_id'=>$cuestionario->id,
                 'codigo'=>Code::next('solicitudes_sistema','SOL'),
                 'public_token'=>Str::random(48),
                 'publico_habilitado'=>true,
-                'titulo'=>'Nueva solicitud de sistema',
+                'titulo'=>'Sistema para '.$empresa->nombre_comercial,
                 'estado'=>'borrador',
                 'prioridad'=>'normal',
                 'acuerdo_comercial_requerido'=>true,
             ]);
 
-            $map = [2=>$cliente->nombre, 3=>$cliente->telefono];
+            $map = [
+                1=>$empresa->nombre_comercial,
+                2=>$cliente->nombre,
+                3=>$cliente->telefono,
+                4=>$empresa->actividad,
+            ];
             foreach ($cuestionario->secciones()->with('preguntas')->get()->flatMap->preguntas as $pregunta) {
-                if (array_key_exists($pregunta->numero,$map)) {
+                if (array_key_exists($pregunta->numero,$map) && filled($map[$pregunta->numero])) {
                     SolicitudRespuesta::updateOrCreate(
                         ['solicitud_id'=>$solicitud->id,'pregunta_id'=>$pregunta->id],
-                        ['respuesta_texto'=>$map[$pregunta->numero]]
+                        ['respuesta_texto'=>(string)$map[$pregunta->numero]]
                     );
                 }
             }
             return $solicitud;
         });
 
-        Audit::log($request,'solicitud_cliente_iniciada',$solicitud,'El cliente inició una nueva solicitud independiente.');
-        return response()->json(['data'=>$solicitud->load(['planViti','cuestionario.secciones.preguntas','respuestas'])],201);
+        Audit::log($request,'solicitud_cliente_iniciada',$solicitud,'El cliente inició una nueva solicitud para '.$empresa->nombre_comercial.'.');
+        return response()->json(['data'=>$solicitud->load(['empresa','planViti','cuestionario.secciones.preguntas','respuestas'])],201);
     }
 
     public function syncFromQuestionnaire(Request $request, SolicitudSistema $solicitud): JsonResponse
@@ -166,12 +185,16 @@ class ClientPortalController extends Controller
 
     public static function syncCompany(SolicitudSistema $solicitud, Cliente $cliente): ?Empresa
     {
+        if ($solicitud->empresa_id) {
+            return $solicitud->empresa;
+        }
+
         $answers = $solicitud->respuestas()->with('pregunta')->get()->keyBy(fn($r)=>$r->pregunta?->numero);
         $name = trim((string)($answers->get(1)?->respuesta_texto ?? ''));
         $activity = trim((string)($answers->get(4)?->respuesta_texto ?? ''));
         if ($name === '' || in_array(Str::lower($name), ['no aplica','no','ninguno','ninguna'], true)) return null;
 
-        $empresa = $solicitud->empresa ?: $cliente->empresas()->where('nombre_comercial',$name)->first();
+        $empresa = $cliente->empresas()->where('nombre_comercial',$name)->first();
         if (!$empresa) {
             $empresa = Empresa::create([
                 'cliente_id'=>$cliente->id,
@@ -187,7 +210,7 @@ class ClientPortalController extends Controller
         } else {
             $empresa->update(['actividad'=>$activity ?: $empresa->actividad]);
         }
-        if (!$solicitud->empresa_id) $solicitud->update(['empresa_id'=>$empresa->id]);
+        $solicitud->update(['empresa_id'=>$empresa->id]);
         if ($solicitud->titulo === 'Nueva solicitud de sistema') $solicitud->update(['titulo'=>'Sistema para '.$empresa->nombre_comercial]);
         return $empresa;
     }
