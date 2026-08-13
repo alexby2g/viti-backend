@@ -14,7 +14,14 @@ class TenantContext
         $user = $request->user();
         abort_unless($user,401,'Debes iniciar sesión.');
 
-        $requested = (int)($request->header('X-VITI-Empresa') ?: $request->input('empresa_id',0));
+        $headerBusinessId = (int)$request->header('X-VITI-Empresa',0);
+        $payloadBusinessId = (int)$request->input('empresa_id',0);
+        abort_if(
+            $headerBusinessId && $payloadBusinessId && $headerBusinessId !== $payloadBusinessId,
+            422,
+            'Contexto de empresa inconsistente.'
+        );
+        $requested = $headerBusinessId ?: $payloadBusinessId;
 
         if ($user->isPlatformAdmin()) {
             abort_unless($requested,422,'Selecciona una empresa.');
