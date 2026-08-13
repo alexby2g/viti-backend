@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Auditoria;
+use App\Models\{Auditoria,SystemBackup};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -16,8 +16,9 @@ class SystemHealthController extends Controller
         $queue = $this->queueHealth();
         $migrations = $this->migrationHealth();
         $audit = $this->auditHealth();
+        $backup = $this->backupHealth();
 
-        $overall = $database['ok'] && $migrations['ok'] && $queue['ok'] ? 'ok' : 'warning';
+        $overall = $database['ok'] && $migrations['ok'] && $queue['ok'] && $backup['ok'] ? 'ok' : 'warning';
 
         return response()->json([
             'data' => [
@@ -34,13 +35,7 @@ class SystemHealthController extends Controller
                 'queue' => $queue,
                 'migrations' => $migrations,
                 'audit' => $audit,
-                'backup' => [
-                    'ok' => false,
-                    'configured' => false,
-                    'status' => 'pending_configuration',
-                    'message' => 'VITI todavía no registra un respaldo verificable desde la aplicación.',
-                    'recommendation' => 'Configurar respaldo periódico de PostgreSQL y una prueba real de restauración antes de marcar este control como listo.',
-                ],
+                'backup' => $backup,
             ],
         ]);
     }
@@ -172,6 +167,81 @@ class SystemHealthController extends Controller
                 'last_event_at' => null,
                 'last_action' => null,
                 'message' => 'No se pudo consultar la auditoría.',
+            ];
+        }
+    }
+
+    private function backupHealth(): array
+    {
+        try {
+            if (!Schema::hasTable('system_backups')) {
+                return [
+                    'ok' => false,
+                    'configured' => false,
+                    'status' => 'migration_pending',
+                    'message' => 'El registro de respaldos todavía no está disponible en la base de datos.',
+                    'automatic' => false,
+                ];
+            }
+
+            $latest = SystemBackup::query()->latest()->first();
+            $latestVerified = SystemBackup::query()->where('status', 'verified')->whereNotNull('verified_at')->latest('verified_at')->first();
+            $verifiedCount = SystemBackup::query()->where('status', 'verified')->count();
+
+            if (!$latest) {
+                return [
+                    'ok' => false,
+                    'configured' => true,
+                    'status' => 'never_run',
+                    'message' => 'La infraestructura de respaldo está lista, pero todavía no se creó un respaldo verificable.',
+                    'automatic' => false,
+                    'verified_count' => 0,
+                    'last_verified_at' => null,
+                ];
+            }
+
+            if (!$latestVerified) {
+                return [
+                    'ok' => false,
+                    'configured' => true,
+                    'status' => $latest->status === 'failed' ? 'failed' : 'pending_verification',
+                    'message' => $latest->status === 'failed'
+                        ? 'El último intento de respaldo falló y requiere revisión.'
+                        : 'Existe un intento de respaldo, pero todavía no hay una copia verificada.',
+                    'automatic' => false,
+                    'verified_count' => 0,
+                    'last_attempt_at' => $latest->completed_at?->toIso8601String() ?? $latest->started_at?->toIso8601String(),
+                    'failure_reason' => $latest->failure_reason,
+                ];
+            }
+
+            $hours = $latestVerified->verified_at->diffInHours(now());
+            $fresh = $hours <= 48;
+
+            return [
+                'ok' => $fresh,
+                'configured' => true,
+                'status' => $fresh ? 'verified' : 'stale',
+                'message' => $fresh
+                    ? 'Existe un respaldo PostgreSQL verificado recientemente.'
+                    : 'El último respaldo verificado tiene más de 48 horas y conviene renovarlo.',
+                'automatic' => false,
+                'verified_count' => $verifiedCount,
+                'last_verified_at' => $latestVerified->verified_at?->toIso8601String(),
+                'age_hours' => (int) $hours,
+                'size_bytes' => $latestVerified->size_bytes,
+                'checksum_sha256' => $latestVerified->checksum_sha256,
+                'latest_attempt_status' => $latest->status,
+            ];
+        } catch (Throwable $e) {
+            report($e);
+
+            return [
+                'ok' => false,
+                'configured' => false,
+                'status' => 'unavailable',
+                'message' => 'No se pudo consultar el historial de respaldos.',
+                'automatic' => false,
             ];
         }
     }
