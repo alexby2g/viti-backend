@@ -18,7 +18,7 @@ class ProtectPublicDraftRevision
         }
 
         return DB::transaction(function () use ($request, $next): Response {
-            $token = (string) $request->route('token');
+            $token = (string) $request->segment(5);
             $solicitud = SolicitudSistema::query()
                 ->where('public_token', $token)
                 ->where('publico_habilitado', true)
