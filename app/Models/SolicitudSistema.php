@@ -8,12 +8,13 @@ class SolicitudSistema extends Model
     protected $table='solicitudes_sistema';
     protected $fillable=[
         'empresa_id','cliente_id','cuestionario_id','plan_viti_id','asignado_a','codigo','public_token','publico_habilitado','titulo','resumen','estado','prioridad',
-        'fecha_limite_deseada','presupuesto_estimado','forma_pago_preferida','frecuencia_suscripcion_preferida','acuerdo_comercial_requerido','acuerdo_comercial_aceptado',
+        'draft_revision','draft_saved_at','fecha_limite_deseada','presupuesto_estimado','forma_pago_preferida','frecuencia_suscripcion_preferida','acuerdo_comercial_requerido','acuerdo_comercial_aceptado',
         'acuerdo_comercial_nombre','acuerdo_comercial_fecha','enviado_at','aprobado_at','declaracion_aceptada','declaracion_nombre','declaracion_fecha'
     ];
     protected $hidden=['public_token'];
     protected $appends=['enlace_publico'];
     protected $casts=[
+        'draft_revision'=>'integer','draft_saved_at'=>'datetime',
         'fecha_limite_deseada'=>'date:Y-m-d','presupuesto_estimado'=>'decimal:2','enviado_at'=>'datetime','aprobado_at'=>'datetime','publico_habilitado'=>'boolean',
         'acuerdo_comercial_requerido'=>'boolean','acuerdo_comercial_aceptado'=>'boolean','acuerdo_comercial_fecha'=>'date:Y-m-d',
         'declaracion_aceptada'=>'boolean','declaracion_fecha'=>'date:Y-m-d'
