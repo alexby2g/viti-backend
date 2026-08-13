@@ -21,18 +21,10 @@ return new class extends Migration
             $table->index(['empresa_id','estado'], 'aplicaciones_empresa_estado_idx');
             $table->index(['empresa_id','entorno'], 'aplicaciones_empresa_entorno_idx');
         });
-
-        Schema::table('suscripciones', function (Blueprint $table): void {
-            $table->index(['empresa_id','estado'], 'suscripciones_empresa_estado_idx');
-        });
     }
 
     public function down(): void
     {
-        Schema::table('suscripciones', function (Blueprint $table): void {
-            $table->dropIndex('suscripciones_empresa_estado_idx');
-        });
-
         Schema::table('aplicaciones', function (Blueprint $table): void {
             $table->dropIndex('aplicaciones_empresa_entorno_idx');
             $table->dropIndex('aplicaciones_empresa_estado_idx');
