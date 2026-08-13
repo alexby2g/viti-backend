@@ -100,7 +100,8 @@ class ClientSaasController extends Controller
             'permisos'=>['nullable','array'],'permisos.*'=>['string',Rule::in($tenants->modules($empresa) ?? ['inicio','agenda','ordenes','clientes','equipos','tecnicos','inventario','pagos','garantias','historial','buzon'])],
         ]);
         $role = $data['rol_negocio'];
-        abort_if($role==='propietario' && $tenants->role($request->user(),$empresa)!=='propietario',403,'Solo un propietario puede crear a otro propietario.');
+        $requesterRole = $tenants->role($request->user(),$empresa);
+        abort_if($role==='propietario' && !$this->canManageOwners($requesterRole),403,'Solo un propietario o administrador de plataforma puede crear a otro propietario.');
         $defaults=['inicio','agenda','ordenes'];
         $allowed=$tenants->modules($empresa);
         $permissions=$role==='empleado'?array_values(array_unique($data['permisos']??($allowed===null?$defaults:array_intersect($defaults,$allowed)))):null;
@@ -118,7 +119,10 @@ class ClientSaasController extends Controller
         $membership = $empresa->usuarios()->where('usuarios.id',$usuario->id)->first();
         abort_unless($membership,404,'Ese usuario no pertenece a este negocio.');
         $data = $request->validate(['rol_negocio'=>['required',Rule::in(['propietario','administrador','empleado'])],'activo'=>['required','boolean'],'password'=>['nullable','confirmed',Password::min(8)->letters()->numbers()],'permisos'=>['nullable','array'],'permisos.*'=>['string',Rule::in($tenants->modules($empresa) ?? ['inicio','agenda','ordenes','clientes','equipos','tecnicos','inventario','pagos','garantias','historial','buzon'])]]);
-        abort_if($data['rol_negocio']==='propietario' && $tenants->role($request->user(),$empresa)!=='propietario',403,'Solo un propietario puede asignar ese rol.');
+        $requesterRole = $tenants->role($request->user(),$empresa);
+        $canManageOwners = $this->canManageOwners($requesterRole);
+        abort_if($membership->pivot?->rol_negocio === 'propietario' && !$canManageOwners,403,'Solo un propietario o administrador de plataforma puede modificar a otro propietario.');
+        abort_if($data['rol_negocio']==='propietario' && !$canManageOwners,403,'Solo un propietario o administrador de plataforma puede asignar ese rol.');
         $owners = $empresa->usuarios()->wherePivot('activo',true)->wherePivot('rol_negocio','propietario')->count();
         if ($membership->pivot?->rol_negocio === 'propietario' && ($data['rol_negocio'] !== 'propietario' || !$data['activo'])) abort_if($owners <= 1,422,'El negocio debe conservar al menos un propietario activo.');
         $defaults=['inicio','agenda','ordenes'];
@@ -137,6 +141,7 @@ class ClientSaasController extends Controller
         $membership = $empresa->usuarios()->where('usuarios.id',$usuario->id)->first();
         abort_unless($membership,404,'Ese usuario no pertenece a este negocio.');
         if ($membership->pivot?->rol_negocio === 'propietario') {
+            abort_unless($this->canManageOwners($tenants->role($request->user(),$empresa)),403,'Solo un propietario o administrador de plataforma puede quitar a otro propietario.');
             $owners = $empresa->usuarios()->wherePivot('activo',true)->wherePivot('rol_negocio','propietario')->count();
             abort_if($owners <= 1,422,'El negocio debe conservar al menos un propietario activo.');
         }
@@ -153,6 +158,11 @@ class ClientSaasController extends Controller
             'instalada'=>in_array($app->id,$installed,true),'solicitable'=>$app->solicitable,
         ]);
         return response()->json(['data'=>$items]);
+    }
+
+    private function canManageOwners(?string $role): bool
+    {
+        return in_array($role,['superadmin','administrador_viti','propietario'],true);
     }
 
     private function permissions(mixed $value): array
