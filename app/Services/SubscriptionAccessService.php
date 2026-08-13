@@ -53,8 +53,8 @@ class SubscriptionAccessService
         $due = $subscription->fecha_vencimiento?->copy()->startOfDay();
         $graceEnd = $due?->copy()->addDays((int)$subscription->dias_gracia);
         $inTrial = $trialEnd && $today->lte($trialEnd);
-        $daysToDue = $due && $today->lte($due) ? $today->diffInDays($due) : null;
-        $daysLate = $due && $today->gt($due) ? $due->diffInDays($today) : 0;
+        $daysToDue = $due && $today->lte($due) ? (int)$today->diffInDays($due) : null;
+        $daysLate = $due && $today->gt($due) ? (int)$due->diffInDays($today) : 0;
         $stage = $this->stage($subscription,$inTrial,$daysToDue);
 
         return [
@@ -74,12 +74,12 @@ class SubscriptionAccessService
             'dias_gracia'=>(int)$subscription->dias_gracia,
             'gracia_hasta'=>$graceEnd?->format('Y-m-d'),
             'dias_para_vencer'=>$daysToDue,
-            'dias_mora'=>(int)$daysLate,
+            'dias_mora'=>$daysLate,
             'estado'=>$subscription->estado,
             'etapa_cobro'=>$stage,
             'requiere_pago'=>!$inTrial && $subscription->estado !== 'cancelada',
             'puede_usar'=>$inTrial || in_array($subscription->estado,['activa','gracia'],true),
-            'mensaje_cobro'=>$this->message($stage,$daysToDue,(int)$daysLate,$graceEnd?->format('Y-m-d')),
+            'mensaje_cobro'=>$this->message($stage,$daysToDue,$daysLate,$graceEnd?->format('Y-m-d')),
         ];
     }
 
