@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Models\{Cliente,Conversacion,Cuestionario,SolicitudSistema,Usuario};
+use App\Models\{Cliente,Conversacion,Cuestionario,Empresa,SolicitudSistema,Usuario};
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -16,8 +16,15 @@ class ClientMultipleRequestsAndDocumentsTest extends TestCase
     {
         [$client,$user]=$this->clientScenario();
         $questionnaire=Cuestionario::create(['nombre'=>'Formulario VITI','version'=>'1.0','activo'=>true]);
+        $company=Empresa::create([
+            'cliente_id'=>$client->id,
+            'codigo'=>'EMP-MULTI-REQ',
+            'nombre_comercial'=>'Empresa Laura',
+            'estado'=>'activo',
+        ]);
 
         $old=SolicitudSistema::create([
+            'empresa_id'=>$company->id,
             'cliente_id'=>$client->id,
             'cuestionario_id'=>$questionnaire->id,
             'codigo'=>'SOL-OLD-001',
@@ -30,12 +37,13 @@ class ClientMultipleRequestsAndDocumentsTest extends TestCase
 
         $response=$this->actingAs($user)->postJson('/api/v1/mi/solicitud');
         $response->assertCreated()
-            ->assertJsonPath('data.estado','borrador');
+            ->assertJsonPath('data.estado','borrador')
+            ->assertJsonPath('data.empresa.id',$company->id);
 
         $newId=(int)$response->json('data.id');
         $this->assertNotSame((int)$old->id,$newId);
         $this->assertDatabaseHas('solicitudes_sistema',['id'=>$old->id,'estado'=>'convertida']);
-        $this->assertDatabaseHas('solicitudes_sistema',['id'=>$newId,'cliente_id'=>$client->id,'estado'=>'borrador']);
+        $this->assertDatabaseHas('solicitudes_sistema',['id'=>$newId,'cliente_id'=>$client->id,'empresa_id'=>$company->id,'estado'=>'borrador']);
 
         $history=$this->actingAs($user)->getJson('/api/v1/mi/solicitudes')->assertOk();
         $history->assertJsonCount(2,'data');
