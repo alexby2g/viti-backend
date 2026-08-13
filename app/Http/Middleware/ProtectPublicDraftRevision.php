@@ -13,6 +13,10 @@ class ProtectPublicDraftRevision
 {
     public function handle(Request $request, Closure $next): Response
     {
+        if (!$request->is('api/v1/publico/solicitudes/*') || !in_array($request->method(), ['PUT','POST'], true)) {
+            return $next($request);
+        }
+
         return DB::transaction(function () use ($request, $next): Response {
             $token = (string) $request->route('token');
             $solicitud = SolicitudSistema::query()
