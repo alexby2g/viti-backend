@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Middleware\{EnsureClient,EnsureElectrofrioCustomer,EnsureInternalSupport,EnsurePeluqueriaTenant,EnsurePlatformAdmin,EnsurePrivateVitiCommunication,EnsureServicioTecnicoClientAccess,EnsureSuperAdmin,ResolveTenant,SecurityHeaders};
+use App\Http\Middleware\{EnsureClient,EnsureElectrofrioCustomer,EnsureInternalSupport,EnsurePeluqueriaTenant,EnsurePlatformAdmin,EnsurePrivateVitiCommunication,EnsureServicioTecnicoClientAccess,EnsureSuperAdmin,ResolveTenant,SecurityHeaders,UseActiveCompanyForNewRequest};
 use Illuminate\Foundation\Application;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -29,6 +29,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->trustProxies(at: '*');
         $middleware->statefulApi();
         $middleware->append(SecurityHeaders::class);
+        $middleware->append(UseActiveCompanyForNewRequest::class);
         $middleware->append(EnsurePeluqueriaTenant::class);
         $middleware->append(EnsurePrivateVitiCommunication::class);
         $middleware->alias([
