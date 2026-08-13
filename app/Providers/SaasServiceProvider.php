@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Http\Controllers\{ClientCatalogRequestController,ClientSaasController,NotificationCenterController,SaasController};
+use App\Http\Middleware\AuditBusinessAccessChange;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
@@ -26,8 +27,8 @@ class SaasServiceProvider extends ServiceProvider
                 Route::post('negocio/logo',[ClientSaasController::class,'logo']);
                 Route::get('negocio/equipo',[ClientSaasController::class,'equipo']);
                 Route::post('negocio/equipo',[ClientSaasController::class,'agregarUsuario']);
-                Route::put('negocio/equipo/{usuario}',[ClientSaasController::class,'actualizarUsuario']);
-                Route::delete('negocio/equipo/{usuario}',[ClientSaasController::class,'quitarUsuario']);
+                Route::put('negocio/equipo/{usuario}',[ClientSaasController::class,'actualizarUsuario'])->middleware(AuditBusinessAccessChange::class);
+                Route::delete('negocio/equipo/{usuario}',[ClientSaasController::class,'quitarUsuario'])->middleware(AuditBusinessAccessChange::class);
                 Route::get('catalogo',[ClientSaasController::class,'catalogo']);
                 Route::post('catalogo/{catalogoAplicacion}/solicitar',[ClientCatalogRequestController::class,'store']);
             });
