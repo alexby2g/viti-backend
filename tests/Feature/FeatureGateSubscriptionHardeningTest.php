@@ -28,14 +28,13 @@ class FeatureGateSubscriptionHardeningTest extends TestCase
         ]);
         $headers = ['X-VITI-Empresa'=>(string)$tenant['company']->id];
 
-        $this->actingAs($tenant['user'])
+        $response = $this->actingAs($tenant['user'])
             ->getJson('/api/v1/mi/negocio', $headers)
             ->assertOk()
             ->assertJsonPath('data.features.plan.codigo',$tenant['plan']->codigo)
             ->assertJsonPath('data.features.modulos.0','inicio')
             ->assertJsonPath('data.features.modulos.1','ordenes')
             ->assertJsonPath('data.features.modulos.2','pagos')
-            ->assertJsonMissing(['modulo_inventado'])
             ->assertJsonPath('data.features.usuarios.usados',1)
             ->assertJsonPath('data.features.usuarios.maximo',1)
             ->assertJsonPath('data.features.usuarios.restantes',0)
@@ -46,6 +45,9 @@ class FeatureGateSubscriptionHardeningTest extends TestCase
             ->assertJsonPath('data.features.modulos_efectivos.0','inicio')
             ->assertJsonPath('data.features.modulos_efectivos.1','ordenes')
             ->assertJsonPath('data.features.modulos_efectivos.2','pagos');
+
+        $this->assertNotContains('modulo_inventado',(array)$response->json('data.features.modulos'));
+        $this->assertNotContains('modulo_inventado',(array)$response->json('data.features.modulos_efectivos'));
 
         $this->actingAs($tenant['user'])
             ->postJson('/api/v1/mi/negocio/equipo', [
