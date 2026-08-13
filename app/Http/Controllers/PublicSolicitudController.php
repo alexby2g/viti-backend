@@ -157,7 +157,7 @@ class PublicSolicitudController extends Controller
         $solicitud = $this->resolve($token);
         abort_if(in_array($solicitud->estado, ['aprobada','convertida','cerrada'], true), 422, 'Esta solicitud ya no admite cambios.');
         $data = $request->validate([
-            'respuestas'=>['required','array'],
+            'respuestas'=>['sometimes','array'],
             'respuestas.*.pregunta_id'=>['required','integer','exists:cuestionario_preguntas,id'],
             'respuestas.*.valor'=>['nullable'],
             'declaracion_aceptada'=>['nullable','boolean'],
@@ -172,7 +172,7 @@ class PublicSolicitudController extends Controller
         ]);
 
         DB::transaction(function () use ($data, $solicitud): void {
-            foreach ($data['respuestas'] as $item) {
+            foreach (($data['respuestas'] ?? []) as $item) {
                 $value = $item['valor'] ?? null;
                 SolicitudRespuesta::updateOrCreate(
                     ['solicitud_id'=>$solicitud->id,'pregunta_id'=>$item['pregunta_id']],
