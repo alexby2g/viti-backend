@@ -2,7 +2,7 @@
 
 namespace App\Providers;
 
-use App\Http\Controllers\{ClientCatalogRequestController,ClientSaasController,NotificationCenterController,SaasController};
+use App\Http\Controllers\{ClientCatalogRequestController,ClientSaasController,NotificationCenterController,SaasController,SystemHealthController};
 use App\Http\Middleware\AuditBusinessAccessChange;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -43,6 +43,12 @@ class SaasServiceProvider extends ServiceProvider
                 Route::post('planes',[SaasController::class,'guardarPlan']);
                 Route::put('planes/{plan}',[SaasController::class,'guardarPlan']);
                 Route::put('negocios/{empresa}/plan',[SaasController::class,'asignarPlan']);
+            });
+
+        Route::middleware(['api','auth:sanctum','throttle:api','superadmin'])
+            ->prefix('api/v1/system')
+            ->group(function (): void {
+                Route::get('health', SystemHealthController::class);
             });
     }
 }
