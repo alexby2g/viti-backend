@@ -56,7 +56,7 @@ class NativeSessionController extends Controller
         $query = $request->user()
             ->tokens()
             ->where('name', 'like', 'viti-native:%')
-            ->whereKeyNot($currentId);
+            ->where('id', '!=', $currentId);
         $count = (clone $query)->count();
 
         Audit::log($request, 'sesiones_nativas_otras_revocadas', $request->user(), 'Se cerraron las demás sesiones nativas de la cuenta.', [
