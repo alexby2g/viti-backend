@@ -4,6 +4,7 @@ namespace App\Observers;
 
 use App\Models\SolicitudSistema;
 use App\Services\WorkflowStateService;
+use Illuminate\Validation\ValidationException;
 
 class SolicitudWorkflowObserver
 {
@@ -15,5 +16,11 @@ class SolicitudWorkflowObserver
             (string)$solicitud->getOriginal('estado'),
             (string)$solicitud->estado,
         );
+
+        if ($solicitud->estado === 'convertida' && !$solicitud->proyecto()->exists()) {
+            throw ValidationException::withMessages([
+                'estado' => 'Una solicitud solo puede convertirse cuando el proyecto asociado ya existe.',
+            ]);
+        }
     }
 }
