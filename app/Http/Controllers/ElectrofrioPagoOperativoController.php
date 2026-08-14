@@ -46,7 +46,9 @@ class ElectrofrioPagoOperativoController extends Controller
         $items=DB::table('electrofrio_ordenes as o')
             ->join('electrofrio_clientes as c','c.id','=','o.cliente_id')
             ->leftJoin('electrofrio_pagos as p',function($join):void{
-                $join->on('p.orden_id','=','o.id')->where('p.estado','=','pagado');
+                $join->on('p.orden_id','=','o.id')
+                    ->on('p.empresa_id','=','o.empresa_id')
+                    ->where('p.estado','=','pagado');
             })
             ->where('o.empresa_id',$empresa->id)
             ->groupBy('o.id','o.codigo','o.total','o.etapa','o.fecha_cita','c.nombre')
@@ -73,7 +75,10 @@ class ElectrofrioPagoOperativoController extends Controller
             $order=DB::table('electrofrio_ordenes')->where('empresa_id',$empresa->id)->where('id',$id)->lockForUpdate()->first();
             abort_unless($order,404,'La orden solicitada no existe en este negocio.');
             $existing=DB::table('electrofrio_pagos')->where('empresa_id',$empresa->id)->where('idempotency_key',$data['idempotency_key'])->first();
-            if($existing)return ['payment'=>$existing,'created'=>false];
+            if($existing){
+                abort_if((int)$existing->orden_id!==$id,409,'La clave de esta operación ya fue utilizada en otra orden. Actualiza el formulario e inténtalo nuevamente.');
+                return ['payment'=>$existing,'created'=>false];
+            }
             $payments=DB::table('electrofrio_pagos')->where('empresa_id',$empresa->id)->where('orden_id',$id)->where('estado','pagado')->lockForUpdate()->get();
             $paid=(float)$payments->sum('monto');$remaining=max(0,(float)$order->total-$paid);$amount=(float)$data['monto'];
             abort_if($remaining<=0.001,422,'La orden ya está pagada por completo.');
@@ -96,15 +101,15 @@ class ElectrofrioPagoOperativoController extends Controller
     {
         $empresa=$this->empresa($request,$tenants);$tenants->assertCanManage($request->user(),$empresa);
         $data=$request->validate(['motivo'=>['required','string','min:3','max:1000']]);
-        $payment=DB::transaction(function()use($empresa,$request,$data,$id){
+        $result=DB::transaction(function()use($empresa,$request,$data,$id):array{
             $item=DB::table('electrofrio_pagos')->where('empresa_id',$empresa->id)->where('id',$id)->lockForUpdate()->first();
             abort_unless($item,404,'El pago solicitado no existe en este negocio.');
-            if($item->estado==='anulado')return $item;
+            if($item->estado==='anulado')return ['payment'=>$item,'changed'=>false];
             DB::table('electrofrio_pagos')->where('id',$item->id)->update(['estado'=>'anulado','anulado_at'=>now(),'anulado_por'=>$request->user()->id,'motivo_anulacion'=>trim($data['motivo']),'updated_at'=>now()]);
-            return DB::table('electrofrio_pagos')->find($item->id);
+            return ['payment'=>DB::table('electrofrio_pagos')->find($item->id),'changed'=>true];
         });
-        Audit::log($request,'electrofrio_pago_anulado',null,'Se anuló un pago de Electrofrío sin borrar su trazabilidad.',['pago_id'=>$payment->id,'orden_id'=>$payment->orden_id]);
-        return response()->json(['data'=>$payment,'message'=>'Pago anulado.']);
+        if($result['changed'])Audit::log($request,'electrofrio_pago_anulado',null,'Se anuló un pago de Electrofrío sin borrar su trazabilidad.',['pago_id'=>$result['payment']->id,'orden_id'=>$result['payment']->orden_id]);
+        return response()->json(['data'=>$result['payment'],'message'=>$result['changed']?'Pago anulado.':'El pago ya estaba anulado.']);
     }
 
     private function empresa(Request $request,TenantContext $tenants):Empresa
