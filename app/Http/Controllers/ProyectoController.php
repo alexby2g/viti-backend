@@ -23,11 +23,14 @@ class ProyectoController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data=$this->validateData($request);
+        $data['fase']=$data['fase']??'levantamiento';
+        $data['estado']=$data['estado']??'activo';
         $proyecto=DB::transaction(function()use($data,$request){
             if(!empty($data['solicitud_id'])){
                 $solicitud=SolicitudSistema::with('planViti')->lockForUpdate()->findOrFail($data['solicitud_id']);
                 abort_unless((int)$solicitud->empresa_id === (int)$data['empresa_id'] && (int)$solicitud->cliente_id === (int)$data['cliente_id'],422,'La solicitud no corresponde a la empresa o responsable seleccionados.');
                 abort_unless($solicitud->estado === 'aprobada',422,'La solicitud debe estar aprobada antes de convertirse en proyecto.');
+                app(WorkflowStateService::class)->assertSolicitudTransition($solicitud->estado,'convertida');
             }
 
             $p=Proyecto::create($data+['codigo'=>Code::next('proyectos','PRO')]);
@@ -43,20 +46,24 @@ class ProyectoController extends Controller
             return $p;
         });
         Audit::log($request,'proyecto_creado',$proyecto,'Se creó un proyecto de desarrollo.');
-        return response()->json(['data'=>$proyecto->load(['empresa','cliente'])],201);
+        return response()->json(['data'=>$this->withWorkflow($proyecto->load(['empresa','cliente']))],201);
     }
 
     public function show(Proyecto $proyecto): JsonResponse
     {
-        return response()->json(['data'=>$proyecto->load(['empresa','cliente','solicitud.planViti','responsable','avances.creador','avances.archivos','aplicacion','archivos'])]);
+        $proyecto->load(['empresa','cliente','solicitud.planViti','responsable','avances.creador','avances.archivos','aplicacion','archivos']);
+        return response()->json(['data'=>$this->withWorkflow($proyecto)]);
     }
 
     public function update(Request $request, Proyecto $proyecto): JsonResponse
     {
         $data=$this->validateData($request,$proyecto);
+        $workflow=app(WorkflowStateService::class);
+        $workflow->assertProyectoPhaseTransition($proyecto->fase,$data['fase']??$proyecto->fase);
+        $workflow->assertProyectoStateTransition($proyecto->estado,$data['estado']??$proyecto->estado);
         $proyecto->update($data);
         Audit::log($request,'proyecto_actualizado',$proyecto,'Se actualizó el proyecto.');
-        return response()->json(['data'=>$proyecto->fresh()->load(['empresa','cliente'])]);
+        return response()->json(['data'=>$this->withWorkflow($proyecto->fresh()->load(['empresa','cliente']))]);
     }
 
     public function addProgress(Request $request, Proyecto $proyecto): JsonResponse
@@ -69,10 +76,11 @@ class ProyectoController extends Controller
             'progreso'=>['nullable','integer','min:0','max:100'],
             'visible_cliente'=>['nullable','boolean'],
         ]);
+        app(WorkflowStateService::class)->assertProyectoPhaseTransition($proyecto->fase,$data['fase']);
         $avance=ProyectoAvance::create($data+['proyecto_id'=>$proyecto->id,'creado_por'=>$request->user()->id]);
         $proyecto->update(array_filter(['fase'=>$data['fase'],'progreso'=>$data['progreso']??null],fn($v)=>$v!==null));
         Audit::log($request,'avance_registrado',$proyecto,'Se registró un avance del proyecto.');
-        return response()->json(['data'=>$avance],201);
+        return response()->json(['data'=>$avance,'workflow'=>app(WorkflowStateService::class)->proyectoSnapshot($proyecto->fase,$proyecto->estado)],201);
     }
 
     public function destroy(Request $request, Proyecto $proyecto): JsonResponse
@@ -101,4 +109,10 @@ class ProyectoController extends Controller
     }
 
     private function phases():array{return app(WorkflowStateService::class)->proyectoPhases();}
+
+    private function withWorkflow(Proyecto $proyecto): Proyecto
+    {
+        $proyecto->setAttribute('workflow',app(WorkflowStateService::class)->proyectoSnapshot($proyecto->fase,$proyecto->estado));
+        return $proyecto;
+    }
 }
