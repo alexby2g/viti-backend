@@ -87,20 +87,24 @@ class MultiBusinessContextFailSafeTest extends TestCase
             ->assertJsonPath('message','No tienes acceso a este negocio.');
     }
 
-    public function test_invalid_non_numeric_header_never_silently_selects_between_multiple_businesses(): void
+    public function test_invalid_non_numeric_header_is_rejected_even_with_a_single_business(): void
     {
-        $first=$this->createTenant('CTX-BAD-A');
-        $second=$this->createTenant('CTX-BAD-B');
-        $second['company']->usuarios()->attach($first['user']->id,[
-            'rol_negocio'=>'propietario',
-            'permisos'=>null,
-            'activo'=>true,
-        ]);
+        $tenant=$this->createTenant('CTX-BAD-HEADER');
 
-        $this->actingAs($first['user'])
+        $this->actingAs($tenant['user'])
             ->withHeader('X-VITI-Empresa','empresa-invalida')
             ->getJson('/api/v1/mi/apps/electrofrio/estado')
             ->assertStatus(422)
-            ->assertJsonPath('message','Selecciona el negocio activo antes de continuar.');
+            ->assertJsonPath('message','Contexto de empresa inválido.');
+    }
+
+    public function test_invalid_payload_business_context_is_rejected(): void
+    {
+        $tenant=$this->createTenant('CTX-BAD-PAYLOAD');
+
+        $this->actingAs($tenant['user'])
+            ->getJson('/api/v1/mi/apps/electrofrio/estado?empresa_id=-10')
+            ->assertStatus(422)
+            ->assertJsonPath('message','Contexto de empresa inválido.');
     }
 }
