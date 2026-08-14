@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{ElectrofrioDocumentacionController,ElectrofrioFichaTecnicaController,ElectrofrioOrdenOperativaController,ElectrofrioPagoOperativoController};
+use App\Http\Controllers\{ElectrofrioDocumentacionController,ElectrofrioFichaTecnicaController,ElectrofrioHistorialEquipoController,ElectrofrioOrdenOperativaController,ElectrofrioPagoOperativoController};
 use Illuminate\Support\Facades\Route;
 
 $electrofrioExtraRoutes = function (): void {
@@ -22,6 +22,9 @@ $electrofrioExtraRoutes = function (): void {
     Route::get('pagos-operativos', [ElectrofrioPagoOperativoController::class, 'index']);
     Route::post('ordenes/{id}/pagos-operativos', [ElectrofrioPagoOperativoController::class, 'guardar'])->whereNumber('id');
     Route::post('pagos-operativos/{id}/anular', [ElectrofrioPagoOperativoController::class, 'anular'])->whereNumber('id');
+
+    Route::get('historial-equipos', [ElectrofrioHistorialEquipoController::class, 'index']);
+    Route::get('historial-equipos/{id}', [ElectrofrioHistorialEquipoController::class, 'show'])->whereNumber('id');
 };
 
 Route::middleware(['auth:sanctum', 'throttle:api', 'platform_admin'])
