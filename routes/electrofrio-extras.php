@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{ElectrofrioFichaTecnicaController,ElectrofrioOrdenOperativaController};
+use App\Http\Controllers\{ElectrofrioDocumentacionController,ElectrofrioFichaTecnicaController,ElectrofrioOrdenOperativaController};
 use Illuminate\Support\Facades\Route;
 
 $electrofrioExtraRoutes = function (): void {
@@ -12,6 +12,11 @@ $electrofrioExtraRoutes = function (): void {
     Route::post('ordenes-operativas', [ElectrofrioOrdenOperativaController::class, 'guardar']);
     Route::get('ordenes-operativas/{id}', [ElectrofrioOrdenOperativaController::class, 'show'])->whereNumber('id');
     Route::put('ordenes-operativas/{id}', [ElectrofrioOrdenOperativaController::class, 'actualizar'])->whereNumber('id');
+
+    Route::post('ordenes/{id}/evidencias', [ElectrofrioDocumentacionController::class, 'subir'])->whereNumber('id');
+    Route::get('evidencias/{evidencia}/descargar', [ElectrofrioDocumentacionController::class, 'descargar'])->whereNumber('evidencia');
+    Route::delete('evidencias/{evidencia}', [ElectrofrioDocumentacionController::class, 'eliminar'])->whereNumber('evidencia');
+    Route::get('ordenes/{id}/pdf', [ElectrofrioDocumentacionController::class, 'pdf'])->whereNumber('id');
 };
 
 Route::middleware(['auth:sanctum', 'throttle:api', 'platform_admin'])
