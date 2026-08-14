@@ -51,6 +51,54 @@ class WorkflowStateService
         $this->assertTransition('fase de proyecto', $current, $target, self::PROYECTO_PHASE_TRANSITIONS, 'fase');
     }
 
+    /**
+     * Valida combinaciones que una máquina de estados independiente no puede
+     * detectar: un proyecto pausado/cancelado avanzando de fase o un proyecto
+     * marcado como finalizado sin haber llegado realmente al 100 %.
+     */
+    public function assertProyectoIntegrity(
+        ?string $currentPhase,
+        ?string $currentState,
+        ?string $targetPhase,
+        ?string $targetState,
+        ?int $targetProgress,
+    ): void {
+        $phase = $targetPhase ?: $currentPhase;
+        $state = $targetState ?: $currentState;
+        $progress = $targetProgress ?? 0;
+        $phaseChanged = $currentPhase && $phase && $phase !== $currentPhase;
+
+        if ($phaseChanged && in_array($currentState, ['pausado','cancelado'], true)) {
+            throw ValidationException::withMessages([
+                'fase' => 'Un proyecto pausado o cancelado no puede avanzar de fase. Reactívalo antes de continuar.',
+            ]);
+        }
+
+        if ($phaseChanged && in_array($state, ['pausado','cancelado'], true)) {
+            throw ValidationException::withMessages([
+                'fase' => 'No puedes avanzar de fase en la misma operación que pausa o cancela el proyecto.',
+            ]);
+        }
+
+        if ($state === 'finalizado' && ($phase !== 'finalizado' || $progress !== 100)) {
+            throw ValidationException::withMessages([
+                'estado' => 'Para finalizar el proyecto, la fase debe ser finalizado y el progreso debe estar en 100%.',
+            ]);
+        }
+
+        if ($phase === 'finalizado' && ($state !== 'finalizado' || $progress !== 100)) {
+            throw ValidationException::withMessages([
+                'fase' => 'La fase finalizado requiere estado finalizado y progreso de 100%.',
+            ]);
+        }
+
+        if (($phase === 'mantenimiento') !== ($state === 'mantenimiento')) {
+            throw ValidationException::withMessages([
+                $phase === 'mantenimiento' ? 'estado' : 'fase' => 'La fase y el estado de mantenimiento deben activarse juntos.',
+            ]);
+        }
+    }
+
     public function solicitudStates(): array { return array_keys(self::SOLICITUD_TRANSITIONS); }
     public function proyectoPhases(): array { return array_keys(self::PROYECTO_PHASE_TRANSITIONS); }
     public function proyectoStates(): array { return array_keys(self::PROYECTO_STATE_TRANSITIONS); }

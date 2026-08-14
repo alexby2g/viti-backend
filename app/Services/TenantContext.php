@@ -32,9 +32,21 @@ class TenantContext
             return $business;
         }
 
-        $query = $user->negocios()->wherePivot('activo',true);
-        if ($requested) $query->where('empresas.id',$requested);
-        $business = $query->with('planViti')->orderBy('empresas.id')->first();
+        $query = $user->negocios()->wherePivot('activo',true)->with('planViti');
+        if ($requested) {
+            $business = $query->where('empresas.id',$requested)->first();
+        } else {
+            // Con una sola empresa podemos resolver el contexto de forma segura.
+            // Con varias, elegir silenciosamente la primera puede escribir datos en el
+            // negocio equivocado si el frontend pierde el encabezado de empresa activa.
+            $businesses = $query->orderBy('empresas.id')->limit(2)->get();
+            abort_if(
+                $businesses->count() > 1,
+                422,
+                'Selecciona el negocio activo antes de continuar.'
+            );
+            $business = $businesses->first();
+        }
 
         abort_unless($business,403,'No tienes acceso a este negocio.');
         $request->attributes->set('viti_empresa_id',$business->id);

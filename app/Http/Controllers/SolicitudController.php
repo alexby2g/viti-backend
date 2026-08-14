@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class SolicitudController extends Controller
 {
@@ -54,6 +55,7 @@ class SolicitudController extends Controller
     public function update(Request $request, SolicitudSistema $solicitud): JsonResponse
     {
         $data=$this->validateData($request,$solicitud);
+        $this->assertStructuralLinks($solicitud,$data);
         abort_unless(Empresa::query()->whereKey($data['empresa_id'])->where('cliente_id',$data['cliente_id'])->exists(),422,'La empresa seleccionada no pertenece al cliente indicado.');
         app(WorkflowStateService::class)->assertSolicitudTransition($solicitud->estado,$data['estado']??$solicitud->estado);
         $solicitud->update($data);
@@ -142,6 +144,37 @@ class SolicitudController extends Controller
             'forma_pago_preferida'=>['nullable',Rule::in(self::PAYMENT_OPTIONS)],
             'frecuencia_suscripcion_preferida'=>['nullable',Rule::in(['mensual','anual'])],
         ]);
+    }
+
+    private function assertStructuralLinks(SolicitudSistema $solicitud,array $data):void
+    {
+        if($solicitud->estado!=='borrador'){
+            $locked=[
+                'empresa_id'=>(int)$solicitud->empresa_id,
+                'cliente_id'=>(int)$solicitud->cliente_id,
+                'cuestionario_id'=>$solicitud->cuestionario_id===null?null:(int)$solicitud->cuestionario_id,
+            ];
+            foreach($locked as $field=>$current){
+                if(!array_key_exists($field,$data))continue;
+                $incoming=$data[$field]===null?null:(int)$data[$field];
+                if($incoming!==$current){
+                    throw ValidationException::withMessages([
+                        $field=>'Este vínculo ya quedó fijado cuando la solicitud salió de borrador.',
+                    ]);
+                }
+            }
+        }
+
+        if(in_array($solicitud->estado,['aprobada','convertida','cerrada'],true)
+            && array_key_exists('plan_viti_id',$data)){
+            $incoming=$data['plan_viti_id']===null?null:(int)$data['plan_viti_id'];
+            $current=$solicitud->plan_viti_id===null?null:(int)$solicitud->plan_viti_id;
+            if($incoming!==$current){
+                throw ValidationException::withMessages([
+                    'plan_viti_id'=>'El plan queda fijado una vez aprobada la solicitud.',
+                ]);
+            }
+        }
     }
 
     private function withWorkflow(SolicitudSistema $solicitud): SolicitudSistema
