@@ -12,7 +12,7 @@ class ElectrofrioOperationalPaymentsTest extends TestCase
 
     public function test_advance_and_balance_are_idempotent_and_never_overpay_order(): void
     {
-        $tenant=$this->createTenant('PAY-A');$orderId=$this->order($tenant['company']->id,1000);
+        $tenant=$this->tenantWithPayments('PAY-A');$orderId=$this->order($tenant['company']->id,1000);
         $headers=['X-VITI-Empresa'=>(string)$tenant['company']->id];
         $advance=['monto'=>300,'tipo'=>'anticipo','metodo'=>'qr','referencia'=>'QR-001','idempotency_key'=>'pay-advance-00000001'];
 
@@ -21,6 +21,11 @@ class ElectrofrioOperationalPaymentsTest extends TestCase
         $this->actingAs($tenant['user'])->postJson('/api/v1/mi/apps/electrofrio/ordenes/'.$orderId.'/pagos-operativos',$advance,$headers)
             ->assertOk()->assertJsonPath('data.id',$first['id'])->assertJsonPath('message','El pago ya había sido procesado.');
         $this->assertSame(1,DB::table('electrofrio_pagos')->where('orden_id',$orderId)->count());
+
+        $references=$this->actingAs($tenant['user'])->getJson('/api/v1/mi/apps/electrofrio/pagos-operativos/referencias',$headers)
+            ->assertOk()->assertJsonCount(1,'data')->assertJsonPath('data.0.id',$orderId)->json('data.0');
+        $this->assertSame(700.0,(float)$references['saldo']);
+        $this->assertSame(300.0,(float)$references['pagado']);
 
         $this->actingAs($tenant['user'])->postJson('/api/v1/mi/apps/electrofrio/ordenes/'.$orderId.'/pagos-operativos',[
             'monto'=>700,'tipo'=>'saldo','metodo'=>'transferencia','referencia'=>'TR-002','idempotency_key'=>'pay-balance-00000002',
@@ -36,7 +41,7 @@ class ElectrofrioOperationalPaymentsTest extends TestCase
 
     public function test_payment_types_enforce_accounting_rules(): void
     {
-        $tenant=$this->createTenant('PAY-B');$orderId=$this->order($tenant['company']->id,1000);$headers=['X-VITI-Empresa'=>(string)$tenant['company']->id];
+        $tenant=$this->tenantWithPayments('PAY-B');$orderId=$this->order($tenant['company']->id,1000);$headers=['X-VITI-Empresa'=>(string)$tenant['company']->id];
 
         $this->actingAs($tenant['user'])->postJson('/api/v1/mi/apps/electrofrio/ordenes/'.$orderId.'/pagos-operativos',[
             'monto'=>1100,'tipo'=>'abono','metodo'=>'efectivo','idempotency_key'=>'pay-over-00000000001',
@@ -57,7 +62,7 @@ class ElectrofrioOperationalPaymentsTest extends TestCase
 
     public function test_payment_can_be_annulled_without_erasing_trace_and_is_tenant_isolated(): void
     {
-        $first=$this->createTenant('PAY-C1');$second=$this->createTenant('PAY-C2');$orderId=$this->order($second['company']->id,500);
+        $first=$this->tenantWithPayments('PAY-C1');$second=$this->tenantWithPayments('PAY-C2');$orderId=$this->order($second['company']->id,500);
         $secondHeaders=['X-VITI-Empresa'=>(string)$second['company']->id];
         $payment=$this->actingAs($second['user'])->postJson('/api/v1/mi/apps/electrofrio/ordenes/'.$orderId.'/pagos-operativos',[
             'monto'=>200,'tipo'=>'anticipo','metodo'=>'qr','idempotency_key'=>'pay-cancel-000000001',
@@ -74,6 +79,15 @@ class ElectrofrioOperationalPaymentsTest extends TestCase
         $this->actingAs($second['user'])->getJson('/api/v1/mi/apps/electrofrio/ordenes-operativas/'.$orderId,[
             'X-VITI-Empresa'=>(string)$second['company']->id,
         ])->assertOk()->assertJsonPath('data.pagado',0)->assertJsonPath('data.saldo',500);
+    }
+
+    private function tenantWithPayments(string $suffix):array
+    {
+        $tenant=$this->createTenant($suffix);
+        $modules=$tenant['plan']->modulos??[];
+        if(!in_array('pagos',$modules,true))$modules[]='pagos';
+        $tenant['plan']->update(['modulos'=>array_values(array_unique($modules))]);
+        return $tenant;
     }
 
     private function order(int $companyId,float $total):int
