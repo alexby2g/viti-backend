@@ -89,17 +89,30 @@ jobs:
         run: composer install --no-interaction --prefer-dist --no-progress
 
       - name: Start isolated PostgreSQL 17
+        shell: bash
         run: |
           docker run -d --name viti-pg \
             -e POSTGRES_PASSWORD=postgres \
             -e POSTGRES_DB=viti_ci \
             -p 5432:5432 postgres:17
-          for i in $(seq 1 30); do
-            if docker exec viti-pg pg_isready -U postgres -d viti_ci >/dev/null 2>&1; then
-              exit 0
+
+          stable=0
+          for i in $(seq 1 45); do
+            if docker exec viti-pg pg_isready -U postgres -d viti_ci >/dev/null 2>&1 \
+              && [ "$(docker exec viti-pg psql -U postgres -d viti_ci -tAc 'SELECT 1' 2>/dev/null)" = "1" ]; then
+              stable=$((stable + 1))
+              if [ "$stable" -ge 3 ]; then
+                echo "PostgreSQL estable durante 3 comprobaciones consecutivas."
+                exit 0
+              fi
+            else
+              stable=0
             fi
             sleep 1
           done
+
+          echo "PostgreSQL no alcanzó un estado estable."
+          docker ps -a --filter name=viti-pg
           docker logs viti-pg
           exit 1
 
