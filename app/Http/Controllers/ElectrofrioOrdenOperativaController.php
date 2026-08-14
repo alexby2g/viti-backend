@@ -228,9 +228,17 @@ class ElectrofrioOrdenOperativaController extends Controller
                 ->groupBy('orden_id')
             : collect();
 
-        return $items->map(function ($order) use ($materials, $payments) {
+        $evidence = DB::table('electrofrio_evidencias')
+            ->where('empresa_id', $empresa->id)
+            ->whereIn('orden_id', $ids)
+            ->orderByDesc('id')
+            ->get()
+            ->groupBy('orden_id');
+
+        return $items->map(function ($order) use ($materials, $payments, $evidence) {
             $order->materiales = ($materials[$order->id] ?? collect())->values();
             $order->pagos = ($payments[$order->id] ?? collect())->values();
+            $order->evidencias = ($evidence[$order->id] ?? collect())->values();
             $order->pagado = (float) $order->pagos->sum('monto');
             $order->saldo = max(0, (float) $order->total - $order->pagado);
             return $order;
