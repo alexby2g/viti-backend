@@ -19,6 +19,7 @@ class AuditSensitiveDataRedactionTest extends TestCase
 
         Audit::log($request, 'prueba_redaccion', null, 'Prueba de seguridad.', [
             'password' => 'NoDebePersistir123',
+            'password_actualizada' => false,
             'normal' => 'dato-visible',
             'nested' => [
                 'access_token' => 'token-secreto',
@@ -31,6 +32,7 @@ class AuditSensitiveDataRedactionTest extends TestCase
         $audit = Auditoria::query()->where('accion', 'prueba_redaccion')->firstOrFail();
 
         $this->assertSame('[REDACTADO]', $audit->datos['password']);
+        $this->assertFalse($audit->datos['password_actualizada']);
         $this->assertSame('[REDACTADO]', $audit->datos['nested']['access_token']);
         $this->assertSame('[REDACTADO]', $audit->datos['nested']['client-secret']);
         $this->assertSame('dato-visible', $audit->datos['normal']);
