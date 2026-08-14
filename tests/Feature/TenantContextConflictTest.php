@@ -29,6 +29,26 @@ class TenantContextConflictTest extends TestCase
             ->assertJsonFragment(['message'=>'Contexto de empresa inconsistente.']);
     }
 
+    public function test_user_cannot_select_a_business_without_membership(): void
+    {
+        $first = $this->createTenant('CTX-OWNER-A');
+        $second = $this->createTenant('CTX-OWNER-B');
+
+        $this->actingAs($first['user'])
+            ->getJson('/api/v1/mi/negocio',[
+                'X-VITI-Empresa'=>(string)$second['company']->id,
+            ])
+            ->assertStatus(403)
+            ->assertJsonFragment(['message'=>'No tienes acceso a este negocio.']);
+
+        $this->actingAs($first['user'])
+            ->getJson('/api/v1/mi/aplicaciones',[
+                'X-VITI-Empresa'=>(string)$second['company']->id,
+            ])
+            ->assertStatus(403)
+            ->assertJsonFragment(['message'=>'No tienes acceso a este negocio.']);
+    }
+
     public function test_matching_header_and_payload_keep_working(): void
     {
         $tenant = $this->createTenant('CTX-C');
