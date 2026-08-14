@@ -16,8 +16,28 @@ class TenantContext
         $user = $request->user();
         abort_unless($user,401,'Debes iniciar sesión.');
 
-        $headerBusinessId = (int)$request->header('X-VITI-Empresa',0);
-        $payloadBusinessId = (int)$request->input('empresa_id',0);
+        $rawHeaderBusinessId = trim((string)$request->header('X-VITI-Empresa',''));
+        $rawPayloadBusinessId = $request->input('empresa_id');
+
+        if ($rawHeaderBusinessId !== '') {
+            abort_unless(
+                ctype_digit($rawHeaderBusinessId) && (int)$rawHeaderBusinessId > 0,
+                422,
+                'Contexto de empresa inválido.'
+            );
+        }
+
+        if ($rawPayloadBusinessId !== null && $rawPayloadBusinessId !== '') {
+            $rawPayloadBusinessId = trim((string)$rawPayloadBusinessId);
+            abort_unless(
+                ctype_digit($rawPayloadBusinessId) && (int)$rawPayloadBusinessId > 0,
+                422,
+                'Contexto de empresa inválido.'
+            );
+        }
+
+        $headerBusinessId = $rawHeaderBusinessId === '' ? 0 : (int)$rawHeaderBusinessId;
+        $payloadBusinessId = $rawPayloadBusinessId === null || $rawPayloadBusinessId === '' ? 0 : (int)$rawPayloadBusinessId;
         abort_if(
             $headerBusinessId && $payloadBusinessId && $headerBusinessId !== $payloadBusinessId,
             422,
