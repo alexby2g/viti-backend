@@ -7,7 +7,7 @@ use App\Services\{FeatureGateService,TenantContext};
 use App\Support\Audit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\{DB,Storage};
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
@@ -92,7 +92,6 @@ class ClientSaasController extends Controller
     {
         $empresa = $tenants->resolve($request);
         $tenants->assertCanManage($request->user(),$empresa);
-        $tenants->assertUserLimit($empresa);
         $request->merge(['usuario'=>Str::lower(trim((string)$request->input('usuario'))),'documento'=>preg_replace('/\D+/','',(string)$request->input('documento'))]);
         $data = $request->validate([
             'nombre'=>['required','string','max:100'],'apellido'=>['nullable','string','max:100'],
@@ -108,8 +107,17 @@ class ClientSaasController extends Controller
         $allowed=$tenants->modules($empresa);
         $permissions=$role==='empleado'?array_values(array_unique($data['permisos']??($allowed===null?$defaults:array_intersect($defaults,$allowed)))):null;
         unset($data['rol_negocio'],$data['permisos'],$data['password_confirmation']);
-        $usuario = Usuario::create($data + ['cliente_id'=>null,'rol'=>'cliente','estado'=>'activo']);
-        $empresa->usuarios()->attach($usuario->id,['rol_negocio'=>$role,'permisos'=>$permissions?json_encode($permissions):null,'activo'=>true]);
+
+        $usuario = DB::transaction(function () use ($empresa,$tenants,$data,$role,$permissions): Usuario {
+            // Serializa las altas del mismo negocio. Dos administradores no pueden
+            // consumir simultáneamente el último cupo del plan.
+            $locked = Empresa::query()->with('planViti')->lockForUpdate()->findOrFail($empresa->id);
+            $tenants->assertUserLimit($locked);
+            $usuario = Usuario::create($data + ['cliente_id'=>null,'rol'=>'cliente','estado'=>'activo']);
+            $locked->usuarios()->attach($usuario->id,['rol_negocio'=>$role,'permisos'=>$permissions?json_encode($permissions):null,'activo'=>true]);
+            return $usuario;
+        });
+
         Audit::log($request,'usuario_negocio_creado',$empresa,'Se agregó '.$usuario->usuario.' al negocio.',['usuario_id'=>$usuario->id,'rol'=>$role]);
         return response()->json(['data'=>$usuario->fresh()],201);
     }
@@ -118,20 +126,35 @@ class ClientSaasController extends Controller
     {
         $empresa = $tenants->resolve($request);
         $tenants->assertCanManage($request->user(),$empresa);
-        $membership = $empresa->usuarios()->where('usuarios.id',$usuario->id)->first();
-        abort_unless($membership,404,'Ese usuario no pertenece a este negocio.');
         $data = $request->validate(['rol_negocio'=>['required',Rule::in(['propietario','administrador','empleado'])],'activo'=>['required','boolean'],'password'=>['nullable','confirmed',Password::min(8)->letters()->numbers()],'permisos'=>['nullable','array'],'permisos.*'=>['string',Rule::in($tenants->modules($empresa) ?? FeatureGateService::MODULES)]]);
         $requesterRole = $tenants->role($request->user(),$empresa);
         $canManageOwners = $this->canManageOwners($requesterRole);
-        abort_if($membership->pivot?->rol_negocio === 'propietario' && !$canManageOwners,403,'Solo un propietario o administrador de plataforma puede modificar a otro propietario.');
-        abort_if($data['rol_negocio']==='propietario' && !$canManageOwners,403,'Solo un propietario o administrador de plataforma puede asignar ese rol.');
-        $owners = $empresa->usuarios()->wherePivot('activo',true)->wherePivot('rol_negocio','propietario')->count();
-        if ($membership->pivot?->rol_negocio === 'propietario' && ($data['rol_negocio'] !== 'propietario' || !$data['activo'])) abort_if($owners <= 1,422,'El negocio debe conservar al menos un propietario activo.');
         $defaults=['inicio','agenda','ordenes'];
         $allowed=$tenants->modules($empresa);
         $permissions=$data['rol_negocio']==='empleado'?array_values(array_unique($data['permisos']??($allowed===null?$defaults:array_intersect($defaults,$allowed)))):null;
-        $empresa->usuarios()->updateExistingPivot($usuario->id,['rol_negocio'=>$data['rol_negocio'],'permisos'=>$permissions?json_encode($permissions):null,'activo'=>$data['activo']]);
-        if (!empty($data['password'])) $usuario->update(['password'=>$data['password']]);
+
+        DB::transaction(function () use ($empresa,$usuario,$data,$canManageOwners,$permissions,$tenants): void {
+            $locked = Empresa::query()->with('planViti')->lockForUpdate()->findOrFail($empresa->id);
+            $membership = $locked->usuarios()->where('usuarios.id',$usuario->id)->first();
+            abort_unless($membership,404,'Ese usuario no pertenece a este negocio.');
+
+            abort_if($membership->pivot?->rol_negocio === 'propietario' && !$canManageOwners,403,'Solo un propietario o administrador de plataforma puede modificar a otro propietario.');
+            abort_if($data['rol_negocio']==='propietario' && !$canManageOwners,403,'Solo un propietario o administrador de plataforma puede asignar ese rol.');
+
+            $wasActive=(bool)$membership->pivot?->activo;
+            if (!$wasActive && (bool)$data['activo']) {
+                $tenants->assertUserLimit($locked);
+            }
+
+            $owners = $locked->usuarios()->wherePivot('activo',true)->wherePivot('rol_negocio','propietario')->count();
+            if ($membership->pivot?->rol_negocio === 'propietario' && ($data['rol_negocio'] !== 'propietario' || !$data['activo'])) {
+                abort_if($owners <= 1,422,'El negocio debe conservar al menos un propietario activo.');
+            }
+
+            $locked->usuarios()->updateExistingPivot($usuario->id,['rol_negocio'=>$data['rol_negocio'],'permisos'=>$permissions?json_encode($permissions):null,'activo'=>$data['activo']]);
+            if (!empty($data['password'])) $usuario->update(['password'=>$data['password']]);
+        });
+
         return response()->json(['message'=>'Acceso actualizado.']);
     }
 
@@ -140,14 +163,20 @@ class ClientSaasController extends Controller
         $empresa = $tenants->resolve($request);
         $tenants->assertCanManage($request->user(),$empresa);
         abort_if((int)$request->user()->id === (int)$usuario->id,422,'No puedes quitar tu propio acceso al negocio.');
-        $membership = $empresa->usuarios()->where('usuarios.id',$usuario->id)->first();
-        abort_unless($membership,404,'Ese usuario no pertenece a este negocio.');
-        if ($membership->pivot?->rol_negocio === 'propietario') {
-            abort_unless($this->canManageOwners($tenants->role($request->user(),$empresa)),403,'Solo un propietario o administrador de plataforma puede quitar a otro propietario.');
-            $owners = $empresa->usuarios()->wherePivot('activo',true)->wherePivot('rol_negocio','propietario')->count();
-            abort_if($owners <= 1,422,'El negocio debe conservar al menos un propietario activo.');
-        }
-        $empresa->usuarios()->updateExistingPivot($usuario->id,['activo'=>false]);
+        $requesterRole=$tenants->role($request->user(),$empresa);
+
+        DB::transaction(function () use ($empresa,$usuario,$requesterRole): void {
+            $locked=Empresa::query()->lockForUpdate()->findOrFail($empresa->id);
+            $membership = $locked->usuarios()->where('usuarios.id',$usuario->id)->first();
+            abort_unless($membership,404,'Ese usuario no pertenece a este negocio.');
+            if ($membership->pivot?->rol_negocio === 'propietario') {
+                abort_unless($this->canManageOwners($requesterRole),403,'Solo un propietario o administrador de plataforma puede quitar a otro propietario.');
+                $owners = $locked->usuarios()->wherePivot('activo',true)->wherePivot('rol_negocio','propietario')->count();
+                abort_if($owners <= 1,422,'El negocio debe conservar al menos un propietario activo.');
+            }
+            $locked->usuarios()->updateExistingPivot($usuario->id,['activo'=>false]);
+        });
+
         return response()->json(status:204);
     }
 
