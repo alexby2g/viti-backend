@@ -39,23 +39,26 @@ class SolicitudController extends Controller
         abort_unless(Empresa::query()->whereKey($data['empresa_id'])->where('cliente_id',$data['cliente_id'])->exists(),422,'La empresa seleccionada no pertenece al cliente indicado.');
         $data['cuestionario_id']=$data['cuestionario_id']??Cuestionario::where('activo',true)->value('id');
         abort_unless($data['cuestionario_id'],422,'No existe un cuestionario activo.');
+        $data['estado']=$data['estado']??'borrador';
         $solicitud=SolicitudSistema::create($data+['codigo'=>Code::next('solicitudes_sistema','SOL'),'public_token'=>Str::random(48),'publico_habilitado'=>true]);
         Audit::log($request,'solicitud_creada',$solicitud,'Se creó una solicitud de sistema.');
-        return response()->json(['data'=>$solicitud->load(['empresa','cliente','planViti'])],201);
+        return response()->json(['data'=>$this->withWorkflow($solicitud->load(['empresa','cliente','planViti']))],201);
     }
 
     public function show(SolicitudSistema $solicitud): JsonResponse
     {
-        return response()->json(['data'=>$solicitud->load(['empresa','cliente','planViti','cuestionario.secciones.preguntas','respuestas.pregunta','proyecto','conversacion:id,solicitud_id,cliente_id,empresa_id,asunto,estado','archivos'])]);
+        $solicitud->load(['empresa','cliente','planViti','cuestionario.secciones.preguntas','respuestas.pregunta','proyecto','conversacion:id,solicitud_id,cliente_id,empresa_id,asunto,estado','archivos']);
+        return response()->json(['data'=>$this->withWorkflow($solicitud)]);
     }
 
     public function update(Request $request, SolicitudSistema $solicitud): JsonResponse
     {
         $data=$this->validateData($request,$solicitud);
         abort_unless(Empresa::query()->whereKey($data['empresa_id'])->where('cliente_id',$data['cliente_id'])->exists(),422,'La empresa seleccionada no pertenece al cliente indicado.');
+        app(WorkflowStateService::class)->assertSolicitudTransition($solicitud->estado,$data['estado']??$solicitud->estado);
         $solicitud->update($data);
         Audit::log($request,'solicitud_actualizada',$solicitud,'Se actualizaron los datos generales de la solicitud.');
-        return response()->json(['data'=>$solicitud->fresh()->load(['empresa','cliente','planViti'])]);
+        return response()->json(['data'=>$this->withWorkflow($solicitud->fresh()->load(['empresa','cliente','planViti']))]);
     }
 
     public function saveAnswers(Request $request, SolicitudSistema $solicitud): JsonResponse
@@ -72,10 +75,7 @@ class SolicitudController extends Controller
         DB::transaction(function()use($data,$solicitud):void{
             foreach($data['respuestas'] as $item){
                 $value=$item['valor']??null;
-                $existing=SolicitudRespuesta::query()
-                    ->where('solicitud_id',$solicitud->id)
-                    ->where('pregunta_id',$item['pregunta_id'])
-                    ->first();
+                $existing=SolicitudRespuesta::query()->where('solicitud_id',$solicitud->id)->where('pregunta_id',$item['pregunta_id'])->first();
                 $origin=$existing?->origen ?: 'tecnico';
                 SolicitudRespuesta::updateOrCreate(
                     ['solicitud_id'=>$solicitud->id,'pregunta_id'=>$item['pregunta_id']],
@@ -86,11 +86,11 @@ class SolicitudController extends Controller
             }
         });
         $solicitud->update([
-            'declaracion_aceptada' => (bool) ($data['declaracion_aceptada'] ?? false),
-            'declaracion_nombre' => $data['declaracion_nombre'] ?? null,
-            'declaracion_fecha' => $data['declaracion_fecha'] ?? null,
+            'declaracion_aceptada'=>(bool)($data['declaracion_aceptada']??false),
+            'declaracion_nombre'=>$data['declaracion_nombre']??null,
+            'declaracion_fecha'=>$data['declaracion_fecha']??null,
         ]);
-        ClientPortalController::syncCompany($solicitud->fresh(), $solicitud->cliente);
+        ClientPortalController::syncCompany($solicitud->fresh(),$solicitud->cliente);
         Audit::log($request,'cuestionario_guardado',$solicitud,'Se guardaron respuestas de la solicitud.');
         return response()->json(['message'=>'Respuestas guardadas.']);
     }
@@ -98,23 +98,22 @@ class SolicitudController extends Controller
     public function submit(Request $request, SolicitudSistema $solicitud): JsonResponse
     {
         $this->validateCompletion($solicitud);
+        app(WorkflowStateService::class)->assertSolicitudTransition($solicitud->estado,'en_revision');
         $solicitud->update(['estado'=>'en_revision','enviado_at'=>now()]);
         Audit::log($request,'solicitud_enviada',$solicitud,'La solicitud pasó a revisión.');
-        return response()->json(['data'=>$solicitud]);
+        return response()->json(['data'=>$this->withWorkflow($solicitud->fresh())]);
     }
 
     private function validateCompletion(SolicitudSistema $solicitud): void
     {
-        // El registro y el resumen inicial ya contienen el contexto principal.
-        // Las preguntas operativas son opcionales y se completan en la revisión si hace falta.
-        abort_unless($solicitud->declaracion_aceptada && filled($solicitud->declaracion_nombre) && $solicitud->declaracion_fecha, 422, 'El cliente debe confirmar los datos de la solicitud.');
-        if ($solicitud->acuerdo_comercial_requerido) {
+        abort_unless($solicitud->declaracion_aceptada && filled($solicitud->declaracion_nombre) && $solicitud->declaracion_fecha,422,'El cliente debe confirmar los datos de la solicitud.');
+        if($solicitud->acuerdo_comercial_requerido){
             $solicitud->loadMissing('planViti');
-            abort_unless($solicitud->plan_viti_id && filled($solicitud->forma_pago_preferida), 422, 'El cliente debe seleccionar plan y forma de pago.');
-            if ($solicitud->planViti && ($solicitud->planViti->precio_mensual !== null || $solicitud->planViti->precio_anual !== null)) {
-                abort_unless(filled($solicitud->frecuencia_suscripcion_preferida), 422, 'El cliente debe seleccionar modalidad mensual o anual de suscripción.');
+            abort_unless($solicitud->plan_viti_id && filled($solicitud->forma_pago_preferida),422,'El cliente debe seleccionar plan y forma de pago.');
+            if($solicitud->planViti && ($solicitud->planViti->precio_mensual!==null || $solicitud->planViti->precio_anual!==null)){
+                abort_unless(filled($solicitud->frecuencia_suscripcion_preferida),422,'El cliente debe seleccionar modalidad mensual o anual de suscripción.');
             }
-            abort_unless($solicitud->acuerdo_comercial_aceptado && filled($solicitud->acuerdo_comercial_nombre) && $solicitud->acuerdo_comercial_fecha, 422, 'El cliente debe aceptar el acuerdo comercial inicial.');
+            abort_unless($solicitud->acuerdo_comercial_aceptado && filled($solicitud->acuerdo_comercial_nombre) && $solicitud->acuerdo_comercial_fecha,422,'El cliente debe aceptar el acuerdo comercial inicial.');
         }
     }
 
@@ -125,7 +124,7 @@ class SolicitudController extends Controller
         return response()->json(status:204);
     }
 
-    private function validateData(Request $request, ?SolicitudSistema $solicitud=null):array
+    private function validateData(Request $request,?SolicitudSistema $solicitud=null):array
     {
         $workflow=app(WorkflowStateService::class);
         return $request->validate([
@@ -143,5 +142,11 @@ class SolicitudController extends Controller
             'forma_pago_preferida'=>['nullable',Rule::in(self::PAYMENT_OPTIONS)],
             'frecuencia_suscripcion_preferida'=>['nullable',Rule::in(['mensual','anual'])],
         ]);
+    }
+
+    private function withWorkflow(SolicitudSistema $solicitud): SolicitudSistema
+    {
+        $solicitud->setAttribute('workflow',app(WorkflowStateService::class)->solicitudSnapshot($solicitud->estado));
+        return $solicitud;
     }
 }
