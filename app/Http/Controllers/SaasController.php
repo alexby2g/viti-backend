@@ -7,6 +7,7 @@ use App\Services\{AppLifecycleService,FeatureGateService,TenantContext};
 use App\Support\Audit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -49,19 +50,38 @@ class SaasController extends Controller
             'version'=>['nullable','string','max:40'],
             'notas'=>['nullable','string','max:3000'],
         ]);
-        $empresa = Empresa::with('planViti')->findOrFail($data['empresa_id']);
-        $tenants->assertAppLimit($empresa);
-        if (!empty($data['proyecto_id'])) abort_unless(Proyecto::whereKey($data['proyecto_id'])->where('empresa_id',$empresa->id)->exists(),422,'El proyecto no pertenece a este negocio.');
-        abort_if(Aplicacion::where('empresa_id',$empresa->id)->where('catalogo_aplicacion_id',$catalogoAplicacion->id)->whereNotIn('estado',['retirado'])->exists(),422,'Este negocio ya tiene una instancia activa de esta aplicación.');
 
-        $app = Aplicacion::create([
-            'empresa_id'=>$empresa->id,'proyecto_id'=>$data['proyecto_id'] ?? null,'catalogo_aplicacion_id'=>$catalogoAplicacion->id,
-            'nombre'=>$catalogoAplicacion->nombre.' · '.$empresa->nombre_comercial,
-            'slug'=>Str::slug($catalogoAplicacion->clave.'-'.$empresa->codigo.'-'.Str::lower(Str::random(4))),
-            'version'=>$data['version'] ?? '1.0.0','tipo'=>$catalogoAplicacion->tipo,'entorno'=>'desarrollo','estado'=>'en_pruebas','acceso_cliente'=>false,
-            'provisionado_at'=>now(),'notas'=>$data['notas'] ?? null,
-        ]);
-        Audit::log($request,'app_provisionada',$app,'Se creó una instancia de '.$catalogoAplicacion->nombre.' para '.$empresa->nombre_comercial.'.');
+        $app=DB::transaction(function() use($data,$catalogoAplicacion,$tenants): Aplicacion {
+            // La empresa es el candado común para usuarios, aplicaciones y cambios de plan.
+            // Así un provisionamiento simultáneo no puede consumir dos veces el último cupo.
+            $empresa=Empresa::query()->with('planViti')->lockForUpdate()->findOrFail($data['empresa_id']);
+            $tenants->assertAppLimit($empresa);
+
+            if (!empty($data['proyecto_id'])) {
+                $proyecto=Proyecto::query()->lockForUpdate()->findOrFail($data['proyecto_id']);
+                abort_unless((int)$proyecto->empresa_id === (int)$empresa->id,422,'El proyecto no pertenece a este negocio.');
+                abort_if($proyecto->estado==='cancelado',422,'No se puede provisionar una aplicación desde un proyecto cancelado.');
+            }
+
+            abort_if(
+                Aplicacion::where('empresa_id',$empresa->id)
+                    ->where('catalogo_aplicacion_id',$catalogoAplicacion->id)
+                    ->whereNotIn('estado',['retirado'])
+                    ->exists(),
+                422,
+                'Este negocio ya tiene una instancia activa de esta aplicación.'
+            );
+
+            return Aplicacion::create([
+                'empresa_id'=>$empresa->id,'proyecto_id'=>$data['proyecto_id'] ?? null,'catalogo_aplicacion_id'=>$catalogoAplicacion->id,
+                'nombre'=>$catalogoAplicacion->nombre.' · '.$empresa->nombre_comercial,
+                'slug'=>Str::slug($catalogoAplicacion->clave.'-'.$empresa->codigo.'-'.Str::lower(Str::random(4))),
+                'version'=>$data['version'] ?? '1.0.0','tipo'=>$catalogoAplicacion->tipo,'entorno'=>'desarrollo','estado'=>'en_pruebas','acceso_cliente'=>false,
+                'provisionado_at'=>now(),'notas'=>$data['notas'] ?? null,
+            ]);
+        });
+
+        Audit::log($request,'app_provisionada',$app,'Se creó una instancia de '.$catalogoAplicacion->nombre.' para '.$app->empresa->nombre_comercial.'.');
         return response()->json(['data'=>$app->load(['empresa','catalogo','proyecto'])],201);
     }
 
@@ -87,17 +107,23 @@ class SaasController extends Controller
     public function asignarPlan(Request $request, Empresa $empresa): JsonResponse
     {
         $data = $request->validate(['plan_viti_id'=>['nullable','integer','exists:planes_viti,id']]);
-        $plan = !empty($data['plan_viti_id']) ? PlanViti::findOrFail($data['plan_viti_id']) : null;
-        if ($plan?->max_usuarios !== null) {
-            $actuales = $empresa->usuarios()->wherePivot('activo',true)->count();
-            abort_if($actuales > $plan->max_usuarios,422,"El negocio ya tiene {$actuales} usuarios activos y el plan permite {$plan->max_usuarios}.");
-        }
-        if ($plan?->max_aplicaciones !== null) {
-            $actuales = $empresa->aplicaciones()->whereNotIn('estado',['retirado'])->count();
-            abort_if($actuales > $plan->max_aplicaciones,422,"El negocio ya tiene {$actuales} aplicaciones y el plan permite {$plan->max_aplicaciones}.");
-        }
-        $empresa->update($data);
-        Audit::log($request,'plan_viti_asignado',$empresa,'Se actualizó el plan SaaS del negocio.',$data);
-        return response()->json(['data'=>$empresa->fresh()->load('planViti')]);
+        $updated=DB::transaction(function() use($empresa,$data,$request): Empresa {
+            // Un downgrade y un alta/provisionamiento compiten por el mismo lock de empresa.
+            // El plan nunca se evalúa contra un contador que está cambiando en paralelo.
+            $locked=Empresa::query()->lockForUpdate()->findOrFail($empresa->id);
+            $plan = !empty($data['plan_viti_id']) ? PlanViti::findOrFail($data['plan_viti_id']) : null;
+            if ($plan?->max_usuarios !== null) {
+                $actuales = $locked->usuarios()->wherePivot('activo',true)->count();
+                abort_if($actuales > $plan->max_usuarios,422,"El negocio ya tiene {$actuales} usuarios activos y el plan permite {$plan->max_usuarios}.");
+            }
+            if ($plan?->max_aplicaciones !== null) {
+                $actuales = $locked->aplicaciones()->whereNotIn('estado',['retirado'])->count();
+                abort_if($actuales > $plan->max_aplicaciones,422,"El negocio ya tiene {$actuales} aplicaciones y el plan permite {$plan->max_aplicaciones}.");
+            }
+            $locked->update($data);
+            Audit::log($request,'plan_viti_asignado',$locked,'Se actualizó el plan SaaS del negocio.',$data);
+            return $locked->fresh()->load('planViti');
+        });
+        return response()->json(['data'=>$updated]);
     }
 }
