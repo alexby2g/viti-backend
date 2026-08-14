@@ -40,6 +40,27 @@ class ElectrofrioPagoOperativoController extends Controller
         ]]]);
     }
 
+    public function referencias(Request $request,TenantContext $tenants):JsonResponse
+    {
+        $empresa=$this->empresa($request,$tenants);
+        $items=DB::table('electrofrio_ordenes as o')
+            ->join('electrofrio_clientes as c','c.id','=','o.cliente_id')
+            ->leftJoin('electrofrio_pagos as p',function($join):void{
+                $join->on('p.orden_id','=','o.id')->where('p.estado','=','pagado');
+            })
+            ->where('o.empresa_id',$empresa->id)
+            ->groupBy('o.id','o.codigo','o.total','o.etapa','o.fecha_cita','c.nombre')
+            ->select(
+                'o.id','o.codigo','o.total','o.etapa','o.fecha_cita','c.nombre as cliente_nombre',
+                DB::raw('COALESCE(SUM(p.monto), 0) as pagado'),
+                DB::raw('MAX(o.total - COALESCE(SUM(p.monto), 0), 0) as saldo'),
+                DB::raw("SUM(CASE WHEN p.estado = 'pagado' THEN 1 ELSE 0 END) as cantidad_pagos")
+            )
+            ->orderByDesc('o.fecha_cita')->orderByDesc('o.id')->limit(500)->get();
+
+        return response()->json(['data'=>$items]);
+    }
+
     public function guardar(Request $request,TenantContext $tenants,int $id):JsonResponse
     {
         $empresa=$this->empresa($request,$tenants);
