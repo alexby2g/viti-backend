@@ -2,7 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\{Aplicacion,Cliente,Empresa,PlanViti,Proyecto,SolicitudSistema,Usuario};
+use App\Models\{Aplicacion,Cliente,Cuestionario,Empresa,PlanViti,Proyecto,SolicitudSistema,Usuario};
+use Database\Seeders\CuestionarioSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -159,9 +160,16 @@ class CoreWorkflowIntegrityTest extends TestCase
 
     private function systemRequest(Empresa $company, Cliente $client, string $state): SolicitudSistema
     {
+        $questionnaire = Cuestionario::query()->where('activo',true)->first();
+        if (!$questionnaire) {
+            $this->seed(CuestionarioSeeder::class);
+            $questionnaire = Cuestionario::query()->where('activo',true)->firstOrFail();
+        }
+
         return SolicitudSistema::create([
             'empresa_id'=>$company->id,
             'cliente_id'=>$client->id,
+            'cuestionario_id'=>$questionnaire->id,
             'codigo'=>'SOL-'.$company->id.'-'.$state,
             'public_token'=>str_repeat((string)(($company->id % 9)+1),48),
             'publico_habilitado'=>true,
