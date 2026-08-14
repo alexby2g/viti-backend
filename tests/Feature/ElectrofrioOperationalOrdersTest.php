@@ -16,9 +16,9 @@ class ElectrofrioOperationalOrdersTest extends TestCase
         [$clientId, $equipmentId, $technicianId] = $this->catalog($tenant['company']->id, 'A');
         $headers = ['X-VITI-Empresa' => (string) $tenant['company']->id];
 
-        $payload = $this->orderPayload($clientId, $equipmentId, $technicianId) + [
+        $payload = array_replace($this->orderPayload($clientId, $equipmentId, $technicianId), [
             'tipo_servicio' => 'Mantenimiento preventivo',
-        ];
+        ]);
 
         $created = $this->actingAs($tenant['user'])
             ->postJson('/api/v1/mi/apps/electrofrio/ordenes-operativas', $payload, $headers)
@@ -41,13 +41,13 @@ class ElectrofrioOperationalOrdersTest extends TestCase
             ->assertJsonPath('data.0.id', $orderId)
             ->assertJsonPath('meta.resumen.cita', 1);
 
-        $updatedPayload = $this->orderPayload($clientId, $equipmentId, $technicianId) + [
+        $updatedPayload = array_replace($this->orderPayload($clientId, $equipmentId, $technicianId), [
             'tipo_servicio' => 'Reparación',
             'diagnostico' => 'Capacitor fuera de rango y consumo elevado.',
             'propuesta' => 'Cambio de capacitor y prueba de operación.',
             'costo_mano_obra' => 280,
             'descuento' => 20,
-        ];
+        ]);
 
         $this->actingAs($tenant['user'])
             ->putJson('/api/v1/mi/apps/electrofrio/ordenes-operativas/'.$orderId, $updatedPayload, $headers)
@@ -72,9 +72,10 @@ class ElectrofrioOperationalOrdersTest extends TestCase
         $secondHeaders = ['X-VITI-Empresa' => (string) $second['company']->id];
 
         $created = $this->actingAs($second['user'])
-            ->postJson('/api/v1/mi/apps/electrofrio/ordenes-operativas', $this->orderPayload($clientId, $equipmentId, $technicianId) + [
-                'tipo_servicio' => 'Instalación',
-            ], $secondHeaders)
+            ->postJson('/api/v1/mi/apps/electrofrio/ordenes-operativas', array_replace(
+                $this->orderPayload($clientId, $equipmentId, $technicianId),
+                ['tipo_servicio' => 'Instalación']
+            ), $secondHeaders)
             ->assertCreated()
             ->json('data');
 
