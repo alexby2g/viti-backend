@@ -16,6 +16,7 @@ class NativeSessionSecurityTest extends TestCase
         $android = $this->loginNative($user, 'android-uno', 'android');
         $windows = $this->loginNative($user, 'windows-uno', 'windows');
 
+        $this->freshAuthGuard();
         $this->withToken($android)
             ->getJson('/api/v1/mobile/sesiones')
             ->assertOk()
@@ -23,12 +24,15 @@ class NativeSessionSecurityTest extends TestCase
             ->assertJsonFragment(['plataforma' => 'android', 'actual' => true])
             ->assertJsonFragment(['plataforma' => 'windows', 'actual' => false]);
 
+        $this->freshAuthGuard();
         $this->withToken($android)
             ->deleteJson('/api/v1/mobile/sesiones/otras')
             ->assertOk()
             ->assertJsonPath('revocadas', 1);
 
+        $this->freshAuthGuard();
         $this->withToken($android)->getJson('/api/v1/auth/me')->assertOk();
+        $this->freshAuthGuard();
         $this->withToken($windows)->getJson('/api/v1/auth/me')->assertUnauthorized();
         $this->assertDatabaseHas('auditoria', [
             'usuario_id' => $user->id,
@@ -44,10 +48,12 @@ class NativeSessionSecurityTest extends TestCase
         $secondToken = $this->loginNative($second, 'device-second', 'windows');
         $foreignSessionId = $second->fresh()->tokens()->where('name', 'viti-native:device-second')->firstOrFail()->id;
 
+        $this->freshAuthGuard();
         $this->withToken($firstToken)
             ->deleteJson('/api/v1/mobile/sesiones/'.$foreignSessionId)
             ->assertNotFound();
 
+        $this->freshAuthGuard();
         $this->withToken($secondToken)->getJson('/api/v1/auth/me')->assertOk();
     }
 
@@ -57,12 +63,15 @@ class NativeSessionSecurityTest extends TestCase
         $android = $this->loginNative($user, 'device-all-a', 'android');
         $windows = $this->loginNative($user, 'device-all-b', 'windows');
 
+        $this->freshAuthGuard();
         $this->withToken($android)
             ->deleteJson('/api/v1/mobile/sesiones/todas')
             ->assertOk()
             ->assertJsonPath('revocadas', 2);
 
+        $this->freshAuthGuard();
         $this->withToken($android)->getJson('/api/v1/auth/me')->assertUnauthorized();
+        $this->freshAuthGuard();
         $this->withToken($windows)->getJson('/api/v1/auth/me')->assertUnauthorized();
         $this->assertDatabaseHas('auditoria', [
             'usuario_id' => $user->id,
@@ -85,6 +94,8 @@ class NativeSessionSecurityTest extends TestCase
 
     private function loginNative(Usuario $user, string $deviceId, string $platform): string
     {
+        $this->freshAuthGuard();
+
         return (string) $this->postJson('/api/v1/mobile/login', [
             'acceso' => $user->usuario,
             'password' => 'Segura123456',
@@ -92,5 +103,10 @@ class NativeSessionSecurityTest extends TestCase
             'device_name' => 'Equipo '.$deviceId,
             'platform' => $platform,
         ])->assertOk()->json('token');
+    }
+
+    private function freshAuthGuard(): void
+    {
+        $this->app['auth']->forgetGuards();
     }
 }
