@@ -55,7 +55,7 @@ class OfflineMessageIdempotencyTest extends TestCase
         ]);
     }
 
-    public function test_same_request_id_cannot_be_reused_in_another_conversation(): void
+    public function test_client_cannot_move_pending_message_to_another_channel(): void
     {
         $client=Cliente::create([
             'nombre'=>'Cliente Offline Dos',
@@ -84,9 +84,12 @@ class OfflineMessageIdempotencyTest extends TestCase
         $this->actingAs($user)->postJson("/api/v1/mi/buzon/{$firstConversation->id}/mensajes",$payload)->assertSuccessful();
         $this->actingAs($user)
             ->postJson("/api/v1/mi/buzon/{$secondConversation->id}/mensajes",$payload)
-            ->assertStatus(409)
-            ->assertJsonPath('message','El identificador del mensaje ya fue utilizado.');
+            ->assertNotFound();
 
         $this->assertSame(1,Mensaje::query()->where('client_request_id',$requestId)->count());
+        $this->assertDatabaseMissing('mensajes',[
+            'conversacion_id'=>$secondConversation->id,
+            'client_request_id'=>$requestId,
+        ]);
     }
 }
