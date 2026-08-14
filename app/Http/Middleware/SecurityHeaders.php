@@ -14,7 +14,9 @@ class SecurityHeaders
     {
         $started = microtime(true);
         $requestId = 'VITI-'.Str::upper((string)Str::ulid());
+        $clientRequestId = $this->clientRequestId($request);
         $request->attributes->set('viti_request_id',$requestId);
+        if ($clientRequestId) $request->attributes->set('viti_client_request_id',$clientRequestId);
 
         $response = $next($request);
         $duration = round((microtime(true)-$started)*1000,1);
@@ -28,6 +30,7 @@ class SecurityHeaders
         $response->headers->set('X-VITI-Request-ID',$requestId);
         $response->headers->set('X-VITI-Duration-Ms',(string)$duration);
         $response->headers->set('X-VITI-Backend-Version',$release);
+        if ($clientRequestId) $response->headers->set('X-VITI-Client-Request-ID',$clientRequestId);
 
         if ($request->is('api/*')) {
             $response->headers->set('Cache-Control','no-store, private');
@@ -43,6 +46,7 @@ class SecurityHeaders
         if ($duration >= 2000) {
             Log::warning('VITI slow request',[
                 'request_id'=>$requestId,
+                'client_request_id'=>$clientRequestId,
                 'method'=>$request->method(),
                 'path'=>$request->path(),
                 'status'=>$response->getStatusCode(),
@@ -60,5 +64,12 @@ class SecurityHeaders
     {
         $sha = (string)(env('RENDER_GIT_COMMIT') ?: env('VITI_RELEASE_SHA') ?: 'local');
         return $sha === 'local' ? $sha : substr($sha,0,12);
+    }
+
+    private function clientRequestId(Request $request): ?string
+    {
+        $value = trim((string)$request->header('X-VITI-Client-Request-ID'));
+        if ($value === '' || strlen($value) > 80) return null;
+        return preg_match('/^[A-Za-z0-9._:-]+$/',$value) ? $value : null;
     }
 }
