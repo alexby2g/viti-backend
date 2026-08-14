@@ -21,7 +21,6 @@ class WorkflowStateService
         'diseno' => ['desarrollo'],
         'desarrollo' => ['beta'],
         'beta' => ['pruebas'],
-        // Si QA no encuentra correcciones pendientes, puede pasar directo a implementación.
         'pruebas' => ['ajustes', 'implementacion'],
         'ajustes' => ['implementacion'],
         'implementacion' => ['finalizado'],
@@ -49,40 +48,49 @@ class WorkflowStateService
 
     public function assertProyectoPhaseTransition(?string $current, ?string $target): void
     {
-        if (!$current || !$target || $current === $target) return;
-        if (!isset(self::PROYECTO_PHASE_TRANSITIONS[$current]) || !array_key_exists($target, self::PROYECTO_PHASE_TRANSITIONS)) {
-            throw ValidationException::withMessages(['fase' => 'La fase indicada no pertenece al flujo oficial de VITI.']);
-        }
-        if (!in_array($target, self::PROYECTO_PHASE_TRANSITIONS[$current], true)) {
-            throw ValidationException::withMessages([
-                'fase' => "La transición de fase de {$current} a {$target} no está permitida. Registra cada etapa para conservar un historial confiable.",
-            ]);
-        }
+        $this->assertTransition('fase de proyecto', $current, $target, self::PROYECTO_PHASE_TRANSITIONS, 'fase');
     }
 
-    public function solicitudStates(): array
+    public function solicitudStates(): array { return array_keys(self::SOLICITUD_TRANSITIONS); }
+    public function proyectoPhases(): array { return array_keys(self::PROYECTO_PHASE_TRANSITIONS); }
+    public function proyectoStates(): array { return array_keys(self::PROYECTO_STATE_TRANSITIONS); }
+
+    public function nextSolicitudStates(?string $current): array
     {
-        return array_keys(self::SOLICITUD_TRANSITIONS);
+        return $current && isset(self::SOLICITUD_TRANSITIONS[$current]) ? self::SOLICITUD_TRANSITIONS[$current] : [];
     }
 
-    public function proyectoPhases(): array
+    public function nextProyectoPhases(?string $current): array
     {
-        return array_keys(self::PROYECTO_PHASE_TRANSITIONS);
+        return $current && isset(self::PROYECTO_PHASE_TRANSITIONS[$current]) ? self::PROYECTO_PHASE_TRANSITIONS[$current] : [];
     }
 
-    public function proyectoStates(): array
+    public function nextProyectoStates(?string $current): array
     {
-        return array_keys(self::PROYECTO_STATE_TRANSITIONS);
+        return $current && isset(self::PROYECTO_STATE_TRANSITIONS[$current]) ? self::PROYECTO_STATE_TRANSITIONS[$current] : [];
     }
 
-    private function assertTransition(string $entity, ?string $current, ?string $target, array $transitions): void
+    public function solicitudSnapshot(?string $current): array
+    {
+        return ['actual'=>$current,'permitidos'=>$this->nextSolicitudStates($current),'catalogo'=>$this->solicitudStates()];
+    }
+
+    public function proyectoSnapshot(?string $fase, ?string $estado): array
+    {
+        return [
+            'fase'=>['actual'=>$fase,'permitidos'=>$this->nextProyectoPhases($fase),'catalogo'=>$this->proyectoPhases()],
+            'estado'=>['actual'=>$estado,'permitidos'=>$this->nextProyectoStates($estado),'catalogo'=>$this->proyectoStates()],
+        ];
+    }
+
+    private function assertTransition(string $entity, ?string $current, ?string $target, array $transitions, string $field='estado'): void
     {
         if (!$current || !$target || $current === $target) return;
         if (!isset($transitions[$current]) || !array_key_exists($target, $transitions)) {
-            throw ValidationException::withMessages(['estado' => "El estado indicado no pertenece al flujo oficial de {$entity} en VITI."]);
+            throw ValidationException::withMessages([$field => "El valor indicado no pertenece al flujo oficial de {$entity} en VITI."]);
         }
         if (!in_array($target, $transitions[$current], true)) {
-            throw ValidationException::withMessages(['estado' => "La transición de {$entity} de {$current} a {$target} no está permitida."]);
+            throw ValidationException::withMessages([$field => "La transición de {$entity} de {$current} a {$target} no está permitida."]);
         }
     }
 }

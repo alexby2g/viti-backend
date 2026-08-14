@@ -29,8 +29,6 @@ class AplicacionController extends Controller
     {
         $d=$this->data($r);$base=Str::slug($d['nombre']);$slug=$base.'-'.Str::lower(Str::random(5));
         $a=DB::transaction(function() use($d,$slug,$features): Aplicacion {
-            // El lock serializa integraciones para la misma empresa: dos altas simultáneas
-            // no pueden superar el máximo del plan leyendo el mismo contador.
             $empresa=Empresa::query()->with('planViti')->lockForUpdate()->findOrFail($d['empresa_id']);
             $features->assertAppLimit($empresa);
 
@@ -54,8 +52,6 @@ class AplicacionController extends Controller
     public function update(Request $r,Aplicacion $aplicacion): JsonResponse
     {
         $data=$this->data($r,$aplicacion);
-        // Empresa, proyecto, catálogo y ciclo son identidad/lifecycle. No se reasignan
-        // mediante el editor general porque eso podría cruzar tenants o saltar controles.
         unset($data['empresa_id'],$data['proyecto_id'],$data['catalogo_aplicacion_id'],$data['entorno'],$data['estado'],$data['acceso_cliente']);
         $aplicacion->update($data);
         Audit::log($r,'aplicacion_actualizada',$aplicacion,'Se actualizó una aplicación.');
@@ -69,45 +65,37 @@ class AplicacionController extends Controller
             'estado'=>['required',Rule::in(['en_pruebas','activo','pausado','retirado'])],
         ]);
 
-        abort_if(
-            $aplicacion->estado==='retirado' && $data['estado']!=='retirado',
-            422,
-            'Una aplicación retirada no puede reactivarse desde el ciclo normal. Crea una nueva versión o aplicación si debe volver a operar.'
-        );
+        abort_if($aplicacion->estado==='retirado' && $data['estado']!=='retirado',422,'Una aplicación retirada no puede reactivarse desde el ciclo normal. Crea una nueva versión o aplicación si debe volver a operar.');
 
         if($aplicacion->entregado_at){
-            abort_unless(
-                $data['entorno']==='produccion',
-                422,
-                'Una aplicación ya entregada debe mantenerse en producción. Revoca el acceso si necesitas intervenirla.'
-            );
-            abort_if(
-                $data['estado']==='en_pruebas',
-                422,
-                'Una aplicación ya entregada no puede volver al estado en pruebas mediante una edición normal.'
-            );
+            abort_unless($data['entorno']==='produccion',422,'Una aplicación ya entregada debe mantenerse en producción. Revoca el acceso si necesitas intervenirla.');
+            abort_if($data['estado']==='en_pruebas',422,'Una aplicación ya entregada no puede volver al estado en pruebas mediante una edición normal.');
         }
 
-        // El ciclo técnico/operativo es una decisión administrativa. La prueba gratuita
-        // y el estado de la suscripción nunca promueven una app automáticamente a producción.
+        if($aplicacion->entorno===$data['entorno'] && $aplicacion->estado===$data['estado']){
+            return response()->json(['message'=>'La aplicación ya tiene ese ciclo técnico y operativo.','data'=>$aplicacion->load(['empresa','suscripcion'])]);
+        }
+
         $aplicacion->update($data);
         Audit::log($r,'aplicacion_ciclo_actualizado',$aplicacion,'Se actualizó manualmente el ciclo técnico y operativo de la aplicación.');
 
-        return response()->json([
-            'message'=>'Estado de la aplicación actualizado.',
-            'data'=>$aplicacion->fresh()->load(['empresa','suscripcion']),
-        ]);
+        return response()->json(['message'=>'Estado de la aplicación actualizado.','data'=>$aplicacion->fresh()->load(['empresa','suscripcion'])]);
     }
 
     public function entregar(Request $r,Aplicacion $aplicacion): JsonResponse
     {
+        if($aplicacion->acceso_cliente && $aplicacion->entregado_at){
+            return response()->json(['message'=>'La aplicación ya estaba entregada.','data'=>$aplicacion->load('empresa')]);
+        }
+
         abort_unless($aplicacion->estado==='activo'&&$aplicacion->entorno==='produccion',422,'La aplicación debe estar activa y en producción antes de entregarla.');
         $proyecto=$aplicacion->proyecto;
         if($proyecto&&$proyecto->precio_acordado!==null) abort_unless($proyecto->estado_pago==='pagado',422,'El proyecto tiene un saldo pendiente. Registra el pago final antes de entregar la aplicación.');
-        $aplicacion->update(['acceso_cliente'=>true,'entregado_at'=>now()]);
 
-        $users = $aplicacion->empresa?->usuarios()->wherePivot('activo',true)->get() ?? collect();
-        foreach ($users as $user) {
+        $aplicacion->update(['acceso_cliente'=>true,'entregado_at'=>$aplicacion->entregado_at ?: now()]);
+
+        $users=$aplicacion->empresa?->usuarios()->wherePivot('activo',true)->get() ?? collect();
+        foreach($users as $user){
             AlertaSaas::firstOrCreate(
                 ['usuario_id'=>$user->id,'clave'=>'app_entregada_'.$aplicacion->id],
                 ['empresa_id'=>$aplicacion->empresa_id,'aplicacion_id'=>$aplicacion->id,'tipo'=>'entrega','titulo'=>'Tu aplicación ya está disponible','mensaje'=>$aplicacion->nombre.' fue entregada y ya puede abrirse desde Mis aplicaciones.','ruta'=>'/mi-aplicaciones']
@@ -115,14 +103,17 @@ class AplicacionController extends Controller
         }
 
         Audit::log($r,'aplicacion_entregada',$aplicacion,'Se habilitó el acceso del cliente a la aplicación.');
-        return response()->json(['data'=>$aplicacion->fresh()->load('empresa')]);
+        return response()->json(['message'=>'Aplicación entregada correctamente.','data'=>$aplicacion->fresh()->load('empresa')]);
     }
 
     public function revocar(Request $r,Aplicacion $aplicacion): JsonResponse
     {
+        if(!$aplicacion->acceso_cliente){
+            return response()->json(['message'=>'El acceso de esta aplicación ya estaba revocado.','data'=>$aplicacion->load('empresa')]);
+        }
         $aplicacion->update(['acceso_cliente'=>false]);
         Audit::log($r,'aplicacion_acceso_revocado',$aplicacion,'Se revocó el acceso del cliente a la aplicación.');
-        return response()->json(['data'=>$aplicacion->fresh()->load('empresa')]);
+        return response()->json(['message'=>'Acceso revocado correctamente.','data'=>$aplicacion->fresh()->load('empresa')]);
     }
 
     public function destroy(Request $r,Aplicacion $aplicacion): JsonResponse
