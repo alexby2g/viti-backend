@@ -14,10 +14,13 @@ class CoreWorkflowEnforcementTest extends TestCase
 
     private function admin(): Usuario
     {
-        return Usuario::create([
-            'nombre'=>'Admin Flujo','usuario'=>'admin_flujo','documento'=>'90123456','telefono'=>'70012345',
-            'password'=>'Prueba123456','rol'=>'superadmin','estado'=>'activo',
-        ]);
+        return Usuario::query()->firstOrCreate(
+            ['usuario'=>'admin_flujo'],
+            [
+                'nombre'=>'Admin Flujo','documento'=>'90123456','telefono'=>'70012345',
+                'password'=>'Prueba123456','rol'=>'superadmin','estado'=>'activo',
+            ]
+        );
     }
 
     private function base(): array
@@ -68,18 +71,19 @@ class CoreWorkflowEnforcementTest extends TestCase
     public function test_project_update_cannot_skip_phase_or_revive_cancelled_project(): void
     {
         [$cliente,$empresa]=$this->base();
+        $admin=$this->admin();
         $proyecto=Proyecto::create([
             'empresa_id'=>$empresa->id,'cliente_id'=>$cliente->id,'codigo'=>'PRO-FLOW-1','nombre'=>'Proyecto Flujo',
             'fase'=>'levantamiento','estado'=>'activo','progreso'=>0,
         ]);
 
-        $this->actingAs($this->admin())->putJson('/api/v1/proyectos/'.$proyecto->id,[
+        $this->actingAs($admin)->putJson('/api/v1/proyectos/'.$proyecto->id,[
             'empresa_id'=>$empresa->id,'cliente_id'=>$cliente->id,'nombre'=>'Proyecto Flujo',
             'fase'=>'implementacion','estado'=>'activo','progreso'=>50,
         ])->assertStatus(422)->assertJsonValidationErrors('fase');
 
         $proyecto->update(['estado'=>'cancelado']);
-        $this->actingAs($this->admin())->putJson('/api/v1/proyectos/'.$proyecto->id,[
+        $this->actingAs($admin)->putJson('/api/v1/proyectos/'.$proyecto->id,[
             'empresa_id'=>$empresa->id,'cliente_id'=>$cliente->id,'nombre'=>'Proyecto Flujo',
             'fase'=>'levantamiento','estado'=>'activo','progreso'=>0,
         ])->assertStatus(422)->assertJsonValidationErrors('estado');
@@ -88,16 +92,17 @@ class CoreWorkflowEnforcementTest extends TestCase
     public function test_progress_endpoint_also_obeys_project_phase_machine(): void
     {
         [$cliente,$empresa]=$this->base();
+        $admin=$this->admin();
         $proyecto=Proyecto::create([
             'empresa_id'=>$empresa->id,'cliente_id'=>$cliente->id,'codigo'=>'PRO-FLOW-2','nombre'=>'Proyecto Avances',
             'fase'=>'desarrollo','estado'=>'activo','progreso'=>40,
         ]);
 
-        $this->actingAs($this->admin())->postJson('/api/v1/proyectos/'.$proyecto->id.'/avances',[
+        $this->actingAs($admin)->postJson('/api/v1/proyectos/'.$proyecto->id.'/avances',[
             'fase'=>'implementacion','area'=>'backend','titulo'=>'Intento de salto','progreso'=>80,
         ])->assertStatus(422)->assertJsonValidationErrors('fase');
 
-        $this->actingAs($this->admin())->postJson('/api/v1/proyectos/'.$proyecto->id.'/avances',[
+        $this->actingAs($admin)->postJson('/api/v1/proyectos/'.$proyecto->id.'/avances',[
             'fase'=>'beta','area'=>'qa','titulo'=>'Entrada a beta','progreso'=>60,
         ])->assertCreated()->assertJsonPath('workflow.fase.actual','beta')
           ->assertJsonPath('workflow.fase.permitidos.0','pruebas');
