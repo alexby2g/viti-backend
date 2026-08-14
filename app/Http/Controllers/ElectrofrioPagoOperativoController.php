@@ -53,8 +53,8 @@ class ElectrofrioPagoOperativoController extends Controller
             ->select(
                 'o.id','o.codigo','o.total','o.etapa','o.fecha_cita','c.nombre as cliente_nombre',
                 DB::raw('COALESCE(SUM(p.monto), 0) as pagado'),
-                DB::raw('MAX(o.total - COALESCE(SUM(p.monto), 0), 0) as saldo'),
-                DB::raw("SUM(CASE WHEN p.estado = 'pagado' THEN 1 ELSE 0 END) as cantidad_pagos")
+                DB::raw('GREATEST(o.total - COALESCE(SUM(p.monto), 0), 0) as saldo'),
+                DB::raw('SUM(CASE WHEN p.id IS NOT NULL THEN 1 ELSE 0 END) as cantidad_pagos')
             )
             ->orderByDesc('o.fecha_cita')->orderByDesc('o.id')->limit(500)->get();
 
