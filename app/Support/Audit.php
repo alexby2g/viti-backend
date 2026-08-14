@@ -13,8 +13,17 @@ class Audit
     private const SENSITIVE_KEYS = [
         'password',
         'password_confirmation',
+        'current_password',
+        'new_password',
+        'old_password',
+        'password_actual',
+        'nueva_password',
         'contrasena',
         'contraseña',
+        'contrasena_actual',
+        'contraseña_actual',
+        'nueva_contrasena',
+        'nueva_contraseña',
         'access_token',
         'refresh_token',
         'authorization',
@@ -85,7 +94,7 @@ class Audit
     private static function isSensitiveKey(string $key): bool
     {
         if (in_array($key, self::SENSITIVE_KEYS, true)) return true;
-        if (str_contains($key, 'password') || str_contains($key, 'contrasena') || str_contains($key, 'contraseña')) return true;
+        if (str_ends_with($key, '_password')) return true;
         if (str_ends_with($key, '_secret')) return true;
         return str_ends_with($key, '_token') && $key !== 'token_id';
     }
