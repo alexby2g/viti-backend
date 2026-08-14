@@ -12,12 +12,20 @@ class Audit
     {
         $empresaId = $request->attributes->get('viti_empresa_id');
         $aplicacionId = null;
+        $requestId = $request->attributes->get('viti_request_id');
+        $clientRequestId = $request->attributes->get('viti_client_request_id');
 
         if ($entidad instanceof Empresa) $empresaId = $entidad->id;
         elseif ($entidad?->getAttribute('empresa_id')) $empresaId = $entidad->getAttribute('empresa_id');
 
         if ($entidad instanceof Aplicacion) $aplicacionId = $entidad->id;
         elseif ($entidad?->getAttribute('aplicacion_id')) $aplicacionId = $entidad->getAttribute('aplicacion_id');
+
+        $trace = array_filter([
+            'request_id' => $requestId,
+            'client_request_id' => $clientRequestId,
+        ], fn ($value) => $value !== null && $value !== '');
+        if ($trace) $datos = ['_trace' => $trace] + $datos;
 
         Auditoria::create([
             'usuario_id' => $request->user()?->id,
