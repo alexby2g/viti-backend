@@ -35,7 +35,7 @@ class ElectrofrioOrdenOperativaController extends Controller
 
         $query = $this->baseQuery($empresa->id);
         $this->applyFilters($query, $filters);
-        $items = $query->orderByDesc('o.fecha_cita')->orderByDesc('o.id')->limit(500)->get();
+        $items = $query->orderByDesc('o.id')->limit(500)->get();
         $items = $this->hydrate($request, $tenants, $empresa, $items);
 
         return response()->json([
