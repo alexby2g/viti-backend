@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{AlertaSaas,Aplicacion};
+use App\Models\{AlertaSaas,Aplicacion,Empresa,Proyecto};
+use App\Services\FeatureGateService;
 use App\Support\Audit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -23,10 +25,23 @@ class AplicacionController extends Controller
         return response()->json($q->paginate(20));
     }
 
-    public function store(Request $r): JsonResponse
+    public function store(Request $r, FeatureGateService $features): JsonResponse
     {
         $d=$this->data($r);$base=Str::slug($d['nombre']);$slug=$base.'-'.Str::lower(Str::random(5));
-        $a=Aplicacion::create($d+['slug'=>$slug]);
+        $a=DB::transaction(function() use($d,$slug,$features): Aplicacion {
+            // El lock serializa integraciones para la misma empresa: dos altas simultáneas
+            // no pueden superar el máximo del plan leyendo el mismo contador.
+            $empresa=Empresa::query()->with('planViti')->lockForUpdate()->findOrFail($d['empresa_id']);
+            $features->assertAppLimit($empresa);
+
+            if(!empty($d['proyecto_id'])){
+                $proyecto=Proyecto::query()->lockForUpdate()->findOrFail($d['proyecto_id']);
+                abort_unless((int)$proyecto->empresa_id === (int)$empresa->id,422,'El proyecto seleccionado pertenece a otra empresa.');
+                abort_if($proyecto->estado === 'cancelado',422,'No se puede integrar una aplicación desde un proyecto cancelado.');
+            }
+
+            return Aplicacion::create($d+['slug'=>$slug]);
+        });
         Audit::log($r,'aplicacion_integrada',$a,'Se integró una aplicación a VITI.');
         return response()->json(['data'=>$a->load('empresa')],201);
     }
@@ -39,7 +54,9 @@ class AplicacionController extends Controller
     public function update(Request $r,Aplicacion $aplicacion): JsonResponse
     {
         $data=$this->data($r,$aplicacion);
-        unset($data['entorno'],$data['estado'],$data['acceso_cliente']);
+        // Empresa, proyecto, catálogo y ciclo son identidad/lifecycle. No se reasignan
+        // mediante el editor general porque eso podría cruzar tenants o saltar controles.
+        unset($data['empresa_id'],$data['proyecto_id'],$data['catalogo_aplicacion_id'],$data['entorno'],$data['estado'],$data['acceso_cliente']);
         $aplicacion->update($data);
         Audit::log($r,'aplicacion_actualizada',$aplicacion,'Se actualizó una aplicación.');
         return response()->json(['data'=>$aplicacion->fresh()->load('empresa')]);
