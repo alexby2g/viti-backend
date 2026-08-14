@@ -20,6 +20,14 @@ class WorkflowStateServiceTest extends TestCase
         $this->addToAssertionCount(4);
     }
 
+    public function test_request_cannot_be_converted_before_approval(): void
+    {
+        $workflow = new WorkflowStateService();
+
+        $this->expectException(ValidationException::class);
+        $workflow->assertSolicitudTransition('en_revision', 'convertida');
+    }
+
     public function test_closed_request_cannot_be_reopened(): void
     {
         $workflow = new WorkflowStateService();
@@ -34,6 +42,22 @@ class WorkflowStateServiceTest extends TestCase
 
         $this->expectException(ValidationException::class);
         $workflow->assertProyectoPhaseTransition('desarrollo', 'analisis');
+    }
+
+    public function test_project_phase_cannot_skip_required_stages(): void
+    {
+        $workflow = new WorkflowStateService();
+
+        $this->expectException(ValidationException::class);
+        $workflow->assertProyectoPhaseTransition('levantamiento', 'implementacion');
+    }
+
+    public function test_project_can_skip_adjustments_when_qa_has_no_findings(): void
+    {
+        $workflow = new WorkflowStateService();
+
+        $workflow->assertProyectoPhaseTransition('pruebas', 'implementacion');
+        $this->addToAssertionCount(1);
     }
 
     public function test_project_phase_can_enter_and_close_maintenance(): void

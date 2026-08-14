@@ -8,16 +8,25 @@ class WorkflowStateService
 {
     private const SOLICITUD_TRANSITIONS = [
         'borrador' => ['en_revision', 'rechazada', 'cerrada'],
-        'en_revision' => ['aprobada', 'rechazada', 'convertida', 'cerrada'],
+        'en_revision' => ['aprobada', 'rechazada', 'cerrada'],
         'aprobada' => ['convertida', 'cerrada'],
         'rechazada' => ['en_revision', 'cerrada'],
         'convertida' => ['cerrada'],
         'cerrada' => [],
     ];
 
-    private const PROYECTO_PHASES = [
-        'levantamiento', 'analisis', 'diseno', 'desarrollo', 'beta',
-        'pruebas', 'ajustes', 'implementacion', 'finalizado', 'mantenimiento',
+    private const PROYECTO_PHASE_TRANSITIONS = [
+        'levantamiento' => ['analisis'],
+        'analisis' => ['diseno'],
+        'diseno' => ['desarrollo'],
+        'desarrollo' => ['beta'],
+        'beta' => ['pruebas'],
+        // Si QA no encuentra correcciones pendientes, puede pasar directo a implementación.
+        'pruebas' => ['ajustes', 'implementacion'],
+        'ajustes' => ['implementacion'],
+        'implementacion' => ['finalizado'],
+        'finalizado' => ['mantenimiento'],
+        'mantenimiento' => ['finalizado'],
     ];
 
     private const PROYECTO_STATE_TRANSITIONS = [
@@ -41,14 +50,13 @@ class WorkflowStateService
     public function assertProyectoPhaseTransition(?string $current, ?string $target): void
     {
         if (!$current || !$target || $current === $target) return;
-        $from = array_search($current, self::PROYECTO_PHASES, true);
-        $to = array_search($target, self::PROYECTO_PHASES, true);
-        if ($from === false || $to === false) {
+        if (!isset(self::PROYECTO_PHASE_TRANSITIONS[$current]) || !array_key_exists($target, self::PROYECTO_PHASE_TRANSITIONS)) {
             throw ValidationException::withMessages(['fase' => 'La fase indicada no pertenece al flujo oficial de VITI.']);
         }
-        if ($current === 'mantenimiento' && $target === 'finalizado') return;
-        if ($to < $from) {
-            throw ValidationException::withMessages(['fase' => 'No se puede retroceder la fase del proyecto. Registra un avance u observación para conservar el historial.']);
+        if (!in_array($target, self::PROYECTO_PHASE_TRANSITIONS[$current], true)) {
+            throw ValidationException::withMessages([
+                'fase' => "La transición de fase de {$current} a {$target} no está permitida. Registra cada etapa para conservar un historial confiable.",
+            ]);
         }
     }
 
@@ -59,7 +67,7 @@ class WorkflowStateService
 
     public function proyectoPhases(): array
     {
-        return self::PROYECTO_PHASES;
+        return array_keys(self::PROYECTO_PHASE_TRANSITIONS);
     }
 
     public function proyectoStates(): array

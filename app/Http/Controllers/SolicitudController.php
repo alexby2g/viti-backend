@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{Cuestionario,Empresa,SolicitudRespuesta,SolicitudSistema};
+use App\Services\WorkflowStateService;
 use App\Support\{Audit,Code};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -126,6 +127,7 @@ class SolicitudController extends Controller
 
     private function validateData(Request $request, ?SolicitudSistema $solicitud=null):array
     {
+        $workflow=app(WorkflowStateService::class);
         return $request->validate([
             'empresa_id'=>['required','integer','exists:empresas,id'],
             'cliente_id'=>['required','integer','exists:clientes,id'],
@@ -134,7 +136,7 @@ class SolicitudController extends Controller
             'asignado_a'=>['nullable','integer','exists:usuarios,id'],
             'titulo'=>['required','string','max:200'],
             'resumen'=>['nullable','string','max:5000'],
-            'estado'=>['nullable',Rule::in(['borrador','en_revision','aprobada','rechazada','convertida','cerrada'])],
+            'estado'=>['nullable',Rule::in($workflow->solicitudStates())],
             'prioridad'=>['nullable',Rule::in(['baja','normal','alta','urgente'])],
             'fecha_limite_deseada'=>['nullable','date'],
             'presupuesto_estimado'=>['nullable','numeric','min:0'],

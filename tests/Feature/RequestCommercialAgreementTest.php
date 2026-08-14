@@ -54,13 +54,14 @@ class RequestCommercialAgreementTest extends TestCase
             'public_token'=>Str::random(48),
             'publico_habilitado'=>true,
             'titulo'=>'Sistema para soporte técnico de computadoras',
-            'estado'=>'en_revision',
+            'estado'=>'aprobada',
             'prioridad'=>'normal',
             'forma_pago_preferida'=>'50_50',
             'acuerdo_comercial_requerido'=>true,
             'acuerdo_comercial_aceptado'=>true,
             'acuerdo_comercial_nombre'=>'Laura Prueba',
             'acuerdo_comercial_fecha'=>now()->toDateString(),
+            'aprobado_at'=>now(),
         ]);
 
         $this->actingAs($admin)

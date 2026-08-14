@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{Proyecto,ProyectoAvance,SolicitudSistema};
+use App\Services\WorkflowStateService;
 use App\Support\{Audit,Code};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -23,15 +24,21 @@ class ProyectoController extends Controller
     {
         $data=$this->validateData($request);
         $proyecto=DB::transaction(function()use($data,$request){
-            $p=Proyecto::create($data+['codigo'=>Code::next('proyectos','PRO')]);
             if(!empty($data['solicitud_id'])){
-                $solicitud=SolicitudSistema::with('planViti')->findOrFail($data['solicitud_id']);
+                $solicitud=SolicitudSistema::with('planViti')->lockForUpdate()->findOrFail($data['solicitud_id']);
                 abort_unless((int)$solicitud->empresa_id === (int)$data['empresa_id'] && (int)$solicitud->cliente_id === (int)$data['cliente_id'],422,'La solicitud no corresponde a la empresa o responsable seleccionados.');
+                abort_unless($solicitud->estado === 'aprobada',422,'La solicitud debe estar aprobada antes de convertirse en proyecto.');
+            }
+
+            $p=Proyecto::create($data+['codigo'=>Code::next('proyectos','PRO')]);
+
+            if(!empty($data['solicitud_id'])){
                 if($solicitud->plan_viti_id){
                     $solicitud->empresa()->update(['plan_viti_id'=>$solicitud->plan_viti_id]);
                 }
-                $solicitud->update(['estado'=>'convertida','aprobado_at'=>now()]);
+                $solicitud->update(['estado'=>'convertida','aprobado_at'=>$solicitud->aprobado_at ?: now()]);
             }
+
             ProyectoAvance::create(['proyecto_id'=>$p->id,'creado_por'=>$request->user()->id,'fase'=>$p->fase,'titulo'=>'Proyecto creado','descripcion'=>'Se inició el proyecto en VITI.','progreso'=>$p->progreso]);
             return $p;
         });
@@ -77,6 +84,7 @@ class ProyectoController extends Controller
 
     private function validateData(Request $request,?Proyecto $proyecto=null):array
     {
+        $workflow=app(WorkflowStateService::class);
         return $request->validate([
             'solicitud_id'=>['nullable','integer','exists:solicitudes_sistema,id',Rule::unique('proyectos','solicitud_id')->ignore($proyecto?->id)],
             'empresa_id'=>['required','integer','exists:empresas,id'],
@@ -84,13 +92,13 @@ class ProyectoController extends Controller
             'responsable_id'=>['nullable','integer','exists:usuarios,id'],
             'nombre'=>['required','string','max:200'],
             'descripcion'=>['nullable','string','max:5000'],
-            'fase'=>['nullable',Rule::in($this->phases())],
-            'estado'=>['nullable',Rule::in(['activo','pausado','finalizado','cancelado','mantenimiento'])],
+            'fase'=>['nullable',Rule::in($workflow->proyectoPhases())],
+            'estado'=>['nullable',Rule::in($workflow->proyectoStates())],
             'progreso'=>['nullable','integer','min:0','max:100'],
             'fecha_inicio'=>['nullable','date'],'fecha_beta'=>['nullable','date'],'fecha_entrega'=>['nullable','date'],
             'repositorio_url'=>['nullable','url','max:255'],'produccion_url'=>['nullable','url','max:255'],'observaciones'=>['nullable','string','max:5000'],
         ]);
     }
 
-    private function phases():array{return ['levantamiento','analisis','diseno','desarrollo','beta','pruebas','ajustes','implementacion','finalizado','mantenimiento'];}
+    private function phases():array{return app(WorkflowStateService::class)->proyectoPhases();}
 }
