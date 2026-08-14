@@ -18,6 +18,7 @@ $electrofrioExtraRoutes = function (): void {
     Route::delete('evidencias/{evidencia}', [ElectrofrioDocumentacionController::class, 'eliminar'])->whereNumber('evidencia');
     Route::get('ordenes/{id}/pdf', [ElectrofrioDocumentacionController::class, 'pdf'])->whereNumber('id');
 
+    Route::get('pagos-operativos/referencias', [ElectrofrioPagoOperativoController::class, 'referencias']);
     Route::get('pagos-operativos', [ElectrofrioPagoOperativoController::class, 'index']);
     Route::post('ordenes/{id}/pagos-operativos', [ElectrofrioPagoOperativoController::class, 'guardar'])->whereNumber('id');
     Route::post('pagos-operativos/{id}/anular', [ElectrofrioPagoOperativoController::class, 'anular'])->whereNumber('id');
