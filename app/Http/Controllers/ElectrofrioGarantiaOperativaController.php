@@ -62,7 +62,7 @@ class ElectrofrioGarantiaOperativaController extends Controller
                 'hora_cita' => $data['hora_cita'] ?? null,
                 'direccion_servicio' => $address,
                 'referencia_ubicacion' => $reference,
-                'problema_reportado' => 'Reingreso por garantía: '.$reason,
+                'problema_reportado' => "Reingreso por garantía de {$original->codigo}: {$reason}",
                 'prioridad' => $data['prioridad'] ?? 'alta',
                 'etapa' => 'cita',
                 'estado_actual' => 'cita_programada',
