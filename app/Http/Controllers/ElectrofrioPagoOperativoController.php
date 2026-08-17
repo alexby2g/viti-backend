@@ -25,7 +25,7 @@ class ElectrofrioPagoOperativoController extends Controller
         ]);
         $query=DB::table('electrofrio_pagos as p')->join('electrofrio_ordenes as o','o.id','=','p.orden_id')
             ->join('electrofrio_clientes as c','c.id','=','o.cliente_id')->where('p.empresa_id',$empresa->id)
-            ->select('p.*','o.codigo as orden_codigo','o.total as orden_total','c.nombre as cliente_nombre');
+            ->select('p.*','o.codigo as orden_codigo','o.total as orden_total','o.estado_actual as servicio_estado','c.nombre as cliente_nombre');
         if(!empty($data['buscar'])){$term='%'.trim($data['buscar']).'%';$query->where(fn($q)=>$q->where('o.codigo','like',$term)->orWhere('c.nombre','like',$term)->orWhere('p.referencia','like',$term));}
         foreach(['tipo','metodo','estado','orden_id'] as $field)if(isset($data[$field])&&$data[$field]!=='')$query->where('p.'.$field,$data[$field]);
         if(!empty($data['desde']))$query->whereDate('p.pagado_at','>=',$data['desde']);
@@ -55,13 +55,13 @@ class ElectrofrioPagoOperativoController extends Controller
                     ->where('p.estado','=','pagado');
             })
             ->where('o.empresa_id',$empresa->id)
-            ->groupBy('o.id','o.codigo','o.total','o.etapa','o.fecha_cita','c.nombre')
+            ->groupBy('o.id','o.codigo','o.total','o.etapa','o.estado_actual','o.fecha_cita','c.nombre')
             ->select(
-                'o.id','o.codigo','o.total','o.etapa','o.fecha_cita','c.nombre as cliente_nombre',
+                'o.id','o.codigo','o.total','o.etapa','o.estado_actual','o.fecha_cita','c.nombre as cliente_nombre',
                 DB::raw('COALESCE(SUM(p.monto), 0) as pagado'),
                 DB::raw('SUM(CASE WHEN p.id IS NOT NULL THEN 1 ELSE 0 END) as cantidad_pagos')
             )
-            ->orderByDesc('o.fecha_cita')->orderByDesc('o.id')->limit(500)->get()
+            ->orderByDesc('o.id')->limit(500)->get()
             ->map(function($item){
                 $item->pagado=(float)$item->pagado;
                 $item->saldo=max(0,(float)$item->total-$item->pagado);
@@ -87,7 +87,7 @@ class ElectrofrioPagoOperativoController extends Controller
             $existing=DB::table('electrofrio_pagos')->where('empresa_id',$empresa->id)->where('idempotency_key',$data['idempotency_key'])->first();
             if($existing){
                 abort_if((int)$existing->orden_id!==$id,409,'La clave de esta operación ya fue utilizada en otra orden. Actualiza el formulario e inténtalo nuevamente.');
-                return ['payment'=>$existing,'created'=>false];
+                return ['payment'=>$existing,'created'=>false,'service_finalized'=>false];
             }
             $payments=DB::table('electrofrio_pagos')->where('empresa_id',$empresa->id)->where('orden_id',$id)->where('estado','pagado')->lockForUpdate()->get();
             $paid=(float)$payments->sum('monto');$remaining=max(0,(float)$order->total-$paid);$amount=(float)$data['monto'];
@@ -101,10 +101,15 @@ class ElectrofrioPagoOperativoController extends Controller
                 'notas'=>isset($data['notas'])?trim((string)$data['notas'])?:null:null,'estado'=>'pagado',
                 'registrado_por'=>$request->user()->id,'idempotency_key'=>$data['idempotency_key'],'pagado_at'=>now(),'created_at'=>now(),'updated_at'=>now(),
             ]);
-            return ['payment'=>DB::table('electrofrio_pagos')->find($paymentId),'created'=>true];
+            $newRemaining=max(0,$remaining-$amount);
+            $finalized=$newRemaining<=0.001 && $this->finalizeAfterPayment($empresa->id,$order,$request->user()->id);
+            return ['payment'=>DB::table('electrofrio_pagos')->find($paymentId),'created'=>true,'service_finalized'=>$finalized];
         });
-        if($result['created'])Audit::log($request,'electrofrio_pago_registrado',null,'Se registró un pago en una orden del sistema de aire acondicionado.',['orden_id'=>$id,'pago_id'=>$result['payment']->id,'tipo'=>$result['payment']->tipo]);
-        return response()->json(['data'=>$result['payment'],'message'=>$result['created']?'Pago registrado.':'El pago ya había sido procesado.'],$result['created']?201:200);
+        if($result['created'])Audit::log($request,'electrofrio_pago_registrado',null,'Se registró un pago en una orden del sistema de aire acondicionado.',['orden_id'=>$id,'pago_id'=>$result['payment']->id,'tipo'=>$result['payment']->tipo,'servicio_finalizado'=>$result['service_finalized']]);
+        $message=$result['created']
+            ? ($result['service_finalized']?'Pago registrado. El servicio quedó finalizado automáticamente porque ya no tiene saldo pendiente.':'Pago registrado.')
+            : 'El pago ya había sido procesado.';
+        return response()->json(['data'=>$result['payment'],'message'=>$message,'meta'=>['servicio_finalizado'=>$result['service_finalized']]],$result['created']?201:200);
     }
 
     public function anular(Request $request,TenantContext $tenants,int $id):JsonResponse
@@ -114,12 +119,64 @@ class ElectrofrioPagoOperativoController extends Controller
         $result=DB::transaction(function()use($empresa,$request,$data,$id):array{
             $item=DB::table('electrofrio_pagos')->where('empresa_id',$empresa->id)->where('id',$id)->lockForUpdate()->first();
             abort_unless($item,404,'El pago solicitado no existe en este negocio.');
-            if($item->estado==='anulado')return ['payment'=>$item,'changed'=>false];
+            if($item->estado==='anulado')return ['payment'=>$item,'changed'=>false,'service_reopened'=>false];
             DB::table('electrofrio_pagos')->where('id',$item->id)->update(['estado'=>'anulado','anulado_at'=>now(),'anulado_por'=>$request->user()->id,'motivo_anulacion'=>trim($data['motivo']),'updated_at'=>now()]);
-            return ['payment'=>DB::table('electrofrio_pagos')->find($item->id),'changed'=>true];
+            $reopened=$this->reopenAfterPaymentCancellation($empresa->id,(int)$item->orden_id,$request->user()->id,(int)$item->id);
+            return ['payment'=>DB::table('electrofrio_pagos')->find($item->id),'changed'=>true,'service_reopened'=>$reopened];
         });
-        if($result['changed'])Audit::log($request,'electrofrio_pago_anulado',null,'Se anuló un pago del sistema de aire acondicionado sin borrar su trazabilidad.',['pago_id'=>$result['payment']->id,'orden_id'=>$result['payment']->orden_id]);
-        return response()->json(['data'=>$result['payment'],'message'=>$result['changed']?'Pago anulado.':'El pago ya estaba anulado.']);
+        if($result['changed'])Audit::log($request,'electrofrio_pago_anulado',null,'Se anuló un pago del sistema de aire acondicionado sin borrar su trazabilidad.',['pago_id'=>$result['payment']->id,'orden_id'=>$result['payment']->orden_id,'servicio_reabierto'=>$result['service_reopened']]);
+        $message=$result['changed']
+            ? ($result['service_reopened']?'Pago anulado. El servicio volvió a Pendiente de pago.':'Pago anulado.')
+            : 'El pago ya estaba anulado.';
+        return response()->json(['data'=>$result['payment'],'message'=>$message,'meta'=>['servicio_reabierto'=>$result['service_reopened']]]);
+    }
+
+    private function finalizeAfterPayment(int $empresaId,object $order,int $userId):bool
+    {
+        $current=$this->currentState($order);
+        if(!in_array($current,['servicio_terminado','pendiente_pago'],true))return false;
+        if(empty($order->servicio_terminado_at))return false;
+
+        DB::table('electrofrio_ordenes')->where('empresa_id',$empresaId)->where('id',$order->id)->update([
+            'estado_actual'=>'finalizado','estado_actualizado_at'=>now(),'etapa'=>'cerrada','finalizada_at'=>now(),'updated_at'=>now(),
+        ]);
+        $this->recordState($empresaId,(int)$order->id,$current,'finalizado','automatico','Saldo completado. El sistema finalizó el servicio automáticamente.',$userId);
+        return true;
+    }
+
+    private function reopenAfterPaymentCancellation(int $empresaId,int $orderId,int $userId,int $paymentId):bool
+    {
+        $order=DB::table('electrofrio_ordenes')->where('empresa_id',$empresaId)->where('id',$orderId)->lockForUpdate()->first();
+        if(!$order||$this->currentState($order)!=='finalizado'||empty($order->servicio_terminado_at))return false;
+        $paid=(float)DB::table('electrofrio_pagos')->where('empresa_id',$empresaId)->where('orden_id',$orderId)->where('estado','pagado')->sum('monto');
+        $remaining=max(0,(float)$order->total-$paid);
+        if($remaining<=0.001)return false;
+
+        DB::table('electrofrio_ordenes')->where('empresa_id',$empresaId)->where('id',$orderId)->update([
+            'estado_actual'=>'pendiente_pago','estado_actualizado_at'=>now(),'etapa'=>'servicio','finalizada_at'=>null,'updated_at'=>now(),
+        ]);
+        $this->recordState($empresaId,$orderId,'finalizado','pendiente_pago','automatico',"Pago #{$paymentId} anulado. Se reabrió el saldo pendiente.",$userId);
+        return true;
+    }
+
+    private function recordState(int $empresaId,int $orderId,?string $previous,string $state,string $type,string $note,int $userId):void
+    {
+        DB::table('electrofrio_orden_estados')->insert([
+            'empresa_id'=>$empresaId,'orden_id'=>$orderId,'estado_anterior'=>$previous,'estado'=>$state,'tipo_cambio'=>$type,
+            'observacion'=>$note,'cambiado_por'=>$userId,'cambiado_at'=>now(),'created_at'=>now(),'updated_at'=>now(),
+        ]);
+    }
+
+    private function currentState(object $order):string
+    {
+        $state=trim((string)($order->estado_actual??''));
+        if($state!=='')return $state;
+        return match(true){
+            $order->etapa==='cerrada'&&$order->decision_cliente==='rechazado'=>'no_aprobado',
+            $order->etapa==='cerrada'=>'finalizado',$order->etapa==='servicio'=>'servicio_en_proceso',
+            $order->etapa==='propuesta'=>'esperando_aprobacion',$order->etapa==='diagnostico'=>'diagnostico_realizado',
+            default=>'cita_programada',
+        };
     }
 
     private function paymentMethods(int $empresaId):array
