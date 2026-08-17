@@ -7,6 +7,7 @@ use App\Services\{SubscriptionAccessService,TenantContext};
 use App\Support\Audit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class ElectrofrioConfiguracionController extends Controller
 {
@@ -96,6 +97,58 @@ class ElectrofrioConfiguracionController extends Controller
 
         return response()->json([
             'message' => 'Configuración del sistema actualizada.',
+            'data' => $this->payload($empresa, $config->fresh()),
+        ]);
+    }
+
+    public function uploadLogo(Request $request, TenantContext $tenants): JsonResponse
+    {
+        $empresa = $this->empresa($request, $tenants);
+        $tenants->assertCanManage($request->user(), $empresa);
+
+        $request->validate([
+            'logo' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:3072'],
+        ], [
+            'logo.required' => 'Selecciona un logotipo.',
+            'logo.image' => 'El archivo debe ser una imagen válida.',
+            'logo.mimes' => 'El logotipo debe ser JPG, PNG o WEBP.',
+            'logo.max' => 'El logotipo no puede superar 3 MB.',
+        ]);
+
+        $directory = 'aires/logos/'.$empresa->id;
+        Storage::disk('public')->deleteDirectory($directory);
+        $path = $request->file('logo')->store($directory, 'public');
+        $logoUrl = Storage::disk('public')->url($path);
+
+        $config = ElectrofrioConfiguracion::query()->firstOrCreate(
+            ['empresa_id' => $empresa->id],
+            [
+                'nombre_sistema' => 'Sistema de Gestión de Servicios de Aire Acondicionado',
+                'nombre_corto' => 'Aires Acondicionados',
+                'color_primario' => '#0B5F7A',
+                'color_secundario' => '#12B8C8',
+                'moneda' => 'BOB',
+                'garantia_dias_default' => 0,
+                'tipos_servicio' => self::DEFAULT_SERVICE_TYPES,
+                'tipos_equipo' => self::DEFAULT_EQUIPMENT_TYPES,
+                'metodos_pago' => self::DEFAULT_PAYMENT_METHODS,
+            ]
+        );
+        $config->update([
+            'logo_url' => $logoUrl,
+            'actualizado_por' => $request->user()->id,
+        ]);
+
+        Audit::log(
+            $request,
+            'aires_acondicionados_logo_actualizado',
+            $config,
+            'Se actualizó el logotipo personalizado del sistema de aire acondicionado.'
+        );
+
+        return response()->json([
+            'message' => 'Logotipo actualizado.',
+            'logo_url' => $logoUrl,
             'data' => $this->payload($empresa, $config->fresh()),
         ]);
     }
