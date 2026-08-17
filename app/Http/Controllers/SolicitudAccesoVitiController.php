@@ -130,7 +130,6 @@ class SolicitudAccesoVitiController extends Controller
                 'token' => Str::random(64),
                 'codigo' => $this->newCode(),
                 'creada_por' => $request->user()?->id,
-                'solicitud_id' => $locked->solicitud_id,
                 'estado' => 'pendiente',
                 'expira_at' => now()->addDays($days),
             ]);
