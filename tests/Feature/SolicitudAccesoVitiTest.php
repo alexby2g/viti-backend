@@ -51,8 +51,9 @@ class SolicitudAccesoVitiTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('data.solicitud.id', $request->id)
-            ->assertJsonPath('data.codigo', fn ($value) => is_string($value) && preg_match('/^VITI-[A-Z0-9]{6}$/', $value) === 1);
+            ->assertJsonStructure(['data' => ['codigo', 'expira_at', 'ruta']]);
 
+        $this->assertMatchesRegularExpression('/^VITI-[A-Z0-9]{6}$/', (string) $response->json('data.codigo'));
         $this->assertDatabaseHas('solicitudes_acceso_viti', [
             'id' => $request->id,
             'estado' => 'aprobada',
