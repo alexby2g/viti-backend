@@ -1,9 +1,12 @@
 <?php
 
-use App\Http\Controllers\{ElectrofrioDocumentacionController,ElectrofrioFichaTecnicaController,ElectrofrioHistorialEquipoController,ElectrofrioOrdenOperativaController,ElectrofrioPagoOperativoController};
+use App\Http\Controllers\{ElectrofrioConfiguracionController,ElectrofrioDocumentacionController,ElectrofrioFichaTecnicaController,ElectrofrioHistorialEquipoController,ElectrofrioOrdenOperativaController,ElectrofrioPagoOperativoController};
 use Illuminate\Support\Facades\Route;
 
 $electrofrioExtraRoutes = function (): void {
+    Route::get('configuracion', [ElectrofrioConfiguracionController::class, 'show']);
+    Route::put('configuracion', [ElectrofrioConfiguracionController::class, 'update']);
+
     Route::get('fichas-tecnicas', [ElectrofrioFichaTecnicaController::class, 'index']);
     Route::get('equipos/{equipoId}/ficha-tecnica', [ElectrofrioFichaTecnicaController::class, 'show'])->whereNumber('equipoId');
     Route::put('equipos/{equipoId}/ficha-tecnica', [ElectrofrioFichaTecnicaController::class, 'guardar'])->whereNumber('equipoId');
