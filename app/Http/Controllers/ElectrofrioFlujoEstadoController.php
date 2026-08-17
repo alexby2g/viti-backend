@@ -45,11 +45,9 @@ class ElectrofrioFlujoEstadoController extends Controller
     public function catalogo(Request $request, TenantContext $tenants): JsonResponse
     {
         $empresa = $this->empresa($request, $tenants);
-        $canManage = $request->user()->isPlatformAdmin() || $tenants->canManage($request->user(), $empresa);
-
         return response()->json([
             'data' => collect(self::STATES)->map(fn ($meta, $key) => ['value' => $key, ...$meta])->values(),
-            'meta' => ['puede_corregir' => $canManage],
+            'meta' => ['puede_corregir' => $request->user()->isPlatformAdmin() || $tenants->canManage($request->user(), $empresa)],
         ]);
     }
 
@@ -57,7 +55,6 @@ class ElectrofrioFlujoEstadoController extends Controller
     {
         $empresa = $this->empresa($request, $tenants);
         $order = $this->orden($empresa->id, $id);
-
         return response()->json([
             'data' => $this->history($empresa->id, $id),
             'meta' => $this->flowMeta($request, $tenants, $empresa, $order),
@@ -71,6 +68,10 @@ class ElectrofrioFlujoEstadoController extends Controller
             'estado' => ['required', Rule::in(array_keys(self::STATES))],
             'observacion' => ['nullable', 'string', 'max:3000'],
             'correccion' => ['sometimes', 'boolean'],
+            'trabajo_realizado' => ['nullable', 'string', 'max:8000'],
+            'recomendaciones' => ['nullable', 'string', 'max:5000'],
+            'garantia_dias' => ['nullable', 'integer', 'min:0', 'max:3650'],
+            'condiciones_garantia' => ['nullable', 'string', 'max:5000'],
         ]);
         $target = $data['estado'];
         $isCorrection = (bool) ($data['correccion'] ?? false);
@@ -81,7 +82,7 @@ class ElectrofrioFlujoEstadoController extends Controller
             abort_if(in_array($target, ['no_aprobado', 'cancelado'], true) && !$note, 422, 'Indica el motivo de la corrección.');
         }
 
-        DB::transaction(function () use ($request, $tenants, $empresa, $id, $target, $isCorrection, $note): void {
+        DB::transaction(function () use ($request, $tenants, $empresa, $id, $target, $isCorrection, $note, $data): void {
             $order = DB::table('electrofrio_ordenes')
                 ->where('empresa_id', $empresa->id)
                 ->where('id', $id)
@@ -91,15 +92,46 @@ class ElectrofrioFlujoEstadoController extends Controller
 
             $current = $this->currentState($order);
             abort_if($current === $target, 422, 'El servicio ya se encuentra en ese estado.');
-
             if (!$isCorrection) {
-                $allowed = self::TRANSITIONS[$current] ?? [];
-                abort_unless(in_array($target, $allowed, true), 422, 'Ese cambio de estado no corresponde al flujo actual.');
+                abort_unless(in_array($target, self::TRANSITIONS[$current] ?? [], true), 422, 'Ese cambio de estado no corresponde al flujo actual.');
+            }
+
+            if ($target === 'servicio_terminado') {
+                $technical = [];
+                if (array_key_exists('trabajo_realizado', $data)) $technical['trabajo_realizado'] = trim((string) $data['trabajo_realizado']) ?: null;
+                if (array_key_exists('recomendaciones', $data)) $technical['recomendaciones'] = trim((string) $data['recomendaciones']) ?: null;
+                if (array_key_exists('garantia_dias', $data)) {
+                    $days = (int) ($data['garantia_dias'] ?? 0);
+                    if ($days > 0) abort_unless($tenants->canUse($request->user(), $empresa, 'garantias'), 403, 'El módulo Garantías no está habilitado para este negocio.');
+                    $technical['garantia_dias'] = $days;
+                    $technical['garantia_inicio'] = $days > 0 ? now()->toDateString() : null;
+                    $technical['garantia_fin'] = $days > 0 ? now()->addDays($days)->toDateString() : null;
+                }
+                if (array_key_exists('condiciones_garantia', $data)) $technical['condiciones_garantia'] = trim((string) $data['condiciones_garantia']) ?: null;
+                if ($technical) {
+                    DB::table('electrofrio_ordenes')->where('id', $id)->update($technical + ['updated_at' => now()]);
+                    $order = DB::table('electrofrio_ordenes')->where('id', $id)->first();
+                }
             }
 
             $this->assertPrerequisites($request, $tenants, $empresa, $order, $target, $note);
             $updates = $this->orderUpdates($order, $target, $note);
             DB::table('electrofrio_ordenes')->where('id', $id)->update($updates + ['updated_at' => now()]);
+
+            if (!DB::table('electrofrio_orden_estados')->where('empresa_id', $empresa->id)->where('orden_id', $id)->exists()) {
+                DB::table('electrofrio_orden_estados')->insert([
+                    'empresa_id' => $empresa->id,
+                    'orden_id' => $id,
+                    'estado_anterior' => null,
+                    'estado' => $current,
+                    'tipo_cambio' => 'inicio',
+                    'observacion' => 'Servicio registrado en el sistema.',
+                    'cambiado_por' => null,
+                    'cambiado_at' => $order->created_at ?: now(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
 
             DB::table('electrofrio_orden_estados')->insert([
                 'empresa_id' => $empresa->id,
@@ -132,22 +164,16 @@ class ElectrofrioFlujoEstadoController extends Controller
 
     private function assertPrerequisites(Request $request, TenantContext $tenants, Empresa $empresa, object $order, string $target, ?string $note): void
     {
-        if ($target === 'diagnostico_realizado') {
-            abort_if(trim((string) $order->diagnostico) === '', 422, 'Registra el diagnóstico antes de marcarlo como realizado.');
-        }
+        if ($target === 'diagnostico_realizado') abort_if(trim((string) $order->diagnostico) === '', 422, 'Registra el diagnóstico antes de marcarlo como realizado.');
         if (in_array($target, ['propuesta_enviada', 'esperando_aprobacion', 'aprobado', 'no_aprobado'], true)) {
             abort_if(trim((string) $order->diagnostico) === '', 422, 'Registra el diagnóstico antes de continuar.');
             abort_if(trim((string) $order->propuesta) === '', 422, 'Registra la propuesta antes de continuar.');
         }
-        if (in_array($target, ['no_aprobado', 'cancelado'], true)) {
-            abort_if(!$note, 422, 'Indica el motivo antes de cerrar el servicio.');
-        }
+        if (in_array($target, ['no_aprobado', 'cancelado'], true)) abort_if(!$note, 422, 'Indica el motivo antes de cerrar el servicio.');
         if (in_array($target, ['servicio_en_proceso', 'servicio_terminado', 'pendiente_pago', 'finalizado'], true)) {
             abort_unless($order->decision_cliente === 'aceptado' || $this->currentState($order) === 'aprobado', 422, 'El cliente debe aprobar la propuesta antes de ejecutar el servicio.');
         }
-        if (in_array($target, ['servicio_terminado', 'pendiente_pago', 'finalizado'], true)) {
-            abort_if(trim((string) $order->trabajo_realizado) === '', 422, 'Describe el trabajo realizado antes de marcar el servicio como terminado.');
-        }
+        if (in_array($target, ['servicio_terminado', 'pendiente_pago', 'finalizado'], true)) abort_if(trim((string) $order->trabajo_realizado) === '', 422, 'Describe el trabajo realizado antes de marcar el servicio como terminado.');
         if ($target === 'pendiente_pago') {
             abort_unless($tenants->canUse($request->user(), $empresa, 'pagos'), 403, 'El módulo Pagos no está habilitado para este negocio.');
             abort_if($this->saldo($empresa->id, $order) <= 0.001, 422, 'No existe saldo pendiente. Puedes finalizar directamente el servicio.');
@@ -159,12 +185,7 @@ class ElectrofrioFlujoEstadoController extends Controller
 
     private function orderUpdates(object $order, string $target, ?string $note): array
     {
-        $updates = [
-            'estado_actual' => $target,
-            'estado_actualizado_at' => now(),
-            'etapa' => $this->legacyStage($target),
-        ];
-
+        $updates = ['estado_actual' => $target, 'estado_actualizado_at' => now(), 'etapa' => $this->legacyStage($target)];
         if ($target === 'aprobado') {
             $updates['decision_cliente'] = 'aceptado';
             $updates['decision_at'] = now();
@@ -176,22 +197,11 @@ class ElectrofrioFlujoEstadoController extends Controller
             $updates['motivo_rechazo'] = $note;
             $updates['finalizada_at'] = now();
         }
-        if ($target === 'cancelado') {
-            $updates['finalizada_at'] = now();
-        }
-        if ($target === 'servicio_terminado') {
-            $updates['servicio_terminado_at'] = now();
-        }
-        if (in_array($target, ['pendiente_pago', 'finalizado'], true) && !$order->servicio_terminado_at) {
-            $updates['servicio_terminado_at'] = now();
-        }
-        if ($target === 'finalizado') {
-            $updates['finalizada_at'] = now();
-        }
-        if (!in_array($target, ['no_aprobado', 'cancelado', 'finalizado'], true)) {
-            $updates['finalizada_at'] = null;
-        }
-
+        if ($target === 'cancelado') $updates['finalizada_at'] = now();
+        if ($target === 'servicio_terminado') $updates['servicio_terminado_at'] = now();
+        if (in_array($target, ['pendiente_pago', 'finalizado'], true) && !$order->servicio_terminado_at) $updates['servicio_terminado_at'] = now();
+        if ($target === 'finalizado') $updates['finalizada_at'] = now();
+        if (!in_array($target, ['no_aprobado', 'cancelado', 'finalizado'], true)) $updates['finalizada_at'] = null;
         return $updates;
     }
 
@@ -210,7 +220,6 @@ class ElectrofrioFlujoEstadoController extends Controller
     {
         $value = (string) ($order->estado_actual ?? '');
         if (isset(self::STATES[$value])) return $value;
-
         return match (true) {
             $order->etapa === 'cerrada' && $order->decision_cliente === 'rechazado' => 'no_aprobado',
             $order->etapa === 'cerrada' => 'finalizado',
@@ -223,11 +232,7 @@ class ElectrofrioFlujoEstadoController extends Controller
 
     private function saldo(int $empresaId, object $order): float
     {
-        $paid = (float) DB::table('electrofrio_pagos')
-            ->where('empresa_id', $empresaId)
-            ->where('orden_id', $order->id)
-            ->where('estado', 'pagado')
-            ->sum('monto');
+        $paid = (float) DB::table('electrofrio_pagos')->where('empresa_id', $empresaId)->where('orden_id', $order->id)->where('estado', 'pagado')->sum('monto');
         return max(0, (float) $order->total - $paid);
     }
 
@@ -238,9 +243,7 @@ class ElectrofrioFlujoEstadoController extends Controller
             ->where('h.empresa_id', $empresaId)
             ->where('h.orden_id', $orderId)
             ->select('h.*', 'u.nombre as cambiado_por_nombre', 'u.apellido as cambiado_por_apellido')
-            ->orderByDesc('h.cambiado_at')
-            ->orderByDesc('h.id')
-            ->get()
+            ->orderByDesc('h.cambiado_at')->orderByDesc('h.id')->get()
             ->map(function ($item) {
                 $item->estado_label = self::STATES[$item->estado]['label'] ?? $item->estado;
                 $item->estado_anterior_label = $item->estado_anterior ? (self::STATES[$item->estado_anterior]['label'] ?? $item->estado_anterior) : null;
@@ -271,20 +274,13 @@ class ElectrofrioFlujoEstadoController extends Controller
     {
         $empresa = $tenants->resolve($request);
         $tenants->assertCanUse($request->user(), $empresa, 'ordenes');
-
         if (!$request->user()->isPlatformAdmin()) {
-            $app = Aplicacion::query()
-                ->where('empresa_id', $empresa->id)
-                ->whereHas('catalogo', fn ($query) => $query->where('clave', 'electrofrio'))
-                ->with('suscripcion')
-                ->latest('id')
-                ->first();
+            $app = Aplicacion::query()->where('empresa_id', $empresa->id)->whereHas('catalogo', fn ($query) => $query->where('clave', 'electrofrio'))->with('suscripcion')->latest('id')->first();
             abort_unless($app, 404, 'Este negocio no tiene asignado el Sistema de Gestión de Servicios de Aire Acondicionado.');
             abort_unless((bool) $app->acceso_cliente, 403, 'El sistema todavía no fue entregado a este negocio.');
             abort_unless($app->estado === 'activo', 403, 'El acceso al sistema está suspendido.');
             app(SubscriptionAccessService::class)->assertCanUse($app);
         }
-
         return $empresa;
     }
 }
