@@ -137,12 +137,12 @@ class FeatureGateSubscriptionHardeningTest extends TestCase
     {
         Carbon::setTestNow('2026-08-13 10:00:00');
         $tenant = $this->createTenant('TRIAL');
-        $subscription = $this->subscription($tenant, '2026-08-20', 3);
+        $tenant['plan']->update(['precio_mensual'=>129]);
+        $subscription = $this->subscription($tenant, '2026-09-18', 3);
         $subscription->update([
             'prueba_hasta'=>'2026-08-18',
-            'primer_cobro_monto'=>129,
             'primer_cobro_desde'=>'2026-08-19',
-            'primer_cobro_hasta'=>'2026-08-18',
+            'primer_cobro_hasta'=>'2026-09-18',
             'primer_cobro_pagado'=>false,
         ]);
 
@@ -154,19 +154,19 @@ class FeatureGateSubscriptionHardeningTest extends TestCase
         $this->assertFalse($status['requiere_pago']);
         $this->assertSame(129.0,$status['primer_cobro_monto']);
         $this->assertSame('2026-08-19',$status['primer_cobro_desde']);
-        $this->assertSame('2026-08-18',$status['primer_cobro_hasta']);
+        $this->assertSame('2026-09-18',$status['primer_cobro_hasta']);
         $this->assertFalse($status['primer_cobro_pagado']);
     }
 
-    public function test_incomplete_first_payment_does_not_extend_subscription(): void
+    public function test_incomplete_first_payment_does_not_extend_subscription_or_reactivate_it(): void
     {
         Carbon::setTestNow('2026-08-20 10:00:00');
         $tenant = $this->createTenant('PARTIAL-PAYMENT');
+        $tenant['plan']->update(['precio_mensual'=>129]);
         $subscription = $this->subscription($tenant, '2026-08-20', 3);
         $subscription->update([
-            'primer_cobro_monto'=>129,
-            'primer_cobro_desde'=>'2026-08-19',
-            'primer_cobro_hasta'=>'2026-08-20',
+            'primer_cobro_desde'=>'2026-08-21',
+            'primer_cobro_hasta'=>'2026-09-20',
             'primer_cobro_pagado'=>false,
             'estado'=>'suspendida',
         ]);
@@ -197,6 +197,7 @@ class FeatureGateSubscriptionHardeningTest extends TestCase
 
         $subscription->refresh();
         $this->assertSame('2026-08-20',$subscription->fecha_vencimiento?->format('Y-m-d'));
+        $this->assertSame('suspendida',$subscription->estado);
         $this->assertFalse((bool)$subscription->primer_cobro_pagado);
         $this->assertDatabaseHas('suscripcion_pagos',[
             'id'=>$payment->id,
