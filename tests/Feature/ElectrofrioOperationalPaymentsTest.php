@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\ElectrofrioConfiguracion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\{CreatesVitiTenants,TestCase};
@@ -79,6 +80,32 @@ class ElectrofrioOperationalPaymentsTest extends TestCase
         $this->actingAs($second['user'])->getJson('/api/v1/mi/apps/electrofrio/ordenes-operativas/'.$orderId,[
             'X-VITI-Empresa'=>(string)$second['company']->id,
         ])->assertOk()->assertJsonPath('data.pagado',0)->assertJsonPath('data.saldo',500);
+    }
+
+    public function test_business_configuration_controls_allowed_payment_methods(): void
+    {
+        $tenant=$this->tenantWithPayments('PAY-CONFIG');
+        $headers=['X-VITI-Empresa'=>(string)$tenant['company']->id];
+        $orderId=$this->order($tenant['company']->id,600);
+
+        ElectrofrioConfiguracion::create([
+            'empresa_id'=>$tenant['company']->id,
+            'metodos_pago'=>['qr','link_pago'],
+            'actualizado_por'=>$tenant['user']->id,
+        ]);
+
+        $this->actingAs($tenant['user'])->getJson('/api/v1/mi/apps/electrofrio/pagos-operativos',$headers)
+            ->assertOk()
+            ->assertJsonPath('meta.metodos_pago.0','qr')
+            ->assertJsonPath('meta.metodos_pago.1','link_pago');
+
+        $this->actingAs($tenant['user'])->postJson('/api/v1/mi/apps/electrofrio/ordenes/'.$orderId.'/pagos-operativos',[
+            'monto'=>100,'tipo'=>'anticipo','metodo'=>'link_pago','referencia'=>'LP-001','idempotency_key'=>'pay-custom-method-0001',
+        ],$headers)->assertCreated()->assertJsonPath('data.metodo','link_pago');
+
+        $this->actingAs($tenant['user'])->postJson('/api/v1/mi/apps/electrofrio/ordenes/'.$orderId.'/pagos-operativos',[
+            'monto'=>50,'tipo'=>'abono','metodo'=>'efectivo','idempotency_key'=>'pay-forbidden-method01',
+        ],$headers)->assertUnprocessable()->assertJsonValidationErrors('metodo');
     }
 
     private function tenantWithPayments(string $suffix):array
