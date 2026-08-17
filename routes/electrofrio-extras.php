@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Route;
 $electrofrioExtraRoutes = function (): void {
     Route::get('configuracion', [ElectrofrioConfiguracionController::class, 'show']);
     Route::put('configuracion', [ElectrofrioConfiguracionController::class, 'update']);
+    Route::post('configuracion/logo', [ElectrofrioConfiguracionController::class, 'uploadLogo']);
     Route::get('dashboard-operativo', ElectrofrioDashboardOperativoController::class);
 
     Route::get('fichas-tecnicas', [ElectrofrioFichaTecnicaController::class, 'index']);
