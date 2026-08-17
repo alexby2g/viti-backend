@@ -24,6 +24,7 @@ class OnboardingController extends Controller
         $days = (int) ($data['dias_vigencia'] ?? 7);
         $invitation = InvitacionCliente::create([
             'token' => Str::random(64),
+            'codigo' => $this->newAccessCode(),
             'creada_por' => $request->user()?->id,
             'estado' => 'pendiente',
             'expira_at' => now()->addDays($days),
@@ -32,11 +33,12 @@ class OnboardingController extends Controller
         return response()->json([
             'data' => [
                 'token' => $invitation->token,
+                'codigo' => $invitation->codigo,
                 'estado' => $invitation->estado,
                 'expira_at' => $invitation->expira_at,
                 'ruta' => '/registro-cliente/'.$invitation->token,
             ],
-            'message' => 'Enlace de registro creado correctamente.',
+            'message' => 'Enlace y código de registro creados correctamente.',
         ], 201);
     }
 
@@ -47,6 +49,7 @@ class OnboardingController extends Controller
         return response()->json([
             'data' => [
                 'estado' => $invitation->estado,
+                'codigo' => $invitation->codigo,
                 'expira_at' => $invitation->expira_at,
             ],
         ]);
@@ -291,5 +294,14 @@ class OnboardingController extends Controller
         abort_unless($invitation->estado === 'pendiente', 410, 'Este enlace ya fue utilizado o deshabilitado.');
         abort_if($invitation->expira_at && $invitation->expira_at->isPast(), 410, 'Este enlace de registro ya venció.');
         return $invitation;
+    }
+
+    private function newAccessCode(): string
+    {
+        do {
+            $code = 'VITI-'.Str::upper(Str::random(6));
+        } while (InvitacionCliente::where('codigo', $code)->exists());
+
+        return $code;
     }
 }
