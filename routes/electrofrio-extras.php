@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{ElectrofrioConfiguracionController,ElectrofrioDashboardOperativoController,ElectrofrioDocumentacionController,ElectrofrioFichaTecnicaController,ElectrofrioHistorialEquipoController,ElectrofrioOrdenOperativaController,ElectrofrioPagoOperativoController};
+use App\Http\Controllers\{ElectrofrioConfiguracionController,ElectrofrioDashboardOperativoController,ElectrofrioDocumentacionController,ElectrofrioFichaTecnicaController,ElectrofrioFlujoEstadoController,ElectrofrioHistorialEquipoController,ElectrofrioOrdenOperativaController,ElectrofrioPagoOperativoController};
 use Illuminate\Support\Facades\Route;
 
 $electrofrioExtraRoutes = function (): void {
@@ -17,6 +17,10 @@ $electrofrioExtraRoutes = function (): void {
     Route::post('ordenes-operativas', [ElectrofrioOrdenOperativaController::class, 'guardar']);
     Route::get('ordenes-operativas/{id}', [ElectrofrioOrdenOperativaController::class, 'show'])->whereNumber('id');
     Route::put('ordenes-operativas/{id}', [ElectrofrioOrdenOperativaController::class, 'actualizar'])->whereNumber('id');
+
+    Route::get('flujo-estados', [ElectrofrioFlujoEstadoController::class, 'catalogo']);
+    Route::get('ordenes/{id}/estados', [ElectrofrioFlujoEstadoController::class, 'historial'])->whereNumber('id');
+    Route::post('ordenes/{id}/estado', [ElectrofrioFlujoEstadoController::class, 'cambiar'])->whereNumber('id');
 
     Route::post('ordenes/{id}/evidencias', [ElectrofrioDocumentacionController::class, 'subir'])->whereNumber('id');
     Route::get('evidencias/{evidencia}/descargar', [ElectrofrioDocumentacionController::class, 'descargar'])->whereNumber('evidencia');
