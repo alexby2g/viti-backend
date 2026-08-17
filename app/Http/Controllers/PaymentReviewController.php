@@ -169,7 +169,10 @@ class PaymentReviewController extends Controller
         }
 
         if ($subscription->primer_cobro_hasta && !$subscription->primer_cobro_pagado) {
-            $nextDue=Carbon::parse($subscription->primer_cobro_hasta)->addMonthNoOverflow();
+            $base=Carbon::parse($subscription->primer_cobro_hasta);
+            $nextDue=$subscription->frecuencia==='anual'
+                ? $base->addYear()
+                : $base->addMonthNoOverflow();
         } else {
             $base=$subscription->fecha_vencimiento && $subscription->fecha_vencimiento->isFuture()
                 ? $subscription->fecha_vencimiento->copy()
