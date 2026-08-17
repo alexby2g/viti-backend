@@ -124,8 +124,8 @@ class ElectrofrioPagoOperativoController extends Controller
 
     private function paymentMethods(int $empresaId):array
     {
-        $configured=ElectrofrioConfiguracion::query()->where('empresa_id',$empresaId)->value('metodos_pago');
-        $methods=is_array($configured)?$configured:self::DEFAULT_METHODS;
+        $config=ElectrofrioConfiguracion::query()->where('empresa_id',$empresaId)->first();
+        $methods=is_array($config?->metodos_pago)?$config->metodos_pago:self::DEFAULT_METHODS;
         $methods=array_values(array_unique(array_filter(array_map(fn($value)=>strtolower(trim((string)$value)),$methods))));
         return $methods?:self::DEFAULT_METHODS;
     }
