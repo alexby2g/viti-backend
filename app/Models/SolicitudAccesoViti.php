@@ -9,7 +9,7 @@ class SolicitudAccesoViti extends Model
     protected $table = 'solicitudes_acceso_viti';
 
     protected $fillable = [
-        'nombre','telefono','whatsapp','negocio','actividad','mensaje',
+        'nombre','telefono','whatsapp','negocio','actividad','plan_codigo','modalidad','mensaje',
         'estado','revisado_por','revisado_at','notas',
     ];
 
@@ -20,5 +20,10 @@ class SolicitudAccesoViti extends Model
     public function revisor()
     {
         return $this->belongsTo(Usuario::class, 'revisado_por');
+    }
+
+    public function plan()
+    {
+        return $this->belongsTo(PlanViti::class, 'plan_codigo', 'codigo');
     }
 }
