@@ -298,14 +298,16 @@ class ElectrofrioOrdenOperativaController extends Controller
 
     private function summary(int $empresaId): array
     {
+        // Este resumen es un contrato legacy usado por clientes existentes. El nuevo
+        // Dashboard y la vista de Servicios trabajan con estado_actual por separado.
         $base = DB::table('electrofrio_ordenes')->where('empresa_id', $empresaId);
         $counts = (clone $base)
             ->selectRaw("COUNT(*) as total")
-            ->selectRaw("SUM(CASE WHEN estado_actual IN ('cita_programada','en_visita') THEN 1 ELSE 0 END) as cita")
-            ->selectRaw("SUM(CASE WHEN estado_actual = 'diagnostico_realizado' THEN 1 ELSE 0 END) as diagnostico")
-            ->selectRaw("SUM(CASE WHEN estado_actual IN ('propuesta_enviada','esperando_aprobacion') THEN 1 ELSE 0 END) as propuesta")
-            ->selectRaw("SUM(CASE WHEN estado_actual IN ('aprobado','servicio_en_proceso','servicio_terminado','pendiente_pago') THEN 1 ELSE 0 END) as servicio")
-            ->selectRaw("SUM(CASE WHEN estado_actual IN ('finalizado','no_aprobado','cancelado') THEN 1 ELSE 0 END) as cerrada")
+            ->selectRaw("SUM(CASE WHEN etapa = 'cita' THEN 1 ELSE 0 END) as cita")
+            ->selectRaw("SUM(CASE WHEN etapa = 'diagnostico' THEN 1 ELSE 0 END) as diagnostico")
+            ->selectRaw("SUM(CASE WHEN etapa = 'propuesta' AND decision_cliente = 'pendiente' THEN 1 ELSE 0 END) as propuesta")
+            ->selectRaw("SUM(CASE WHEN etapa = 'servicio' THEN 1 ELSE 0 END) as servicio")
+            ->selectRaw("SUM(CASE WHEN etapa = 'cerrada' THEN 1 ELSE 0 END) as cerrada")
             ->first();
 
         return [
