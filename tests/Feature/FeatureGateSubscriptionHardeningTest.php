@@ -310,6 +310,64 @@ class FeatureGateSubscriptionHardeningTest extends TestCase
         $this->assertSame('activa',$subscription->estado);
     }
 
+    public function test_same_subscription_payment_cannot_be_confirmed_twice(): void
+    {
+        Carbon::setTestNow('2026-11-01 10:00:00');
+        $tenant = $this->createTenant('DUPLICATE-PAYMENT');
+        $subscription = Suscripcion::create([
+            'aplicacion_id'=>$tenant['app']->id,
+            'empresa_id'=>$tenant['company']->id,
+            'plan'=>$tenant['plan']->nombre,
+            'monto'=>129,
+            'frecuencia'=>'mensual',
+            'moneda'=>'BOB',
+            'fecha_inicio'=>'2026-09-01',
+            'prueba_hasta'=>null,
+            'primer_cobro_monto'=>null,
+            'primer_cobro_desde'=>null,
+            'primer_cobro_hasta'=>null,
+            'primer_cobro_pagado'=>true,
+            'fecha_vencimiento'=>'2026-10-31',
+            'dias_gracia'=>3,
+            'estado'=>'suspendida',
+        ]);
+
+        $admin = Usuario::create([
+            'nombre'=>'Admin Duplicado',
+            'apellido'=>'VITI',
+            'usuario'=>'admin_duplicate_payment_test',
+            'telefono'=>'70000084',
+            'password'=>'Password12345',
+            'rol'=>'superadmin',
+            'estado'=>'activo',
+        ]);
+
+        $payment = SuscripcionPago::create([
+            'suscripcion_id'=>$subscription->id,
+            'empresa_id'=>$tenant['company']->id,
+            'monto'=>129,
+            'metodo'=>'qr',
+            'fecha_pago'=>'2026-11-01',
+            'estado_revision'=>'pendiente_revision',
+            'origen'=>'cliente',
+        ]);
+
+        $this->actingAs($admin,'sanctum')
+            ->postJson('/api/v1/pagos/suscripcion-pagos/'.$payment->id.'/confirmar')
+            ->assertOk();
+
+        $subscription->refresh();
+        $this->assertSame('2026-11-30',$subscription->fecha_vencimiento?->format('Y-m-d'));
+
+        $this->actingAs($admin,'sanctum')
+            ->postJson('/api/v1/pagos/suscripcion-pagos/'.$payment->id.'/confirmar')
+            ->assertStatus(422);
+
+        $subscription->refresh();
+        $this->assertSame('2026-11-30',$subscription->fecha_vencimiento?->format('Y-m-d'));
+        $this->assertSame('confirmado',$payment->fresh()->estado_revision);
+    }
+
     private function subscription(array $tenant, string $due, int $grace): Suscripcion
     {
         return Suscripcion::create([
