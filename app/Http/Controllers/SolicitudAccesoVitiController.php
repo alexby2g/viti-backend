@@ -7,7 +7,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Illuminate\Validation\Rule;
 
 class SolicitudAccesoVitiController extends Controller
 {
@@ -76,7 +75,8 @@ class SolicitudAccesoVitiController extends Controller
             ->latest('id');
 
         if ($status) {
-            $query->where('estado', Rule::enum($status, ['pendiente','en_revision','aprobada','rechazada']));
+            $query->whereIn('estado', ['pendiente','en_revision','aprobada','rechazada']);
+            $query->where('estado', $status);
         }
 
         return response()->json([
