@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{InvitacionCliente, SolicitudAccesoViti};
+use App\Models\{InvitacionCliente, PlanViti, SolicitudAccesoViti};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -18,8 +18,18 @@ class SolicitudAccesoVitiController extends Controller
             'whatsapp' => ['nullable','string','regex:/^[0-9]{7,15}$/'],
             'negocio' => ['required','string','min:2','max:180'],
             'actividad' => ['nullable','string','max:180'],
+            'plan_codigo' => ['nullable','string','max:60'],
+            'modalidad' => ['nullable','in:mensual,anual'],
             'mensaje' => ['nullable','string','max:2500'],
         ]);
+
+        if (!empty($data['plan_codigo'])) {
+            abort_unless(
+                PlanViti::query()->where('codigo', $data['plan_codigo'])->where('activo', true)->exists(),
+                422,
+                'El plan seleccionado ya no está disponible.'
+            );
+        }
 
         $recent = SolicitudAccesoViti::query()
             ->where('telefono', $data['telefono'])
@@ -43,6 +53,8 @@ class SolicitudAccesoVitiController extends Controller
             'data' => [
                 'id' => $access->id,
                 'estado' => $access->estado,
+                'plan_codigo' => $access->plan_codigo,
+                'modalidad' => $access->modalidad,
             ],
         ], 201);
     }
@@ -71,7 +83,7 @@ class SolicitudAccesoVitiController extends Controller
         $status = $request->input('estado');
 
         $query = SolicitudAccesoViti::query()
-            ->with('revisor:id,nombre,apellido,usuario')
+            ->with(['revisor:id,nombre,apellido,usuario','plan:id,codigo,nombre,precio_mensual,precio_anual'])
             ->latest('id');
 
         if ($status) {
@@ -81,6 +93,22 @@ class SolicitudAccesoVitiController extends Controller
 
         return response()->json([
             'data' => $query->paginate(min(max((int)$request->input('per_page', 30), 1), 100)),
+        ]);
+    }
+
+    public function markReview(Request $request, SolicitudAccesoViti $solicitud): JsonResponse
+    {
+        abort_if(in_array($solicitud->estado, ['aprobada','rechazada'], true), 422, 'Esta solicitud ya fue cerrada.');
+
+        $solicitud->update([
+            'estado' => 'en_revision',
+            'revisado_por' => $request->user()?->id,
+            'revisado_at' => now(),
+        ]);
+
+        return response()->json([
+            'message' => 'La solicitud quedó marcada como en revisión.',
+            'data' => $solicitud->fresh(['revisor','plan']),
         ]);
     }
 
@@ -113,7 +141,7 @@ class SolicitudAccesoVitiController extends Controller
                 'notas' => $data['notas'] ?? $locked->notas,
             ]);
 
-            return [$locked->fresh(), $invitation];
+            return [$locked->fresh(['revisor','plan']), $invitation];
         });
 
         [$access, $invitation] = $result;
@@ -146,7 +174,7 @@ class SolicitudAccesoVitiController extends Controller
 
         return response()->json([
             'message' => 'Solicitud de acceso rechazada.',
-            'data' => $solicitud->fresh(),
+            'data' => $solicitud->fresh(['revisor','plan']),
         ]);
     }
 
