@@ -205,6 +205,59 @@ class FeatureGateSubscriptionHardeningTest extends TestCase
         ]);
     }
 
+    public function test_annual_first_payment_extends_one_full_year(): void
+    {
+        Carbon::setTestNow('2027-09-07 10:00:00');
+        $tenant = $this->createTenant('ANNUAL-FIRST');
+        $tenant['plan']->update(['precio_anual'=>1290]);
+        $subscription = Suscripcion::create([
+            'aplicacion_id'=>$tenant['app']->id,
+            'empresa_id'=>$tenant['company']->id,
+            'plan'=>$tenant['plan']->nombre,
+            'monto'=>1290,
+            'frecuencia'=>'anual',
+            'moneda'=>'BOB',
+            'fecha_inicio'=>'2026-08-24',
+            'prueba_hasta'=>'2026-09-06',
+            'primer_cobro_monto'=>1290,
+            'primer_cobro_desde'=>'2026-09-07',
+            'primer_cobro_hasta'=>'2027-09-06',
+            'primer_cobro_pagado'=>false,
+            'fecha_vencimiento'=>'2026-09-07',
+            'dias_gracia'=>7,
+            'estado'=>'suspendida',
+        ]);
+
+        $admin = Usuario::create([
+            'nombre'=>'Admin Anual',
+            'apellido'=>'VITI',
+            'usuario'=>'admin_annual_payment_test',
+            'telefono'=>'70000082',
+            'password'=>'Password12345',
+            'rol'=>'superadmin',
+            'estado'=>'activo',
+        ]);
+
+        $payment = SuscripcionPago::create([
+            'suscripcion_id'=>$subscription->id,
+            'empresa_id'=>$tenant['company']->id,
+            'monto'=>1290,
+            'metodo'=>'qr',
+            'fecha_pago'=>'2027-09-07',
+            'estado_revision'=>'pendiente_revision',
+            'origen'=>'cliente',
+        ]);
+
+        $this->actingAs($admin,'sanctum')
+            ->postJson('/api/v1/pagos/suscripcion-pagos/'.$payment->id.'/confirmar')
+            ->assertOk();
+
+        $subscription->refresh();
+        $this->assertSame('2028-09-06',$subscription->fecha_vencimiento?->format('Y-m-d'));
+        $this->assertTrue((bool)$subscription->primer_cobro_pagado);
+        $this->assertSame('activa',$subscription->estado);
+    }
+
     private function subscription(array $tenant, string $due, int $grace): Suscripcion
     {
         return Suscripcion::create([
