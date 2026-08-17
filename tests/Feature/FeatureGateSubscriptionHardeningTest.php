@@ -140,6 +140,7 @@ class FeatureGateSubscriptionHardeningTest extends TestCase
         $tenant['plan']->update(['precio_mensual'=>129]);
         $subscription = $this->subscription($tenant, '2026-09-18', 3);
         $subscription->update([
+            'primer_cobro_monto'=>129,
             'prueba_hasta'=>'2026-08-18',
             'primer_cobro_desde'=>'2026-08-19',
             'primer_cobro_hasta'=>'2026-09-18',
@@ -165,6 +166,7 @@ class FeatureGateSubscriptionHardeningTest extends TestCase
         $tenant['plan']->update(['precio_mensual'=>129]);
         $subscription = $this->subscription($tenant, '2026-08-20', 3);
         $subscription->update([
+            'primer_cobro_monto'=>129,
             'primer_cobro_desde'=>'2026-08-21',
             'primer_cobro_hasta'=>'2026-09-20',
             'primer_cobro_pagado'=>false,
@@ -209,7 +211,6 @@ class FeatureGateSubscriptionHardeningTest extends TestCase
     {
         Carbon::setTestNow('2027-09-07 10:00:00');
         $tenant = $this->createTenant('ANNUAL-FIRST');
-        $tenant['plan']->update(['precio_anual'=>1290]);
         $subscription = Suscripcion::create([
             'aplicacion_id'=>$tenant['app']->id,
             'empresa_id'=>$tenant['company']->id,
@@ -255,6 +256,57 @@ class FeatureGateSubscriptionHardeningTest extends TestCase
         $subscription->refresh();
         $this->assertSame('2028-09-06',$subscription->fecha_vencimiento?->format('Y-m-d'));
         $this->assertTrue((bool)$subscription->primer_cobro_pagado);
+        $this->assertSame('activa',$subscription->estado);
+    }
+
+    public function test_monthly_renewal_extends_one_month_from_current_due_date(): void
+    {
+        Carbon::setTestNow('2026-10-01 10:00:00');
+        $tenant = $this->createTenant('MONTHLY-RENEWAL');
+        $subscription = Suscripcion::create([
+            'aplicacion_id'=>$tenant['app']->id,
+            'empresa_id'=>$tenant['company']->id,
+            'plan'=>$tenant['plan']->nombre,
+            'monto'=>129,
+            'frecuencia'=>'mensual',
+            'moneda'=>'BOB',
+            'fecha_inicio'=>'2026-08-01',
+            'prueba_hasta'=>null,
+            'primer_cobro_monto'=>null,
+            'primer_cobro_desde'=>null,
+            'primer_cobro_hasta'=>null,
+            'primer_cobro_pagado'=>true,
+            'fecha_vencimiento'=>'2026-09-30',
+            'dias_gracia'=>3,
+            'estado'=>'suspendida',
+        ]);
+
+        $admin = Usuario::create([
+            'nombre'=>'Admin Mensual',
+            'apellido'=>'VITI',
+            'usuario'=>'admin_monthly_renewal_test',
+            'telefono'=>'70000083',
+            'password'=>'Password12345',
+            'rol'=>'superadmin',
+            'estado'=>'activo',
+        ]);
+
+        $payment = SuscripcionPago::create([
+            'suscripcion_id'=>$subscription->id,
+            'empresa_id'=>$tenant['company']->id,
+            'monto'=>129,
+            'metodo'=>'qr',
+            'fecha_pago'=>'2026-10-01',
+            'estado_revision'=>'pendiente_revision',
+            'origen'=>'cliente',
+        ]);
+
+        $this->actingAs($admin,'sanctum')
+            ->postJson('/api/v1/pagos/suscripcion-pagos/'.$payment->id.'/confirmar')
+            ->assertOk();
+
+        $subscription->refresh();
+        $this->assertSame('2026-10-30',$subscription->fecha_vencimiento?->format('Y-m-d'));
         $this->assertSame('activa',$subscription->estado);
     }
 
