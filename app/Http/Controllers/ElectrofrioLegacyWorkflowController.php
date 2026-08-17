@@ -18,6 +18,7 @@ class ElectrofrioLegacyWorkflowController extends Controller
         $id = (int) data_get($response->getData(true), 'data.id');
         if ($id > 0) {
             $this->setState($request, $empresa->id, $id, null, 'cita_programada', 'creacion', 'Servicio registrado desde una interfaz compatible.');
+            return $this->refreshOrderResponse($response, $empresa->id, $id);
         }
         return $response;
     }
@@ -31,7 +32,7 @@ class ElectrofrioLegacyWorkflowController extends Controller
         $after = $this->order($empresa->id, $id);
         $target = $this->stateFromLegacyOrder($after);
         $this->setState($request, $empresa->id, $id, $previous, $target, 'compatibilidad', 'El estado se sincronizó desde la edición compatible de la orden.');
-        return $response;
+        return $this->refreshOrderResponse($response, $empresa->id, $id);
     }
 
     public function decision(Request $request, TenantContext $tenants, int $id): JsonResponse
@@ -50,7 +51,7 @@ class ElectrofrioLegacyWorkflowController extends Controller
             $this->setState($request, $empresa->id, $id, $previous, 'no_aprobado', 'compatibilidad', $reason ?: 'El cliente no aprobó la propuesta.');
         }
 
-        return $response;
+        return $this->refreshOrderResponse($response, $empresa->id, $id);
     }
 
     public function finalizar(Request $request, TenantContext $tenants, int $id): JsonResponse
@@ -84,7 +85,7 @@ class ElectrofrioLegacyWorkflowController extends Controller
             'estado_final' => $target,
         ]);
 
-        return response()->json(['data' => $this->order($empresa->id, $id)]);
+        return $this->refreshOrderResponse($response, $empresa->id, $id);
     }
 
     public function pago(Request $request, TenantContext $tenants, int $id): JsonResponse
@@ -181,6 +182,16 @@ class ElectrofrioLegacyWorkflowController extends Controller
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+    }
+
+    private function refreshOrderResponse(JsonResponse $response, int $empresaId, int $id): JsonResponse
+    {
+        $payload = $response->getData(true);
+        $existing = data_get($payload, 'data');
+        if (is_array($existing)) {
+            $payload['data'] = array_replace($existing, (array) $this->order($empresaId, $id));
+        }
+        return response()->json($payload, $response->getStatusCode());
     }
 
     private function order(int $empresaId, int $id): object
