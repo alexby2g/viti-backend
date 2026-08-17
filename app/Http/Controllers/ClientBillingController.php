@@ -16,8 +16,62 @@ class ClientBillingController extends Controller
         $tenants->assertCanManage($request->user(),$empresa);
         $empresa->loadMissing('planViti');
 
-        $projects = Proyecto::query()
-            ->where('empresa_id',$empresa->id)
+        $projects = $this->projectRows($empresa->id, $access);
+        $config = ConfiguracionPago::query()->where('activo',true)->first();
+        return response()->json(['data'=>[
+            'negocio'=>[
+                'id'=>$empresa->id,
+                'nombre_comercial'=>$empresa->nombre_comercial,
+                'metodo_pago_preferido'=>$empresa->metodo_pago_preferido ?: 'qr',
+            ],
+            'plan'=> $this->planRow($empresa->planViti),
+            'uso'=>$features->snapshot($empresa),
+            'configuracion'=>$config ? $this->configRow($config) : null,
+            'proyectos'=>$projects,
+        ]]);
+    }
+
+    public function plan(Request $request, FeatureGateService $features, SubscriptionAccessService $access, TenantContext $tenants): JsonResponse
+    {
+        $empresa = $tenants->resolve($request);
+        $tenants->assertCanManage($request->user(),$empresa);
+        $empresa->loadMissing('planViti');
+
+        $subscriptions = $empresa->aplicaciones()
+            ->with('suscripcion')
+            ->whereHas('suscripcion')
+            ->get()
+            ->map(fn ($app) => [
+                'aplicacion_id'=>$app->id,
+                'aplicacion'=>$app->nombre,
+                'suscripcion'=>$access->statusFor($app),
+            ])
+            ->values();
+
+        return response()->json(['data'=>[
+            'negocio'=>['id'=>$empresa->id,'nombre_comercial'=>$empresa->nombre_comercial],
+            'plan'=>$this->planRow($empresa->planViti),
+            'uso'=>$features->snapshot($empresa),
+            'suscripciones'=>$subscriptions,
+        ]]);
+    }
+
+    private function planRow($plan): ?array
+    {
+        if (!$plan) return null;
+        return [
+            'id'=>$plan->id,'codigo'=>$plan->codigo,'nombre'=>$plan->nombre,'descripcion'=>$plan->descripcion,
+            'precio_mensual'=>$plan->precio_mensual !== null ? (float)$plan->precio_mensual : null,
+            'precio_anual'=>$plan->precio_anual !== null ? (float)$plan->precio_anual : null,
+            'dias_prueba'=>$plan->dias_prueba,'modulos'=>$plan->modulos,
+            'max_usuarios'=>$plan->max_usuarios,'max_aplicaciones'=>$plan->max_aplicaciones,
+        ];
+    }
+
+    private function projectRows(int $empresaId, SubscriptionAccessService $access)
+    {
+        return Proyecto::query()
+            ->where('empresa_id',$empresaId)
             ->with([
                 'empresa:id,nombre_comercial,metodo_pago_preferido',
                 'aplicacion'=>fn($q)=>$q->with('suscripcion.pagos.pagador:id,nombre,apellido,usuario,telefono'),
@@ -80,31 +134,7 @@ class ClientBillingController extends Controller
                     ] : null,
                     'pagos_suscripcion'=>$subscriptionModel?->pagos?->values() ?? [],
                 ];
-            });
-
-        $config = ConfiguracionPago::query()->where('activo',true)->first();
-        return response()->json(['data'=>[
-            'negocio'=>[
-                'id'=>$empresa->id,
-                'nombre_comercial'=>$empresa->nombre_comercial,
-                'metodo_pago_preferido'=>$empresa->metodo_pago_preferido ?: 'qr',
-            ],
-            'plan'=> $empresa->planViti ? [
-                'id'=>$empresa->planViti->id,
-                'codigo'=>$empresa->planViti->codigo,
-                'nombre'=>$empresa->planViti->nombre,
-                'descripcion'=>$empresa->planViti->descripcion,
-                'precio_mensual'=>$empresa->planViti->precio_mensual !== null ? (float)$empresa->planViti->precio_mensual : null,
-                'precio_anual'=>$empresa->planViti->precio_anual !== null ? (float)$empresa->planViti->precio_anual : null,
-                'dias_prueba'=>$empresa->planViti->dias_prueba,
-                'modulos'=>$empresa->planViti->modulos,
-                'max_usuarios'=>$empresa->planViti->max_usuarios,
-                'max_aplicaciones'=>$empresa->planViti->max_aplicaciones,
-            ] : null,
-            'uso'=>$features->snapshot($empresa),
-            'configuracion'=>$config ? $this->configRow($config) : null,
-            'proyectos'=>$projects->values(),
-        ]]);
+            })->values();
     }
 
     private function configRow(ConfiguracionPago $config): array
