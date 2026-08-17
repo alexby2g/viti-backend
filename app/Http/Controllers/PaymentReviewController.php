@@ -82,9 +82,6 @@ class PaymentReviewController extends Controller
             return $completed;
         }, 3);
 
-        // Solo se refresca el estado de acceso cuando el cobro quedó completamente
-        // satisfecho. Un pago parcial no debe convertir una suscripción suspendida
-        // o en gracia en activa.
         if ($paymentCompleted) {
             $subscription = Suscripcion::query()->findOrFail($subscriptionId);
             $access->refresh($subscription);
@@ -162,8 +159,6 @@ class PaymentReviewController extends Controller
         }
 
         if(!$firstPaymentDone && $subscription->primer_cobro_monto !== null){
-            // Un pago parcial confirma el comprobante, pero no compra vigencia ni
-            // cambia el estado de acceso. El saldo pendiente se conserva.
             $subscription->update(['primer_cobro_pagado'=>false]);
             return false;
         }
@@ -174,10 +169,14 @@ class PaymentReviewController extends Controller
                 ? $base->addYear()
                 : $base->addMonthNoOverflow();
         } else {
-            $base=$subscription->fecha_vencimiento && $subscription->fecha_vencimiento->isFuture()
+            // Renovaciones posteriores conservan el calendario contractual aunque
+            // el cliente pague después de la fecha de vencimiento.
+            $base=$subscription->fecha_vencimiento
                 ? $subscription->fecha_vencimiento->copy()
                 : Carbon::parse($payment->fecha_pago);
-            $nextDue=$subscription->frecuencia==='anual'?$base->addYear():$base->addMonthNoOverflow();
+            $nextDue=$subscription->frecuencia==='anual'
+                ? $base->addYear()
+                : $base->addMonthNoOverflow();
         }
 
         $subscription->update([
