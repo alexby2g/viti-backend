@@ -66,7 +66,7 @@ class PaymentReviewController extends Controller
         $paymentId = (int) $pago->id;
         $subscriptionId = (int) $pago->suscripcion_id;
 
-        DB::transaction(function () use ($request,$paymentId,$subscriptionId): void {
+        $paymentCompleted = DB::transaction(function () use ($request,$paymentId,$subscriptionId): bool {
             $subscription = Suscripcion::query()->lockForUpdate()->findOrFail($subscriptionId);
             $locked = SuscripcionPago::query()->lockForUpdate()->findOrFail($paymentId);
             abort_unless($locked->estado_revision === 'pendiente_revision',422,'Este comprobante ya fue revisado.');
@@ -77,14 +77,23 @@ class PaymentReviewController extends Controller
                 'revisado_por'=>$request->user()->id,
                 'motivo_revision'=>null,
             ]);
-            $this->applySubscriptionPayment($subscription,$locked);
+            $completed = $this->applySubscriptionPayment($subscription,$locked);
             Empresa::whereKey($locked->empresa_id)->update(['metodo_pago_preferido'=>$locked->metodo]);
+            return $completed;
         }, 3);
 
-        $subscription = Suscripcion::query()->findOrFail($subscriptionId);
-        $access->refresh($subscription);
+        // Solo se refresca el estado de acceso cuando el cobro quedó completamente
+        // satisfecho. Un pago parcial no debe convertir una suscripción suspendida
+        // o en gracia en activa.
+        if ($paymentCompleted) {
+            $subscription = Suscripcion::query()->findOrFail($subscriptionId);
+            $access->refresh($subscription);
+        }
+
         return response()->json([
-            'message'=>'Pago de suscripción confirmado. La vigencia fue actualizada.',
+            'message'=>$paymentCompleted
+                ? 'Pago de suscripción confirmado. La vigencia fue actualizada.'
+                : 'Pago de suscripción confirmado como abono. La vigencia no cambia hasta completar el primer cobro.',
             'data'=>SuscripcionPago::query()->findOrFail($paymentId)->load(['pagador:id,nombre,apellido','revisor:id,nombre,apellido']),
         ]);
     }
@@ -140,7 +149,7 @@ class PaymentReviewController extends Controller
         $project->update(['estado_pago'=>$status]);
     }
 
-    private function applySubscriptionPayment(Suscripcion $subscription, SuscripcionPago $payment): void
+    private function applySubscriptionPayment(Suscripcion $subscription, SuscripcionPago $payment): bool
     {
         if ($subscription->estado === 'cancelada') {
             abort(422, 'No se puede aplicar un pago a una suscripción cancelada.');
@@ -156,7 +165,7 @@ class PaymentReviewController extends Controller
             // Un pago parcial confirma el comprobante, pero no compra vigencia ni
             // cambia el estado de acceso. El saldo pendiente se conserva.
             $subscription->update(['primer_cobro_pagado'=>false]);
-            return;
+            return false;
         }
 
         if ($subscription->primer_cobro_hasta && !$subscription->primer_cobro_pagado) {
@@ -173,6 +182,7 @@ class PaymentReviewController extends Controller
             'primer_cobro_pagado'=>$firstPaymentDone,
             'estado'=>'activa',
         ]);
+        return true;
     }
 
     private function streamProof(?string $path, ?string $name, ?string $mime): StreamedResponse
