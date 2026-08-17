@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\DB;
 
 class ElectrofrioDashboardOperativoController extends Controller
 {
+    private const CLOSED_STATES = ['finalizado','no_aprobado','cancelado'];
+
     public function __invoke(Request $request, TenantContext $tenants): JsonResponse
     {
         $empresa = $this->empresa($request, $tenants);
@@ -27,10 +29,10 @@ class ElectrofrioDashboardOperativoController extends Controller
             ->leftJoin('electrofrio_tecnicos as t', 't.id', '=', 'o.tecnico_id')
             ->where('o.empresa_id', $empresa->id)
             ->whereDate('o.fecha_cita', $today)
-            ->where('o.etapa', '!=', 'cerrada')
+            ->whereNotIn('o.estado_actual', self::CLOSED_STATES)
             ->orderBy('o.hora_cita')
             ->select(
-                'o.id', 'o.codigo', 'o.hora_cita', 'o.etapa', 'o.prioridad', 'o.problema_reportado',
+                'o.id', 'o.codigo', 'o.hora_cita', 'o.etapa', 'o.estado_actual', 'o.prioridad', 'o.problema_reportado',
                 'c.nombre as cliente_nombre', 'e.tipo as equipo_tipo', 'e.marca as equipo_marca',
                 'e.modelo as equipo_modelo', 't.nombre as tecnico_nombre'
             )
@@ -41,7 +43,7 @@ class ElectrofrioDashboardOperativoController extends Controller
             ->join('electrofrio_clientes as c', 'c.id', '=', 'o.cliente_id')
             ->where('o.empresa_id', $empresa->id)
             ->orderByDesc('o.id')
-            ->select('o.id', 'o.codigo', 'o.etapa', 'o.fecha_cita', 'o.tipo_servicio', 'c.nombre as cliente_nombre')
+            ->select('o.id', 'o.codigo', 'o.etapa', 'o.estado_actual', 'o.fecha_cita', 'o.tipo_servicio', 'c.nombre as cliente_nombre')
             ->limit(6)
             ->get();
 
@@ -50,11 +52,21 @@ class ElectrofrioDashboardOperativoController extends Controller
                 'id' => $empresa->id,
                 'nombre_comercial' => $empresa->nombre_comercial,
             ],
-            'citas_hoy' => (clone $orders)->whereDate('fecha_cita', $today)->where('etapa', '!=', 'cerrada')->count(),
-            'pendientes_diagnostico' => (clone $orders)->where('etapa', 'cita')->count(),
-            'esperando_aprobacion' => (clone $orders)->where('etapa', 'propuesta')->where('decision_cliente', 'pendiente')->count(),
-            'servicios_activos' => (clone $orders)->where('etapa', 'servicio')->count(),
-            'ordenes_abiertas' => (clone $orders)->where('etapa', '!=', 'cerrada')->count(),
+            'citas_hoy' => (clone $orders)
+                ->whereDate('fecha_cita', $today)
+                ->whereNotIn('estado_actual', self::CLOSED_STATES)
+                ->count(),
+            'pendientes_diagnostico' => (clone $orders)
+                ->whereIn('estado_actual', ['cita_programada','en_visita'])
+                ->count(),
+            'esperando_aprobacion' => (clone $orders)
+                ->whereIn('estado_actual', ['propuesta_enviada','esperando_aprobacion'])
+                ->count(),
+            'servicios_activos' => (clone $orders)
+                ->whereIn('estado_actual', ['aprobado','servicio_en_proceso','servicio_terminado','pendiente_pago'])
+                ->count(),
+            'pendientes_pago' => $has('pagos') ? (clone $orders)->where('estado_actual','pendiente_pago')->count() : null,
+            'ordenes_abiertas' => (clone $orders)->whereNotIn('estado_actual', self::CLOSED_STATES)->count(),
             'por_cobrar' => $has('pagos') ? max(0,
                 (float) (clone $orders)->sum('total') - (float) (clone $payments)->sum('monto')
             ) : null,
