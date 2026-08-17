@@ -19,4 +19,5 @@ class PlanViti extends Model
         'max_aplicaciones'=>'integer',
     ];
     public function empresas(){ return $this->hasMany(Empresa::class,'plan_viti_id'); }
+    public function solicitudesAcceso(){ return $this->hasMany(SolicitudAccesoViti::class,'plan_codigo','codigo'); }
 }
