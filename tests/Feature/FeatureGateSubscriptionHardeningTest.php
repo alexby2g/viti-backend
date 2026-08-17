@@ -4,7 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Suscripcion;
 use App\Models\SuscripcionPago;
-use App\Http\Controllers\PaymentReviewController;
+use App\Models\Usuario;
 use App\Services\SubscriptionAccessService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -171,25 +171,37 @@ class FeatureGateSubscriptionHardeningTest extends TestCase
             'estado'=>'suspendida',
         ]);
 
+        $admin = Usuario::create([
+            'nombre'=>'Admin Pago',
+            'apellido'=>'VITI',
+            'usuario'=>'admin_pago_test',
+            'telefono'=>'70000081',
+            'password'=>'Password12345',
+            'rol'=>'superadmin',
+            'estado'=>'activo',
+        ]);
+
         $payment = SuscripcionPago::create([
             'suscripcion_id'=>$subscription->id,
             'empresa_id'=>$tenant['company']->id,
             'monto'=>50,
             'metodo'=>'qr',
             'fecha_pago'=>'2026-08-20',
-            'estado_revision'=>'confirmado',
-            'origen'=>'admin',
+            'estado_revision'=>'pendiente_revision',
+            'origen'=>'cliente',
         ]);
 
-        app(PaymentReviewController::class)->confirmarSuscripcion(
-            request()->setUserResolver(fn () => $tenant['user']),
-            $payment,
-            app(SubscriptionAccessService::class),
-        );
+        $this->actingAs($admin,'sanctum')
+            ->postJson('/api/v1/pagos/suscripcion-pagos/'.$payment->id.'/confirmar')
+            ->assertOk();
 
         $subscription->refresh();
         $this->assertSame('2026-08-20',$subscription->fecha_vencimiento?->format('Y-m-d'));
         $this->assertFalse((bool)$subscription->primer_cobro_pagado);
+        $this->assertDatabaseHas('suscripcion_pagos',[
+            'id'=>$payment->id,
+            'estado_revision'=>'confirmado',
+        ]);
     }
 
     private function subscription(array $tenant, string $due, int $grace): Suscripcion
