@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{Aplicacion,Empresa};
+use App\Models\{Aplicacion,ElectrofrioConfiguracion,Empresa};
 use App\Services\{SubscriptionAccessService,TenantContext};
 use App\Support\Audit;
 use Illuminate\Http\{JsonResponse,Request};
@@ -12,14 +12,15 @@ use Illuminate\Validation\Rule;
 class ElectrofrioPagoOperativoController extends Controller
 {
     private const TYPES = ['anticipo','abono','saldo'];
-    private const METHODS = ['efectivo','qr','transferencia','tarjeta','otro'];
+    private const DEFAULT_METHODS = ['efectivo','qr','transferencia','tarjeta','otro'];
 
     public function index(Request $request,TenantContext $tenants):JsonResponse
     {
         $empresa=$this->empresa($request,$tenants);
+        $methods=$this->paymentMethods($empresa->id);
         $data=$request->validate([
             'buscar'=>['nullable','string','max:160'],'tipo'=>['nullable',Rule::in(self::TYPES)],
-            'metodo'=>['nullable',Rule::in(self::METHODS)],'estado'=>['nullable',Rule::in(['pagado','anulado'])],
+            'metodo'=>['nullable',Rule::in($methods)],'estado'=>['nullable',Rule::in(['pagado','anulado'])],
             'orden_id'=>['nullable','integer','min:1'],'desde'=>['nullable','date'],'hasta'=>['nullable','date','after_or_equal:desde'],
         ]);
         $query=DB::table('electrofrio_pagos as p')->join('electrofrio_ordenes as o','o.id','=','p.orden_id')
@@ -31,13 +32,16 @@ class ElectrofrioPagoOperativoController extends Controller
         if(!empty($data['hasta']))$query->whereDate('p.pagado_at','<=',$data['hasta']);
         $items=$query->orderByDesc('p.pagado_at')->orderByDesc('p.id')->limit(1000)->get();
         $paid=DB::table('electrofrio_pagos')->where('empresa_id',$empresa->id)->where('estado','pagado');
-        return response()->json(['data'=>$items,'meta'=>['resumen'=>[
-            'cobrado'=>(float)(clone $paid)->sum('monto'),
-            'anticipos'=>(float)(clone $paid)->where('tipo','anticipo')->sum('monto'),
-            'abonos'=>(float)(clone $paid)->where('tipo','abono')->sum('monto'),
-            'saldos'=>(float)(clone $paid)->where('tipo','saldo')->sum('monto'),
-            'anulados'=>DB::table('electrofrio_pagos')->where('empresa_id',$empresa->id)->where('estado','anulado')->count(),
-        ]]]);
+        return response()->json(['data'=>$items,'meta'=>[
+            'metodos_pago'=>$methods,
+            'resumen'=>[
+                'cobrado'=>(float)(clone $paid)->sum('monto'),
+                'anticipos'=>(float)(clone $paid)->where('tipo','anticipo')->sum('monto'),
+                'abonos'=>(float)(clone $paid)->where('tipo','abono')->sum('monto'),
+                'saldos'=>(float)(clone $paid)->where('tipo','saldo')->sum('monto'),
+                'anulados'=>DB::table('electrofrio_pagos')->where('empresa_id',$empresa->id)->where('estado','anulado')->count(),
+            ],
+        ]]);
     }
 
     public function referencias(Request $request,TenantContext $tenants):JsonResponse
@@ -65,15 +69,16 @@ class ElectrofrioPagoOperativoController extends Controller
                 return $item;
             });
 
-        return response()->json(['data'=>$items]);
+        return response()->json(['data'=>$items,'meta'=>['metodos_pago'=>$this->paymentMethods($empresa->id)]]);
     }
 
     public function guardar(Request $request,TenantContext $tenants,int $id):JsonResponse
     {
         $empresa=$this->empresa($request,$tenants);
+        $methods=$this->paymentMethods($empresa->id);
         $data=$request->validate([
             'monto'=>['required','numeric','gt:0'],'tipo'=>['required',Rule::in(self::TYPES)],
-            'metodo'=>['required',Rule::in(self::METHODS)],'referencia'=>['nullable','string','max:120'],
+            'metodo'=>['required',Rule::in($methods)],'referencia'=>['nullable','string','max:120'],
             'notas'=>['nullable','string','max:2000'],'idempotency_key'=>['required','string','min:16','max:64'],
         ]);
         $result=DB::transaction(function()use($empresa,$request,$data,$id):array{
@@ -98,7 +103,7 @@ class ElectrofrioPagoOperativoController extends Controller
             ]);
             return ['payment'=>DB::table('electrofrio_pagos')->find($paymentId),'created'=>true];
         });
-        if($result['created'])Audit::log($request,'electrofrio_pago_registrado',null,'Se registró un pago en una orden de Electrofrío.',['orden_id'=>$id,'pago_id'=>$result['payment']->id,'tipo'=>$result['payment']->tipo]);
+        if($result['created'])Audit::log($request,'electrofrio_pago_registrado',null,'Se registró un pago en una orden del sistema de aire acondicionado.',['orden_id'=>$id,'pago_id'=>$result['payment']->id,'tipo'=>$result['payment']->tipo]);
         return response()->json(['data'=>$result['payment'],'message'=>$result['created']?'Pago registrado.':'El pago ya había sido procesado.'],$result['created']?201:200);
     }
 
@@ -113,8 +118,16 @@ class ElectrofrioPagoOperativoController extends Controller
             DB::table('electrofrio_pagos')->where('id',$item->id)->update(['estado'=>'anulado','anulado_at'=>now(),'anulado_por'=>$request->user()->id,'motivo_anulacion'=>trim($data['motivo']),'updated_at'=>now()]);
             return ['payment'=>DB::table('electrofrio_pagos')->find($item->id),'changed'=>true];
         });
-        if($result['changed'])Audit::log($request,'electrofrio_pago_anulado',null,'Se anuló un pago de Electrofrío sin borrar su trazabilidad.',['pago_id'=>$result['payment']->id,'orden_id'=>$result['payment']->orden_id]);
+        if($result['changed'])Audit::log($request,'electrofrio_pago_anulado',null,'Se anuló un pago del sistema de aire acondicionado sin borrar su trazabilidad.',['pago_id'=>$result['payment']->id,'orden_id'=>$result['payment']->orden_id]);
         return response()->json(['data'=>$result['payment'],'message'=>$result['changed']?'Pago anulado.':'El pago ya estaba anulado.']);
+    }
+
+    private function paymentMethods(int $empresaId):array
+    {
+        $config=ElectrofrioConfiguracion::query()->where('empresa_id',$empresaId)->first();
+        $methods=is_array($config?->metodos_pago)?$config->metodos_pago:self::DEFAULT_METHODS;
+        $methods=array_values(array_unique(array_filter(array_map(fn($value)=>strtolower(trim((string)$value)),$methods))));
+        return $methods?:self::DEFAULT_METHODS;
     }
 
     private function empresa(Request $request,TenantContext $tenants):Empresa
@@ -122,8 +135,9 @@ class ElectrofrioPagoOperativoController extends Controller
         $empresa=$tenants->resolve($request);$tenants->assertCanUse($request->user(),$empresa,'pagos');
         if(!$request->user()->isPlatformAdmin()){
             $app=Aplicacion::query()->where('empresa_id',$empresa->id)->whereHas('catalogo',fn($q)=>$q->where('clave','electrofrio'))->with('suscripcion')->latest('id')->first();
-            abort_unless($app,404,'Este negocio no tiene Electrofrío asignado.');abort_unless((bool)$app->acceso_cliente,403,'Electrofrío todavía no fue entregado a este negocio.');
-            abort_unless($app->estado==='activo',403,'El acceso a Electrofrío está suspendido.');app(SubscriptionAccessService::class)->assertCanUse($app);
+            abort_unless($app,404,'Este negocio no tiene asignado el Sistema de Gestión de Servicios de Aire Acondicionado.');
+            abort_unless((bool)$app->acceso_cliente,403,'El sistema todavía no fue entregado a este negocio.');
+            abort_unless($app->estado==='activo',403,'El acceso al sistema está suspendido.');app(SubscriptionAccessService::class)->assertCanUse($app);
         }
         return $empresa;
     }

@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{Aplicacion,Empresa};
+use App\Models\{Aplicacion,ElectrofrioConfiguracion,Empresa};
 use App\Services\{SubscriptionAccessService,TenantContext};
 use App\Support\Audit;
 use Illuminate\Database\Query\Builder;
@@ -16,6 +16,10 @@ class ElectrofrioOrdenOperativaController extends Controller
     private const STAGES = ['cita', 'diagnostico', 'propuesta', 'servicio', 'cerrada'];
     private const PRIORITIES = ['baja', 'normal', 'alta', 'urgente'];
     private const DECISIONS = ['pendiente', 'aceptado', 'rechazado'];
+    private const DEFAULT_SERVICE_TYPES = [
+        'Diagnóstico','Mantenimiento preventivo','Mantenimiento correctivo','Reparación',
+        'Instalación','Desinstalación','Limpieza profunda','Carga de refrigerante',
+    ];
 
     public function index(Request $request, TenantContext $tenants): JsonResponse
     {
@@ -37,19 +41,29 @@ class ElectrofrioOrdenOperativaController extends Controller
         $this->applyFilters($query, $filters);
         $items = $query->orderByDesc('o.id')->limit(500)->get();
         $items = $this->hydrate($request, $tenants, $empresa, $items);
+        $config = ElectrofrioConfiguracion::query()->where('empresa_id', $empresa->id)->first();
+        $configuredTypes = is_array($config?->tipos_servicio) && $config->tipos_servicio
+            ? $config->tipos_servicio
+            : self::DEFAULT_SERVICE_TYPES;
+        $historicTypes = DB::table('electrofrio_ordenes')
+            ->where('empresa_id', $empresa->id)
+            ->whereNotNull('tipo_servicio')
+            ->where('tipo_servicio', '!=', '')
+            ->distinct()
+            ->orderBy('tipo_servicio')
+            ->pluck('tipo_servicio')
+            ->all();
 
         return response()->json([
             'data' => $items,
             'meta' => [
                 'resumen' => $this->summary($empresa->id),
-                'tipos_servicio' => DB::table('electrofrio_ordenes')
-                    ->where('empresa_id', $empresa->id)
-                    ->whereNotNull('tipo_servicio')
-                    ->where('tipo_servicio', '!=', '')
-                    ->distinct()
-                    ->orderBy('tipo_servicio')
-                    ->pluck('tipo_servicio')
+                'tipos_servicio' => collect([...$configuredTypes, ...$historicTypes])
+                    ->map(fn ($value) => trim((string) $value))
+                    ->filter()
+                    ->unique()
                     ->values(),
+                'garantia_dias_default' => (int) ($config?->garantia_dias_default ?? 0),
             ],
         ]);
     }
@@ -83,7 +97,7 @@ class ElectrofrioOrdenOperativaController extends Controller
             return $id;
         });
 
-        Audit::log($request, 'electrofrio_orden_tipo_servicio_definido', null, 'Se definió el tipo de servicio de una orden de Electrofrío.', [
+        Audit::log($request, 'electrofrio_orden_tipo_servicio_definido', null, 'Se definió el tipo de servicio de una orden del sistema de aire acondicionado.', [
             'orden_id' => $id,
             'tipo_servicio' => $tipo,
         ]);
@@ -109,7 +123,7 @@ class ElectrofrioOrdenOperativaController extends Controller
                 ->update(['tipo_servicio' => $tipo, 'updated_at' => now()]);
         });
 
-        Audit::log($request, 'electrofrio_orden_operativa_actualizada', null, 'Se actualizó una orden operativa de Electrofrío.', [
+        Audit::log($request, 'electrofrio_orden_operativa_actualizada', null, 'Se actualizó una orden operativa del sistema de aire acondicionado.', [
             'orden_id' => $id,
             'tipo_servicio' => $tipo,
         ]);
@@ -136,9 +150,9 @@ class ElectrofrioOrdenOperativaController extends Controller
                 ->latest('id')
                 ->first();
 
-            abort_unless($app, 404, 'Este negocio no tiene Electrofrío asignado.');
-            abort_unless((bool) $app->acceso_cliente, 403, 'Electrofrío todavía no fue entregado a este negocio.');
-            abort_unless($app->estado === 'activo', 403, 'El acceso a Electrofrío está suspendido.');
+            abort_unless($app, 404, 'Este negocio no tiene asignado el Sistema de Gestión de Servicios de Aire Acondicionado.');
+            abort_unless((bool) $app->acceso_cliente, 403, 'El sistema todavía no fue entregado a este negocio.');
+            abort_unless($app->estado === 'activo', 403, 'El acceso al sistema está suspendido.');
             app(SubscriptionAccessService::class)->assertCanUse($app);
         }
 
@@ -234,13 +248,20 @@ class ElectrofrioOrdenOperativaController extends Controller
             ->orderByDesc('id')
             ->get()
             ->groupBy('orden_id');
+        $defaultWarranty = (int) (ElectrofrioConfiguracion::query()
+            ->where('empresa_id', $empresa->id)
+            ->value('garantia_dias_default') ?? 0);
 
-        return $items->map(function ($order) use ($materials, $payments, $evidence) {
+        return $items->map(function ($order) use ($materials, $payments, $evidence, $defaultWarranty) {
             $order->materiales = ($materials[$order->id] ?? collect())->values();
             $order->pagos = ($payments[$order->id] ?? collect())->values();
             $order->evidencias = ($evidence[$order->id] ?? collect())->values();
             $order->pagado = (float) $order->pagos->sum('monto');
             $order->saldo = max(0, (float) $order->total - $order->pagado);
+            $order->garantia_dias_default = $defaultWarranty;
+            if ($order->etapa !== 'cerrada' && (int) ($order->garantia_dias ?? 0) === 0 && $defaultWarranty > 0) {
+                $order->garantia_dias = $defaultWarranty;
+            }
             return $order;
         });
     }

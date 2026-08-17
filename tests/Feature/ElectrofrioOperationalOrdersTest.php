@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\ElectrofrioConfiguracion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\{CreatesVitiTenants,TestCase};
@@ -62,6 +63,39 @@ class ElectrofrioOperationalOrdersTest extends TestCase
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.id', $orderId)
             ->assertJsonPath('meta.resumen.propuesta', 1);
+    }
+
+    public function test_operational_options_follow_business_configuration(): void
+    {
+        $tenant = $this->createTenant('OPS-CONFIG');
+        [$clientId, $equipmentId, $technicianId] = $this->catalog($tenant['company']->id, 'CONFIG');
+        $headers = ['X-VITI-Empresa' => (string) $tenant['company']->id];
+
+        ElectrofrioConfiguracion::create([
+            'empresa_id' => $tenant['company']->id,
+            'tipos_servicio' => ['Inspección técnica', 'Instalación empresarial'],
+            'garantia_dias_default' => 45,
+            'actualizado_por' => $tenant['user']->id,
+        ]);
+
+        $created = $this->actingAs($tenant['user'])
+            ->postJson('/api/v1/mi/apps/electrofrio/ordenes-operativas', array_replace(
+                $this->orderPayload($clientId, $equipmentId, $technicianId),
+                ['tipo_servicio' => 'Inspección técnica']
+            ), $headers)
+            ->assertCreated()
+            ->assertJsonPath('data.tipo_servicio', 'Inspección técnica')
+            ->assertJsonPath('data.garantia_dias', 45)
+            ->assertJsonPath('data.garantia_dias_default', 45)
+            ->json('data');
+
+        $this->actingAs($tenant['user'])
+            ->getJson('/api/v1/mi/apps/electrofrio/ordenes-operativas', $headers)
+            ->assertOk()
+            ->assertJsonPath('meta.tipos_servicio.0', 'Inspección técnica')
+            ->assertJsonPath('meta.tipos_servicio.1', 'Instalación empresarial')
+            ->assertJsonPath('meta.garantia_dias_default', 45)
+            ->assertJsonPath('data.0.id', $created['id']);
     }
 
     public function test_order_detail_is_isolated_between_companies(): void
