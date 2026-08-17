@@ -87,6 +87,19 @@ class SaasController extends Controller
 
     public function planes(): JsonResponse { return response()->json(['data'=>PlanViti::orderBy('id')->get()]); }
 
+    public function publicPlanes(): JsonResponse
+    {
+        $plans = PlanViti::query()
+            ->where('activo', true)
+            ->orderBy('id')
+            ->get([
+                'id','codigo','nombre','descripcion','precio_proyecto','precio_mensual','precio_anual',
+                'dias_prueba','modulos','max_usuarios','max_aplicaciones','activo',
+            ]);
+
+        return response()->json(['data'=>$plans->values()]);
+    }
+
     public function guardarPlan(Request $request, ?PlanViti $plan = null): JsonResponse
     {
         $data = $request->validate([
