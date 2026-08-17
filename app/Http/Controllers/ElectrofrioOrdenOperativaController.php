@@ -14,6 +14,10 @@ use Illuminate\Validation\Rule;
 class ElectrofrioOrdenOperativaController extends Controller
 {
     private const STAGES = ['cita', 'diagnostico', 'propuesta', 'servicio', 'cerrada'];
+    private const OPERATIONAL_STATES = [
+        'cita_programada','en_visita','diagnostico_realizado','propuesta_enviada','esperando_aprobacion',
+        'aprobado','no_aprobado','servicio_en_proceso','servicio_terminado','pendiente_pago','finalizado','cancelado',
+    ];
     private const PRIORITIES = ['baja', 'normal', 'alta', 'urgente'];
     private const DECISIONS = ['pendiente', 'aceptado', 'rechazado'];
     private const DEFAULT_SERVICE_TYPES = [
@@ -27,6 +31,7 @@ class ElectrofrioOrdenOperativaController extends Controller
         $filters = $request->validate([
             'buscar' => ['nullable', 'string', 'max:160'],
             'etapa' => ['nullable', Rule::in(self::STAGES)],
+            'estado' => ['nullable', Rule::in(self::OPERATIONAL_STATES)],
             'cliente_id' => ['nullable', 'integer', 'min:1'],
             'equipo_id' => ['nullable', 'integer', 'min:1'],
             'tecnico_id' => ['nullable', 'integer', 'min:1'],
@@ -92,7 +97,31 @@ class ElectrofrioOrdenOperativaController extends Controller
             DB::table('electrofrio_ordenes')
                 ->where('empresa_id', $empresa->id)
                 ->where('id', $id)
-                ->update(['tipo_servicio' => $tipo, 'updated_at' => now()]);
+                ->update([
+                    'tipo_servicio' => $tipo,
+                    'estado_actual' => 'cita_programada',
+                    'estado_actualizado_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+            $hasInitial = DB::table('electrofrio_orden_estados')
+                ->where('empresa_id', $empresa->id)
+                ->where('orden_id', $id)
+                ->exists();
+            if (!$hasInitial) {
+                DB::table('electrofrio_orden_estados')->insert([
+                    'empresa_id' => $empresa->id,
+                    'orden_id' => $id,
+                    'estado_anterior' => null,
+                    'estado' => 'cita_programada',
+                    'tipo_cambio' => 'creacion',
+                    'observacion' => 'Servicio registrado.',
+                    'cambiado_por' => $request->user()->id,
+                    'cambiado_at' => now(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
 
             return $id;
         });
@@ -207,6 +236,7 @@ class ElectrofrioOrdenOperativaController extends Controller
             });
         }
 
+        if (!empty($filters['estado'])) $query->where('o.estado_actual', $filters['estado']);
         foreach (['etapa', 'cliente_id', 'equipo_id', 'tecnico_id', 'tipo_servicio', 'prioridad', 'decision_cliente'] as $field) {
             if (array_key_exists($field, $filters) && $filters[$field] !== null && $filters[$field] !== '') {
                 $query->where('o.'.$field, $filters[$field]);
@@ -268,6 +298,8 @@ class ElectrofrioOrdenOperativaController extends Controller
 
     private function summary(int $empresaId): array
     {
+        // Este resumen es un contrato legacy usado por clientes existentes. El nuevo
+        // Dashboard y la vista de Servicios trabajan con estado_actual por separado.
         $base = DB::table('electrofrio_ordenes')->where('empresa_id', $empresaId);
         $counts = (clone $base)
             ->selectRaw("COUNT(*) as total")
