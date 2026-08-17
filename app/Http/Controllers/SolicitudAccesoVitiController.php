@@ -83,11 +83,10 @@ class SolicitudAccesoVitiController extends Controller
         $status = $request->input('estado');
 
         $query = SolicitudAccesoViti::query()
-            ->with(['revisor:id,nombre,apellido,usuario','plan:id,codigo,nombre,precio_mensual,precio_anual'])
+            ->with(['revisor:id,nombre,apellido,usuario','plan:id,codigo,nombre,precio_mensual,precio_anual','invitacion:id,codigo,estado,expira_at,usada_at'])
             ->latest('id');
 
         if ($status) {
-            $query->whereIn('estado', ['pendiente','en_revision','aprobada','rechazada']);
             $query->where('estado', $status);
         }
 
@@ -108,22 +107,24 @@ class SolicitudAccesoVitiController extends Controller
 
         return response()->json([
             'message' => 'La solicitud quedó marcada como en revisión.',
-            'data' => $solicitud->fresh(['revisor','plan']),
+            'data' => $solicitud->fresh(['revisor','plan','invitacion']),
         ]);
     }
 
     public function approve(Request $request, SolicitudAccesoViti $solicitud): JsonResponse
     {
         abort_if(in_array($solicitud->estado, ['aprobada','rechazada'], true), 422, 'Esta solicitud ya fue cerrada.');
+        abort_if($solicitud->invitacion_id, 422, 'Esta solicitud ya tiene un acceso generado.');
 
         $data = $request->validate([
             'dias_vigencia' => ['nullable','integer','min:1','max:30'],
             'notas' => ['nullable','string','max:2000'],
         ]);
 
-        $result = DB::transaction(function () use ($request, $solicitud, $data): array {
+        [$access, $invitation] = DB::transaction(function () use ($request, $solicitud, $data): array {
             $locked = SolicitudAccesoViti::query()->lockForUpdate()->findOrFail($solicitud->id);
             abort_if(in_array($locked->estado, ['aprobada','rechazada'], true), 422, 'Esta solicitud ya fue cerrada.');
+            abort_if($locked->invitacion_id, 422, 'Esta solicitud ya tiene un acceso generado.');
 
             $days = (int)($data['dias_vigencia'] ?? 7);
             $invitation = InvitacionCliente::create([
@@ -139,12 +140,11 @@ class SolicitudAccesoVitiController extends Controller
                 'revisado_por' => $request->user()?->id,
                 'revisado_at' => now(),
                 'notas' => $data['notas'] ?? $locked->notas,
+                'invitacion_id' => $invitation->id,
             ]);
 
-            return [$locked->fresh(['revisor','plan']), $invitation];
+            return [$locked->fresh(['revisor','plan','invitacion']), $invitation];
         });
-
-        [$access, $invitation] = $result;
 
         return response()->json([
             'message' => 'Solicitud aprobada. Comparte el código y el enlace personal con el solicitante.',
@@ -174,7 +174,7 @@ class SolicitudAccesoVitiController extends Controller
 
         return response()->json([
             'message' => 'Solicitud de acceso rechazada.',
-            'data' => $solicitud->fresh(['revisor','plan']),
+            'data' => $solicitud->fresh(['revisor','plan','invitacion']),
         ]);
     }
 
