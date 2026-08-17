@@ -3,17 +3,19 @@
 namespace App\Http\Controllers;
 
 use App\Models\{ConfiguracionPago,Proyecto};
-use App\Services\{SubscriptionAccessService,TenantContext};
+use App\Services\{FeatureGateService,SubscriptionAccessService,TenantContext};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
 class ClientBillingController extends Controller
 {
-    public function index(Request $request, SubscriptionAccessService $access, TenantContext $tenants): JsonResponse
+    public function index(Request $request, SubscriptionAccessService $access, TenantContext $tenants, FeatureGateService $features): JsonResponse
     {
         $empresa = $tenants->resolve($request);
         $tenants->assertCanManage($request->user(),$empresa);
+        $empresa->loadMissing('planViti');
+
         $projects = Proyecto::query()
             ->where('empresa_id',$empresa->id)
             ->with([
@@ -87,6 +89,19 @@ class ClientBillingController extends Controller
                 'nombre_comercial'=>$empresa->nombre_comercial,
                 'metodo_pago_preferido'=>$empresa->metodo_pago_preferido ?: 'qr',
             ],
+            'plan'=> $empresa->planViti ? [
+                'id'=>$empresa->planViti->id,
+                'codigo'=>$empresa->planViti->codigo,
+                'nombre'=>$empresa->planViti->nombre,
+                'descripcion'=>$empresa->planViti->descripcion,
+                'precio_mensual'=>$empresa->planViti->precio_mensual !== null ? (float)$empresa->planViti->precio_mensual : null,
+                'precio_anual'=>$empresa->planViti->precio_anual !== null ? (float)$empresa->planViti->precio_anual : null,
+                'dias_prueba'=>$empresa->planViti->dias_prueba,
+                'modulos'=>$empresa->planViti->modulos,
+                'max_usuarios'=>$empresa->planViti->max_usuarios,
+                'max_aplicaciones'=>$empresa->planViti->max_aplicaciones,
+            ] : null,
+            'uso'=>$features->snapshot($empresa),
             'configuracion'=>$config ? $this->configRow($config) : null,
             'proyectos'=>$projects->values(),
         ]]);
