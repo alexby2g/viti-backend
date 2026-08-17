@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{ElectrofrioConfiguracionController,ElectrofrioDashboardOperativoController,ElectrofrioDocumentacionController,ElectrofrioFichaTecnicaController,ElectrofrioFlujoEstadoController,ElectrofrioHistorialEquipoController,ElectrofrioOrdenOperativaController,ElectrofrioPagoOperativoController};
+use App\Http\Controllers\{ElectrofrioConfiguracionController,ElectrofrioDashboardOperativoController,ElectrofrioDocumentacionController,ElectrofrioFichaTecnicaController,ElectrofrioFlujoEstadoController,ElectrofrioHistorialEquipoController,ElectrofrioLegacyWorkflowController,ElectrofrioOrdenOperativaController,ElectrofrioPagoOperativoController};
 use Illuminate\Support\Facades\Route;
 
 $electrofrioExtraRoutes = function (): void {
@@ -21,6 +21,15 @@ $electrofrioExtraRoutes = function (): void {
     Route::get('flujo-estados', [ElectrofrioFlujoEstadoController::class, 'catalogo']);
     Route::get('ordenes/{id}/estados', [ElectrofrioFlujoEstadoController::class, 'historial'])->whereNumber('id');
     Route::post('ordenes/{id}/estado', [ElectrofrioFlujoEstadoController::class, 'cambiar'])->whereNumber('id');
+
+    // Sobrescribe las rutas antiguas registradas en api.php. De esta forma las
+    // versiones anteriores de la web/móvil siguen funcionando, pero todo cambio
+    // alimenta también estado_actual e historial de estados.
+    Route::post('ordenes', [ElectrofrioLegacyWorkflowController::class, 'guardar']);
+    Route::put('ordenes/{id}', [ElectrofrioLegacyWorkflowController::class, 'actualizar'])->whereNumber('id');
+    Route::post('ordenes/{id}/decision', [ElectrofrioLegacyWorkflowController::class, 'decision'])->whereNumber('id');
+    Route::post('ordenes/{id}/finalizar', [ElectrofrioLegacyWorkflowController::class, 'finalizar'])->whereNumber('id');
+    Route::post('ordenes/{id}/pagos', [ElectrofrioLegacyWorkflowController::class, 'pago'])->whereNumber('id');
 
     Route::post('ordenes/{id}/evidencias', [ElectrofrioDocumentacionController::class, 'subir'])->whereNumber('id');
     Route::get('evidencias/{evidencia}/descargar', [ElectrofrioDocumentacionController::class, 'descargar'])->whereNumber('evidencia');
