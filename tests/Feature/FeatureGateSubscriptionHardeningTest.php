@@ -110,6 +110,52 @@ class FeatureGateSubscriptionHardeningTest extends TestCase
         $this->assertDatabaseHas('suscripciones',['aplicacion_id'=>$tenant['app']->id,'estado'=>'suspendida']);
     }
 
+    public function test_cancelled_subscription_never_reactivates_even_during_trial_window(): void
+    {
+        Carbon::setTestNow('2026-08-13 10:00:00');
+        $tenant = $this->createTenant('CANCELLED');
+        $subscription = $this->subscription($tenant, '2026-08-20', 3);
+        $subscription->update([
+            'prueba_hasta'=>'2026-08-20',
+            'estado'=>'cancelada',
+        ]);
+
+        $status = app(SubscriptionAccessService::class)->statusFor($tenant['app']->fresh());
+
+        $this->assertSame('cancelada',$status['estado']);
+        $this->assertSame('cancelada',$status['etapa_cobro']);
+        $this->assertFalse($status['puede_usar']);
+        $this->assertDatabaseHas('suscripciones',[
+            'id'=>$subscription->id,
+            'estado'=>'cancelada',
+        ]);
+    }
+
+    public function test_trial_status_is_exposed_consistently_before_due_date(): void
+    {
+        Carbon::setTestNow('2026-08-13 10:00:00');
+        $tenant = $this->createTenant('TRIAL');
+        $subscription = $this->subscription($tenant, '2026-08-20', 3);
+        $subscription->update([
+            'prueba_hasta'=>'2026-08-18',
+            'primer_cobro_monto'=>129,
+            'primer_cobro_desde'=>'2026-08-19',
+            'primer_cobro_hasta'=>'2026-08-18',
+            'primer_cobro_pagado'=>false,
+        ]);
+
+        $status = app(SubscriptionAccessService::class)->statusFor($tenant['app']->fresh());
+
+        $this->assertTrue($status['en_prueba']);
+        $this->assertSame('prueba',$status['etapa_cobro']);
+        $this->assertTrue($status['puede_usar']);
+        $this->assertFalse($status['requiere_pago']);
+        $this->assertSame(129.0,$status['primer_cobro_monto']);
+        $this->assertSame('2026-08-19',$status['primer_cobro_desde']);
+        $this->assertSame('2026-08-18',$status['primer_cobro_hasta']);
+        $this->assertFalse($status['primer_cobro_pagado']);
+    }
+
     private function subscription(array $tenant, string $due, int $grace): Suscripcion
     {
         return Suscripcion::create([
@@ -121,6 +167,10 @@ class FeatureGateSubscriptionHardeningTest extends TestCase
             'moneda'=>'BOB',
             'fecha_inicio'=>'2026-07-01',
             'prueba_hasta'=>null,
+            'primer_cobro_monto'=>null,
+            'primer_cobro_desde'=>null,
+            'primer_cobro_hasta'=>null,
+            'primer_cobro_pagado'=>false,
             'fecha_vencimiento'=>$due,
             'dias_gracia'=>$grace,
             'estado'=>'activa',
