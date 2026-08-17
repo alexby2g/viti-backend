@@ -9,7 +9,7 @@ class InvitacionCliente extends Model
     protected $table = 'invitaciones_clientes';
 
     protected $fillable = [
-        'token','creada_por','cliente_id','solicitud_id','estado','expira_at','usada_at',
+        'token','codigo','creada_por','cliente_id','solicitud_id','estado','expira_at','usada_at',
     ];
 
     protected $casts = [
