@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{ElectrofrioCitaController,ElectrofrioConfiguracionController,ElectrofrioDashboardOperativoController,ElectrofrioDocumentacionController,ElectrofrioFichaTecnicaController,ElectrofrioFlujoEstadoController,ElectrofrioHistorialEquipoController,ElectrofrioLegacyWorkflowController,ElectrofrioOrdenOperativaController,ElectrofrioPagoOperativoController};
+use App\Http\Controllers\{ElectrofrioCitaController,ElectrofrioConfiguracionController,ElectrofrioDashboardOperativoController,ElectrofrioDocumentacionController,ElectrofrioFichaTecnicaController,ElectrofrioFlujoEstadoController,ElectrofrioGarantiaOperativaController,ElectrofrioHistorialEquipoController,ElectrofrioLegacyWorkflowController,ElectrofrioOrdenOperativaController,ElectrofrioPagoOperativoController};
 use Illuminate\Support\Facades\Route;
 
 $electrofrioExtraRoutes = function (): void {
@@ -22,6 +22,7 @@ $electrofrioExtraRoutes = function (): void {
     Route::get('ordenes/{id}/estados', [ElectrofrioFlujoEstadoController::class, 'historial'])->whereNumber('id');
     Route::post('ordenes/{id}/estado', [ElectrofrioFlujoEstadoController::class, 'cambiar'])->whereNumber('id');
     Route::post('ordenes/{id}/reprogramar', [ElectrofrioCitaController::class, 'reprogramar'])->whereNumber('id');
+    Route::post('ordenes/{id}/reingreso-garantia', [ElectrofrioGarantiaOperativaController::class, 'reingreso'])->whereNumber('id');
 
     // Sobrescribe las rutas antiguas registradas en api.php. De esta forma las
     // versiones anteriores de la web/móvil siguen funcionando, pero todo cambio
