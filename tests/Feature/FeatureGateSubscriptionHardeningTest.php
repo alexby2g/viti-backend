@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\Suscripcion;
+use App\Models\SuscripcionPago;
+use App\Http\Controllers\PaymentReviewController;
 use App\Services\SubscriptionAccessService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -154,6 +156,40 @@ class FeatureGateSubscriptionHardeningTest extends TestCase
         $this->assertSame('2026-08-19',$status['primer_cobro_desde']);
         $this->assertSame('2026-08-18',$status['primer_cobro_hasta']);
         $this->assertFalse($status['primer_cobro_pagado']);
+    }
+
+    public function test_incomplete_first_payment_does_not_extend_subscription(): void
+    {
+        Carbon::setTestNow('2026-08-20 10:00:00');
+        $tenant = $this->createTenant('PARTIAL-PAYMENT');
+        $subscription = $this->subscription($tenant, '2026-08-20', 3);
+        $subscription->update([
+            'primer_cobro_monto'=>129,
+            'primer_cobro_desde'=>'2026-08-19',
+            'primer_cobro_hasta'=>'2026-08-20',
+            'primer_cobro_pagado'=>false,
+            'estado'=>'suspendida',
+        ]);
+
+        $payment = SuscripcionPago::create([
+            'suscripcion_id'=>$subscription->id,
+            'empresa_id'=>$tenant['company']->id,
+            'monto'=>50,
+            'metodo'=>'qr',
+            'fecha_pago'=>'2026-08-20',
+            'estado_revision'=>'confirmado',
+            'origen'=>'admin',
+        ]);
+
+        app(PaymentReviewController::class)->confirmarSuscripcion(
+            request()->setUserResolver(fn () => $tenant['user']),
+            $payment,
+            app(SubscriptionAccessService::class),
+        );
+
+        $subscription->refresh();
+        $this->assertSame('2026-08-20',$subscription->fecha_vencimiento?->format('Y-m-d'));
+        $this->assertFalse((bool)$subscription->primer_cobro_pagado);
     }
 
     private function subscription(array $tenant, string $due, int $grace): Suscripcion
