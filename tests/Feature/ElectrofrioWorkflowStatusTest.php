@@ -41,7 +41,12 @@ class ElectrofrioWorkflowStatusTest extends TestCase
             'etapa' => 'cerrada',
             'decision_cliente' => 'aceptado',
         ]);
-        $this->assertSame(8, DB::table('electrofrio_orden_estados')->where('orden_id', $orderId)->count());
+        $this->assertSame(9, DB::table('electrofrio_orden_estados')->where('orden_id', $orderId)->count());
+        $this->assertDatabaseHas('electrofrio_orden_estados', [
+            'orden_id' => $orderId,
+            'estado' => 'cita_programada',
+            'tipo_cambio' => 'inicio',
+        ]);
 
         $this->actingAs($tenant['user'])
             ->getJson("/api/v1/mi/apps/electrofrio/ordenes/{$orderId}/estados", $headers)
