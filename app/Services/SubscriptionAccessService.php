@@ -56,6 +56,9 @@ class SubscriptionAccessService
         $daysToDue = $due && $today->lte($due) ? (int)$today->diffInDays($due) : null;
         $daysLate = $due && $today->gt($due) ? (int)$due->diffInDays($today) : 0;
         $stage = $this->stage($subscription,$inTrial,$daysToDue);
+        $canUse = $stage === 'cancelada'
+            ? false
+            : ($inTrial || in_array($subscription->estado,['activa','gracia'],true));
 
         return [
             'id'=>$subscription->id,
@@ -78,7 +81,7 @@ class SubscriptionAccessService
             'estado'=>$subscription->estado,
             'etapa_cobro'=>$stage,
             'requiere_pago'=>!$inTrial && $subscription->estado !== 'cancelada',
-            'puede_usar'=>$inTrial || in_array($subscription->estado,['activa','gracia'],true),
+            'puede_usar'=>$canUse,
             'mensaje_cobro'=>$this->message($stage,$daysToDue,$daysLate,$graceEnd?->format('Y-m-d')),
         ];
     }
@@ -88,7 +91,7 @@ class SubscriptionAccessService
         $status = $this->statusFor($app);
         if (!$status) return;
 
-        abort_unless($status['puede_usar'], 402, 'Tu suscripción VITI está suspendida. Regulariza el pago para volver a utilizar la aplicación.');
+        abort_unless($status['puede_usar'], 402, 'Tu suscripción VITI no está habilitada para usar la aplicación. Regulariza el estado de la suscripción para continuar.');
     }
 
     private function stage(Suscripcion $subscription, bool $inTrial, ?int $daysToDue): string
@@ -108,7 +111,7 @@ class SubscriptionAccessService
             'por_vencer' => $daysToDue === 0 ? 'La suscripción vence hoy.' : "La suscripción vence en {$daysToDue} día(s).",
             'gracia' => "El pago está vencido hace {$daysLate} día(s). El acceso continúa en periodo de gracia hasta {$graceEnd}.",
             'suspendida' => 'La suscripción superó el periodo de gracia y el acceso está suspendido.',
-            'cancelada' => 'La suscripción está cancelada.',
+            'cancelada' => 'La suscripción está cancelada y el acceso permanece cerrado.',
             default => 'La suscripción está al día.',
         };
     }
