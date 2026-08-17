@@ -153,15 +153,14 @@ class PaymentReviewController extends Controller
         }
 
         if(!$firstPaymentDone && $subscription->primer_cobro_monto !== null){
-            $subscription->update([
-                'primer_cobro_pagado'=>false,
-                'estado'=>'activa',
-            ]);
+            // Un pago parcial confirma el comprobante, pero no compra vigencia ni
+            // cambia el estado de acceso. El saldo pendiente se conserva.
+            $subscription->update(['primer_cobro_pagado'=>false]);
             return;
         }
 
         if ($subscription->primer_cobro_hasta && !$subscription->primer_cobro_pagado) {
-            $nextDue=Carbon::parse($subscription->primer_cobro_hasta)->addMonthNoOverflow()->endOfMonth();
+            $nextDue=Carbon::parse($subscription->primer_cobro_hasta)->addMonthNoOverflow();
         } else {
             $base=$subscription->fecha_vencimiento && $subscription->fecha_vencimiento->isFuture()
                 ? $subscription->fecha_vencimiento->copy()
@@ -171,7 +170,7 @@ class PaymentReviewController extends Controller
 
         $subscription->update([
             'fecha_vencimiento'=>$nextDue->toDateString(),
-            'primer_cobro_pagado'=>true,
+            'primer_cobro_pagado'=>$firstPaymentDone,
             'estado'=>'activa',
         ]);
     }
