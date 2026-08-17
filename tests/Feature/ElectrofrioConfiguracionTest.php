@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\{CreatesVitiTenants,TestCase};
 
 class ElectrofrioConfiguracionTest extends TestCase
@@ -54,6 +56,32 @@ class ElectrofrioConfiguracionTest extends TestCase
         ]);
     }
 
+    public function test_owner_can_upload_a_logo_for_the_active_business(): void
+    {
+        Storage::fake('public');
+        $tenant = $this->createTenant('AIR-LOGO');
+        $headers = ['X-VITI-Empresa' => (string) $tenant['company']->id];
+
+        $response = $this->actingAs($tenant['user'])
+            ->post('/api/v1/mi/apps/electrofrio/configuracion/logo', [
+                'logo' => UploadedFile::fake()->image('logo.png', 320, 160),
+            ], $headers);
+
+        $response->assertOk()
+            ->assertJsonPath('message', 'Logotipo actualizado.');
+
+        $logoUrl = (string) $response->json('data.logo_url');
+        $this->assertStringContainsString('aires/logos/'.$tenant['company']->id.'/', $logoUrl);
+        $this->assertDatabaseHas('electrofrio_configuraciones', [
+            'empresa_id' => $tenant['company']->id,
+            'actualizado_por' => $tenant['user']->id,
+        ]);
+        $this->assertDatabaseHas('auditoria', [
+            'empresa_id' => $tenant['company']->id,
+            'accion' => 'aires_acondicionados_logo_actualizado',
+        ]);
+    }
+
     public function test_employee_can_read_but_cannot_modify_business_personalization(): void
     {
         $tenant = $this->createTenant('AIR-CONFIG-EMP', 'empleado', ['inicio']);
@@ -74,6 +102,12 @@ class ElectrofrioConfiguracionTest extends TestCase
                 'tipos_servicio' => ['Diagnóstico'],
                 'tipos_equipo' => ['Split'],
                 'metodos_pago' => ['efectivo'],
+            ], $headers)
+            ->assertForbidden();
+
+        $this->actingAs($tenant['user'])
+            ->post('/api/v1/mi/apps/electrofrio/configuracion/logo', [
+                'logo' => UploadedFile::fake()->image('logo.png'),
             ], $headers)
             ->assertForbidden();
     }
