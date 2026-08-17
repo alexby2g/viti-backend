@@ -10,6 +10,7 @@ Route::middleware(['auth:sanctum','throttle:api'])->group(function (): void {
         Route::post('mi/apps/electrofrio/buzon/{conversacion}/documentos', [ChatDocumentController::class,'store'])->defaults('chat_access','electro-business');
 
         Route::get('mi/pagos', [ClientBillingController::class,'index']);
+        Route::get('mi/plan', [ClientBillingController::class,'plan']);
         Route::post('mi/pagos/proyectos/{proyecto}/comprobante', [ClientPaymentController::class,'proyecto']);
         Route::post('mi/pagos/suscripciones/{suscripcion}/comprobante', [ClientPaymentController::class,'suscripcion']);
         Route::get('mi/pagos/proyecto-pagos/{pago}/comprobante', [ClientPaymentController::class,'comprobanteProyecto']);
