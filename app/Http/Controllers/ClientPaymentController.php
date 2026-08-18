@@ -77,7 +77,7 @@ class ClientPaymentController extends Controller
         }
 
         return response()->json([
-            'message'=>'Comprobante enviado. El pago quedará aplicado cuando AGR Studio lo confirme.',
+            'message'=>'Comprobante enviado. El pago quedará aplicado cuando VITI lo confirme.',
             'data'=>$payment->load('pagador:id,nombre,apellido,usuario'),
         ],201);
     }
@@ -99,7 +99,8 @@ class ClientPaymentController extends Controller
         abort_if($pendingExisting,422,'Ya existe un comprobante de suscripción pendiente de revisión.');
 
         $expected = $this->subscriptionDue($suscripcion);
-        $data = $this->validateSubmission($request,$expected,true);
+        abort_if($expected <= 0,422,'Esta suscripción no tiene un pago pendiente.');
+        $data = $this->validateSubmission($request,$expected,false);
         $proof = $this->storeProof($request,'suscripciones/'.$suscripcion->id);
 
         try {
@@ -117,7 +118,8 @@ class ClientPaymentController extends Controller
                 );
 
                 $currentExpected = $this->subscriptionDue($lockedSubscription);
-                $this->assertAmount((float)$data['monto'],$currentExpected,true);
+                abort_if($currentExpected <= 0,422,'Esta suscripción no tiene un pago pendiente.');
+                $this->assertAmount((float)$data['monto'],$currentExpected,false);
 
                 return SuscripcionPago::create([
                     'suscripcion_id'=>$lockedSubscription->id,
@@ -143,7 +145,7 @@ class ClientPaymentController extends Controller
         }
 
         return response()->json([
-            'message'=>'Comprobante de suscripción enviado. Se aplicará cuando AGR Studio lo confirme.',
+            'message'=>'Comprobante de suscripción enviado. Se aplicará cuando VITI lo confirme.',
             'data'=>$payment->load('pagador:id,nombre,apellido,usuario'),
         ],201);
     }
@@ -210,8 +212,13 @@ class ClientPaymentController extends Controller
     private function subscriptionDue(Suscripcion $subscription): float
     {
         if (!$subscription->primer_cobro_pagado && $subscription->primer_cobro_monto !== null) {
-            return (float)$subscription->primer_cobro_monto;
+            $confirmedFirstPayment = (float)$subscription->pagos()
+                ->where('estado_revision','confirmado')
+                ->sum('monto');
+
+            return max(0, round((float)$subscription->primer_cobro_monto - $confirmedFirstPayment, 2));
         }
+
         return (float)$subscription->monto;
     }
 
