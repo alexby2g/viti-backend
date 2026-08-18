@@ -27,13 +27,9 @@ class SubscriptionAccessService
         $due = $subscription->fecha_vencimiento?->copy()->startOfDay();
         if (!$due) return $subscription;
 
-        if ($today->lte($due)) {
-            $status = 'activa';
-        } elseif ($today->lte($due->copy()->addDays((int)$subscription->dias_gracia))) {
-            $status = 'gracia';
-        } else {
-            $status = 'suspendida';
-        }
+        if ($today->lte($due)) $status = 'activa';
+        elseif ($today->lte($due->copy()->addDays((int)$subscription->dias_gracia))) $status = 'gracia';
+        else $status = 'suspendida';
 
         if ($subscription->estado !== $status) {
             $subscription->update(['estado'=>$status]);
@@ -60,6 +56,17 @@ class SubscriptionAccessService
             ? false
             : ($inTrial || in_array($subscription->estado,['activa','gracia'],true));
 
+        $firstTarget = $subscription->primer_cobro_monto !== null ? (float)$subscription->primer_cobro_monto : null;
+        $firstConfirmed = $firstTarget !== null && !$subscription->primer_cobro_pagado
+            ? (float)$subscription->pagos()->where('estado_revision','confirmado')->sum('monto')
+            : ($subscription->primer_cobro_pagado ? $firstTarget : 0.0);
+        $firstRemaining = $firstTarget !== null
+            ? max(0,round($firstTarget-$firstConfirmed,2))
+            : null;
+        $firstComplete = $firstTarget !== null
+            ? ((bool)$subscription->primer_cobro_pagado || $firstRemaining <= 0.001)
+            : null;
+
         return [
             'id'=>$subscription->id,
             'plan'=>$subscription->plan,
@@ -69,7 +76,10 @@ class SubscriptionAccessService
             'fecha_inicio'=>$subscription->fecha_inicio?->format('Y-m-d'),
             'prueba_hasta'=>$subscription->prueba_hasta?->format('Y-m-d'),
             'en_prueba'=>(bool)$inTrial,
-            'primer_cobro_monto'=>$subscription->primer_cobro_monto !== null ? (float)$subscription->primer_cobro_monto : null,
+            'primer_cobro_monto'=>$firstTarget,
+            'primer_cobro_confirmado'=>$firstTarget !== null ? round($firstConfirmed,2) : null,
+            'primer_cobro_restante'=>$firstRemaining,
+            'primer_cobro_completo'=>$firstComplete,
             'primer_cobro_desde'=>$subscription->primer_cobro_desde?->format('Y-m-d'),
             'primer_cobro_hasta'=>$subscription->primer_cobro_hasta?->format('Y-m-d'),
             'primer_cobro_pagado'=>(bool)$subscription->primer_cobro_pagado,
@@ -90,7 +100,6 @@ class SubscriptionAccessService
     {
         $status = $this->statusFor($app);
         if (!$status) return;
-
         abort_unless($status['puede_usar'], 402, 'Tu suscripción VITI no está habilitada para usar la aplicación. Regulariza el estado de la suscripción para continuar.');
     }
 
