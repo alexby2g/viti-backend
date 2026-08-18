@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{Cliente,Conversacion,Cuestionario,Empresa,PlanViti,SolicitudRespuesta,SolicitudSistema,Usuario};
-use App\Support\Code;
+use App\Models\{AlertaSaas,Cliente,Conversacion,Cuestionario,Empresa,PlanViti,SolicitudRespuesta,SolicitudSistema,Usuario};
+use App\Support\{Code,FirebasePush};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -34,6 +34,8 @@ class PublicSolicitudController extends Controller
             'empresa_direccion' => ['nullable','string','max:255'],
             'titulo_sistema' => ['required','string','max:200'],
             'resumen' => ['nullable','string','max:5000'],
+            'plan_codigo' => ['nullable','string','max:80'],
+            'modalidad' => ['nullable',Rule::in(['mensual','anual'])],
         ], [
             'nombre.required' => 'Ingresa tu nombre completo.',
             'telefono.required' => 'Ingresa tu número de teléfono.',
@@ -47,7 +49,16 @@ class PublicSolicitudController extends Controller
         $questionnaireId = Cuestionario::query()->where('activo', true)->value('id');
         abort_unless($questionnaireId, 422, 'VITI no tiene un cuestionario activo en este momento.');
 
-        [$cliente, $empresa, $solicitud] = DB::transaction(function () use ($data, $questionnaireId): array {
+        $selectedPlan = null;
+        if (filled($data['plan_codigo'] ?? null)) {
+            $selectedPlan = PlanViti::query()
+                ->where('activo', true)
+                ->where('codigo', trim((string) $data['plan_codigo']))
+                ->first();
+            abort_unless($selectedPlan, 422, 'El plan seleccionado ya no está disponible.');
+        }
+
+        [$cliente, $empresa, $solicitud] = DB::transaction(function () use ($data, $questionnaireId, $selectedPlan): array {
             $documento = filled($data['documento'] ?? null) ? trim($data['documento']) : null;
             $cliente = Cliente::query()->where('telefono', $data['telefono'])->first();
 
@@ -62,7 +73,7 @@ class PublicSolicitudController extends Controller
                     'ci_expedido' => $cliente->ci_expedido ?: ($data['ci_expedido'] ?? null),
                     'ciudad' => $cliente->ciudad ?: trim($data['ciudad']),
                     'direccion' => $cliente->direccion ?: ($data['direccion'] ?? null),
-                    'estado' => 'formulario_en_proceso',
+                    'estado' => $cliente->estado ?: 'prospecto',
                 ]);
             } else {
                 abort_if($documento && Cliente::query()->where('documento', $documento)->exists(),422,'Ese documento ya está registrado con otro número de teléfono.');
@@ -74,8 +85,8 @@ class PublicSolicitudController extends Controller
                     'ci_expedido' => $data['ci_expedido'] ?? null,
                     'ciudad' => trim($data['ciudad']),
                     'direccion' => $data['direccion'] ?? null,
-                    'estado' => 'formulario_en_proceso',
-                    'canal_origen' => 'viti',
+                    'estado' => 'prospecto',
+                    'canal_origen' => 'viti_web',
                 ]);
             }
 
@@ -103,31 +114,48 @@ class PublicSolicitudController extends Controller
                 ]);
             }
 
-            $solicitud = SolicitudSistema::create([
-                'empresa_id' => $empresa->id,
-                'cliente_id' => $cliente->id,
-                'cuestionario_id' => $questionnaireId,
-                'codigo' => Code::next('solicitudes_sistema','SOL'),
-                'public_token' => Str::random(48),
-                'publico_habilitado' => true,
-                'titulo' => trim($data['titulo_sistema']),
+            $requestTitle = trim($data['titulo_sistema']);
+            $solicitud = SolicitudSistema::query()
+                ->where('cliente_id', $cliente->id)
+                ->where('empresa_id', $empresa->id)
+                ->whereRaw('LOWER(titulo) = ?', [Str::lower($requestTitle)])
+                ->whereIn('estado', ['borrador','en_revision'])
+                ->latest('id')
+                ->first();
+
+            $requestData = [
                 'resumen' => $data['resumen'] ?? null,
-                'estado' => 'borrador',
-                'prioridad' => 'normal',
+                'plan_viti_id' => $selectedPlan?->id,
+                'frecuencia_suscripcion_preferida' => $selectedPlan ? ($data['modalidad'] ?? null) : null,
                 'acuerdo_comercial_requerido' => true,
-            ]);
+            ];
+
+            if ($solicitud) {
+                $solicitud->update(array_filter($requestData, fn ($value) => $value !== null));
+            } else {
+                $solicitud = SolicitudSistema::create($requestData + [
+                    'empresa_id' => $empresa->id,
+                    'cliente_id' => $cliente->id,
+                    'cuestionario_id' => $questionnaireId,
+                    'codigo' => Code::next('solicitudes_sistema','SOL'),
+                    'public_token' => Str::random(48),
+                    'publico_habilitado' => true,
+                    'titulo' => $requestTitle,
+                    'estado' => 'borrador',
+                    'prioridad' => 'normal',
+                ]);
+            }
 
             return [$cliente, $empresa, $solicitud];
         });
 
+        $this->notifyAccessRequest($solicitud);
+
         return response()->json([
-            'message' => 'Tus datos fueron registrados. Ahora elige el plan VITI que mejor se ajuste a tu negocio.',
+            'message' => 'Recibimos tu solicitud de acceso. AGR Studio revisará la información antes de habilitar una invitación personal.',
             'data' => [
-                'cliente' => $cliente,
-                'empresa' => $empresa,
                 'solicitud_codigo' => $solicitud->codigo,
-                'solicitud_token' => $solicitud->public_token,
-                'ruta_cuestionario' => '/solicitar/'.$solicitud->public_token,
+                'estado' => 'recibida',
             ],
         ], 201);
     }
@@ -397,6 +425,41 @@ class PublicSolicitudController extends Controller
         if (Str::contains($code, 'empresa')) return 'enterprise';
         if (Str::contains($code, 'profesional')) return 'professional';
         return 'initial';
+    }
+
+    private function notifyAccessRequest(SolicitudSistema $solicitud): void
+    {
+        $solicitud->loadMissing(['cliente:id,nombre','empresa:id,nombre_comercial']);
+        $admins = Usuario::query()
+            ->where('estado', 'activo')
+            ->whereIn('rol', ['superadmin','administrador'])
+            ->get(['id']);
+
+        if ($admins->isEmpty()) return;
+
+        $business = $solicitud->empresa?->nombre_comercial ?: 'Empresa sin nombre';
+        $client = $solicitud->cliente?->nombre ?: 'Cliente';
+        $message = $solicitud->codigo.' · '.$business.' · '.$client;
+        $path = '/solicitudes/'.$solicitud->id;
+
+        foreach ($admins as $admin) {
+            AlertaSaas::firstOrCreate(
+                ['usuario_id'=>$admin->id,'clave'=>'solicitud_acceso_'.$solicitud->id],
+                [
+                    'empresa_id'=>$solicitud->empresa_id,
+                    'tipo'=>'solicitud',
+                    'titulo'=>'Nueva solicitud de acceso',
+                    'mensaje'=>$message,
+                    'ruta'=>$path,
+                ]
+            );
+        }
+
+        FirebasePush::sendToUsers($admins->pluck('id')->all(), 'Nueva solicitud de acceso', $message, [
+            'type'=>'solicitud',
+            'solicitud_id'=>$solicitud->id,
+            'path'=>$path,
+        ]);
     }
 
     private function resolve(string $token): SolicitudSistema
