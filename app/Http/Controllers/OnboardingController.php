@@ -374,6 +374,14 @@ class OnboardingController extends Controller
             try { Storage::disk('public')->delete($oldPhotoPath); } catch (Throwable) {}
         }
 
+        Audit::log(
+            $request,
+            'cuenta_cliente_creada',
+            $solicitud,
+            'El responsable completó el registro mediante la invitación vinculada.',
+            ['cliente_id' => $cliente->id, 'empresa_id' => $empresa->id]
+        );
+
         return response()->json([
             'message' => 'Tu registro fue creado. Ahora completa el cuestionario de tu sistema.',
             'data' => [

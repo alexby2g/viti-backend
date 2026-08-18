@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{Cuestionario,Empresa,SolicitudRespuesta,SolicitudSistema};
+use App\Models\{Auditoria,Cuestionario,Empresa,SolicitudRespuesta,SolicitudSistema};
 use App\Services\{AccessInvitationService,WorkflowStateService};
 use App\Support\{Audit,Code};
 use Illuminate\Http\JsonResponse;
@@ -105,6 +105,44 @@ class SolicitudController extends Controller
         $solicitud->update(['estado'=>'en_revision','enviado_at'=>now()]);
         Audit::log($request,'solicitud_enviada',$solicitud,'La solicitud pasó a revisión.');
         return response()->json(['data'=>$this->withWorkflow($solicitud->fresh())]);
+    }
+
+    public function reject(Request $request, SolicitudSistema $solicitud): JsonResponse
+    {
+        $data = $request->validate([
+            'motivo' => ['required','string','min:5','max:1000'],
+        ], [
+            'motivo.required' => 'Indica el motivo antes de rechazar la solicitud.',
+            'motivo.min' => 'Explica brevemente el motivo del rechazo.',
+        ]);
+
+        app(WorkflowStateService::class)->assertSolicitudTransition($solicitud->estado, 'rechazada');
+        $solicitud->update(['estado' => 'rechazada', 'aprobado_at' => null]);
+        Audit::log(
+            $request,
+            'solicitud_rechazada',
+            $solicitud,
+            'La solicitud fue rechazada por AGR Studio.',
+            ['motivo' => trim($data['motivo'])]
+        );
+
+        return response()->json([
+            'message' => 'Solicitud rechazada y registrada en el historial.',
+            'data' => $this->withWorkflow($solicitud->fresh()->load(['empresa','cliente','planViti'])),
+        ]);
+    }
+
+    public function timeline(SolicitudSistema $solicitud): JsonResponse
+    {
+        $events = Auditoria::query()
+            ->with('usuario:id,nombre,apellido')
+            ->where('entidad_tipo', SolicitudSistema::class)
+            ->where('entidad_id', $solicitud->id)
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get(['id','usuario_id','accion','descripcion','datos','created_at']);
+
+        return response()->json(['data' => $events]);
     }
 
     private function validateCompletion(SolicitudSistema $solicitud): void

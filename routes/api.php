@@ -163,6 +163,8 @@ Route::prefix('v1')->group(function (): void {
             Route::apiResource('solicitudes', SolicitudController::class)->parameters(['solicitudes' => 'solicitud']);
             Route::put('solicitudes/{solicitud}/respuestas', [SolicitudController::class,'saveAnswers']);
             Route::post('solicitudes/{solicitud}/enviar', [SolicitudController::class,'submit']);
+            Route::post('solicitudes/{solicitud}/rechazar', [SolicitudController::class,'reject']);
+            Route::get('solicitudes/{solicitud}/historial', [SolicitudController::class,'timeline']);
 
             Route::apiResource('proyectos', ProyectoController::class)->parameters(['proyectos' => 'proyecto']);
             Route::post('proyectos/{proyecto}/avances', [ProyectoController::class,'addProgress']);

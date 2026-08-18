@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{AlertaSaas,Cliente,Conversacion,Cuestionario,Empresa,PlanViti,SolicitudRespuesta,SolicitudSistema,Usuario};
-use App\Support\{Code,FirebasePush};
+use App\Support\{Audit,Code,FirebasePush};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -167,6 +167,7 @@ class PublicSolicitudController extends Controller
             return [$cliente, $empresa, $solicitud];
         });
 
+        Audit::log($request, 'solicitud_acceso_publica_creada', $solicitud, 'Se recibió una solicitud pública de acceso a VITI.');
         $this->notifyAccessRequest($solicitud);
 
         return response()->json([
