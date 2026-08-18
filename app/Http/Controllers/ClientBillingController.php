@@ -3,19 +3,75 @@
 namespace App\Http\Controllers;
 
 use App\Models\{ConfiguracionPago,Proyecto};
-use App\Services\{SubscriptionAccessService,TenantContext};
+use App\Services\{FeatureGateService,SubscriptionAccessService,TenantContext};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
 class ClientBillingController extends Controller
 {
-    public function index(Request $request, SubscriptionAccessService $access, TenantContext $tenants): JsonResponse
+    public function index(Request $request, SubscriptionAccessService $access, TenantContext $tenants, FeatureGateService $features): JsonResponse
     {
         $empresa = $tenants->resolve($request);
         $tenants->assertCanManage($request->user(),$empresa);
-        $projects = Proyecto::query()
-            ->where('empresa_id',$empresa->id)
+        $empresa->loadMissing('planViti');
+
+        $projects = $this->projectRows($empresa->id, $access);
+        $config = ConfiguracionPago::query()->where('activo',true)->first();
+        return response()->json(['data'=>[
+            'negocio'=>[
+                'id'=>$empresa->id,
+                'nombre_comercial'=>$empresa->nombre_comercial,
+                'metodo_pago_preferido'=>$empresa->metodo_pago_preferido ?: 'qr',
+            ],
+            'plan'=> $this->planRow($empresa->planViti),
+            'uso'=>$features->snapshot($empresa),
+            'configuracion'=>$config ? $this->configRow($config) : null,
+            'proyectos'=>$projects,
+        ]]);
+    }
+
+    public function plan(Request $request, FeatureGateService $features, SubscriptionAccessService $access, TenantContext $tenants): JsonResponse
+    {
+        $empresa = $tenants->resolve($request);
+        $tenants->assertCanManage($request->user(),$empresa);
+        $empresa->loadMissing('planViti');
+
+        $subscriptions = $empresa->aplicaciones()
+            ->with('suscripcion')
+            ->whereHas('suscripcion')
+            ->get()
+            ->map(fn ($app) => [
+                'aplicacion_id'=>$app->id,
+                'aplicacion'=>$app->nombre,
+                'suscripcion'=>$access->statusFor($app),
+            ])
+            ->values();
+
+        return response()->json(['data'=>[
+            'negocio'=>['id'=>$empresa->id,'nombre_comercial'=>$empresa->nombre_comercial],
+            'plan'=>$this->planRow($empresa->planViti),
+            'uso'=>$features->snapshot($empresa),
+            'suscripciones'=>$subscriptions,
+        ]]);
+    }
+
+    private function planRow($plan): ?array
+    {
+        if (!$plan) return null;
+        return [
+            'id'=>$plan->id,'codigo'=>$plan->codigo,'nombre'=>$plan->nombre,'descripcion'=>$plan->descripcion,
+            'precio_mensual'=>$plan->precio_mensual !== null ? (float)$plan->precio_mensual : null,
+            'precio_anual'=>$plan->precio_anual !== null ? (float)$plan->precio_anual : null,
+            'dias_prueba'=>$plan->dias_prueba,'modulos'=>$plan->modulos,
+            'max_usuarios'=>$plan->max_usuarios,'max_aplicaciones'=>$plan->max_aplicaciones,
+        ];
+    }
+
+    private function projectRows(int $empresaId, SubscriptionAccessService $access)
+    {
+        return Proyecto::query()
+            ->where('empresa_id',$empresaId)
             ->with([
                 'empresa:id,nombre_comercial,metodo_pago_preferido',
                 'aplicacion'=>fn($q)=>$q->with('suscripcion.pagos.pagador:id,nombre,apellido,usuario,telefono'),
@@ -78,18 +134,7 @@ class ClientBillingController extends Controller
                     ] : null,
                     'pagos_suscripcion'=>$subscriptionModel?->pagos?->values() ?? [],
                 ];
-            });
-
-        $config = ConfiguracionPago::query()->where('activo',true)->first();
-        return response()->json(['data'=>[
-            'negocio'=>[
-                'id'=>$empresa->id,
-                'nombre_comercial'=>$empresa->nombre_comercial,
-                'metodo_pago_preferido'=>$empresa->metodo_pago_preferido ?: 'qr',
-            ],
-            'configuracion'=>$config ? $this->configRow($config) : null,
-            'proyectos'=>$projects->values(),
-        ]]);
+            })->values();
     }
 
     private function configRow(ConfiguracionPago $config): array

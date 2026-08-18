@@ -19,8 +19,6 @@ class PaymentReviewController extends Controller
         $projectId = (int) $pago->proyecto_id;
 
         DB::transaction(function () use ($request,$paymentId,$projectId): void {
-            // El proyecto se bloquea primero para serializar cualquier cambio contable
-            // relacionado con él. Así un doble clic no procesa dos veces el mismo pago.
             $project = Proyecto::query()->lockForUpdate()->findOrFail($projectId);
             $locked = ProyectoPago::query()->lockForUpdate()->findOrFail($paymentId);
             abort_unless($locked->estado_revision === 'pendiente_revision',422,'Este comprobante ya fue revisado.');
@@ -68,9 +66,7 @@ class PaymentReviewController extends Controller
         $paymentId = (int) $pago->id;
         $subscriptionId = (int) $pago->suscripcion_id;
 
-        DB::transaction(function () use ($request,$paymentId,$subscriptionId): void {
-            // La suscripción es el recurso contable que cambia de vigencia, por eso
-            // se bloquea junto con el comprobante antes de revisar su estado.
+        $paymentCompleted = DB::transaction(function () use ($request,$paymentId,$subscriptionId): bool {
             $subscription = Suscripcion::query()->lockForUpdate()->findOrFail($subscriptionId);
             $locked = SuscripcionPago::query()->lockForUpdate()->findOrFail($paymentId);
             abort_unless($locked->estado_revision === 'pendiente_revision',422,'Este comprobante ya fue revisado.');
@@ -81,14 +77,20 @@ class PaymentReviewController extends Controller
                 'revisado_por'=>$request->user()->id,
                 'motivo_revision'=>null,
             ]);
-            $this->applySubscriptionPayment($subscription,$locked);
+            $completed = $this->applySubscriptionPayment($subscription,$locked);
             Empresa::whereKey($locked->empresa_id)->update(['metodo_pago_preferido'=>$locked->metodo]);
+            return $completed;
         }, 3);
 
-        $subscription = Suscripcion::query()->findOrFail($subscriptionId);
-        $access->refresh($subscription);
+        if ($paymentCompleted) {
+            $subscription = Suscripcion::query()->findOrFail($subscriptionId);
+            $access->refresh($subscription);
+        }
+
         return response()->json([
-            'message'=>'Pago de suscripción confirmado. La vigencia fue actualizada.',
+            'message'=>$paymentCompleted
+                ? 'Pago de suscripción confirmado. La vigencia fue actualizada.'
+                : 'Pago de suscripción confirmado como abono. La vigencia no cambia hasta completar el primer cobro.',
             'data'=>SuscripcionPago::query()->findOrFail($paymentId)->load(['pagador:id,nombre,apellido','revisor:id,nombre,apellido']),
         ]);
     }
@@ -144,21 +146,37 @@ class PaymentReviewController extends Controller
         $project->update(['estado_pago'=>$status]);
     }
 
-    private function applySubscriptionPayment(Suscripcion $subscription, SuscripcionPago $payment): void
+    private function applySubscriptionPayment(Suscripcion $subscription, SuscripcionPago $payment): bool
     {
-        $firstPaymentDone=(bool)$subscription->primer_cobro_pagado;
-        if(!$firstPaymentDone && $subscription->primer_cobro_monto !== null){
-            $confirmed=(float)$subscription->pagos()->where('estado_revision','confirmado')->sum('monto');
-            $firstPaymentDone=$confirmed+0.001 >= (float)$subscription->primer_cobro_monto;
+        if ($subscription->estado === 'cancelada') {
+            abort(422, 'No se puede aplicar un pago a una suscripción cancelada.');
         }
 
-        if(!$subscription->primer_cobro_pagado && $firstPaymentDone && $subscription->primer_cobro_hasta){
-            $nextDue=Carbon::parse($subscription->primer_cobro_hasta)->addMonthNoOverflow()->endOfMonth();
+        $confirmedTotal=(float)$subscription->pagos()->where('estado_revision','confirmado')->sum('monto');
+        $firstPaymentDone=(bool)$subscription->primer_cobro_pagado;
+        if(!$firstPaymentDone && $subscription->primer_cobro_monto !== null){
+            $firstPaymentDone=$confirmedTotal+0.001 >= (float)$subscription->primer_cobro_monto;
+        }
+
+        if(!$firstPaymentDone && $subscription->primer_cobro_monto !== null){
+            $subscription->update(['primer_cobro_pagado'=>false]);
+            return false;
+        }
+
+        if ($subscription->primer_cobro_hasta && !$subscription->primer_cobro_pagado) {
+            $base=Carbon::parse($subscription->primer_cobro_hasta);
+            $nextDue=$subscription->frecuencia==='anual'
+                ? $base->addYear()
+                : $base->addMonthNoOverflow();
         } else {
-            $base=$subscription->fecha_vencimiento && $subscription->fecha_vencimiento->isFuture()
+            // Renovaciones posteriores conservan el calendario contractual aunque
+            // el cliente pague después de la fecha de vencimiento.
+            $base=$subscription->fecha_vencimiento
                 ? $subscription->fecha_vencimiento->copy()
                 : Carbon::parse($payment->fecha_pago);
-            $nextDue=$subscription->frecuencia==='anual'?$base->addYear():$base->addMonthNoOverflow();
+            $nextDue=$subscription->frecuencia==='anual'
+                ? $base->addYear()
+                : $base->addMonthNoOverflow();
         }
 
         $subscription->update([
@@ -166,6 +184,7 @@ class PaymentReviewController extends Controller
             'primer_cobro_pagado'=>$firstPaymentDone,
             'estado'=>'activa',
         ]);
+        return true;
     }
 
     private function streamProof(?string $path, ?string $name, ?string $mime): StreamedResponse
