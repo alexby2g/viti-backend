@@ -186,21 +186,28 @@ class AccessInvitationService
 
     private function send(InvitacionCliente $invitation): bool
     {
-        $mailer = (string) config('mail.default', 'log');
-        $transport = (string) config("mail.mailers.{$mailer}.transport", $mailer);
-        $deliveryEnabled = !in_array($transport, ['log','array'], true);
-
-        if (!$deliveryEnabled) {
-            $invitation->update([
-                'ultimo_envio_at' => now(),
-                'intentos_envio' => ((int) $invitation->intentos_envio) + 1,
-                'error_envio' => 'El servidor de correo todavía no está configurado para entrega real. Puedes copiar el enlace de invitación mientras se configura SMTP.',
-            ]);
-            return false;
-        }
+        $provider = Str::lower(trim((string) config('services.transactional_mail.provider', 'laravel')));
 
         try {
-            Mail::to($invitation->correo_destino)->send(new VitiAccessInvitation($invitation));
+            if ($provider === 'brevo') {
+                app(BrevoTransactionalEmailService::class)->sendInvitation($invitation);
+            } else {
+                $mailer = (string) config('mail.default', 'log');
+                $transport = (string) config("mail.mailers.{$mailer}.transport", $mailer);
+                $deliveryEnabled = !in_array($transport, ['log','array'], true);
+
+                if (!$deliveryEnabled) {
+                    $invitation->update([
+                        'ultimo_envio_at' => now(),
+                        'intentos_envio' => ((int) $invitation->intentos_envio) + 1,
+                        'error_envio' => 'El servicio de correo todavía no está configurado para entrega real. Puedes copiar el enlace de invitación mientras se completa la configuración.',
+                    ]);
+                    return false;
+                }
+
+                Mail::to($invitation->correo_destino)->send(new VitiAccessInvitation($invitation));
+            }
+
             $invitation->update([
                 'estado' => 'enviada',
                 'enviada_at' => $invitation->enviada_at ?: now(),

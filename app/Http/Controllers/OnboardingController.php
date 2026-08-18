@@ -54,7 +54,7 @@ class OnboardingController extends Controller
             'data' => $snapshot,
             'message' => $snapshot['email_enviado']
                 ? 'Invitación creada y enviada por correo.'
-                : 'Invitación creada. El correo no pudo entregarse automáticamente; puedes copiar el enlace y configurar SMTP para el envío.',
+                : 'Invitación creada. El correo no pudo entregarse automáticamente; puedes copiar el enlace mientras revisas la configuración del servicio de correo.',
         ], 201);
     }
 
