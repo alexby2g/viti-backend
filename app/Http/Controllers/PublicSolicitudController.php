@@ -18,8 +18,13 @@ class PublicSolicitudController extends Controller
 
     public function start(Request $request): JsonResponse
     {
+        $request->merge([
+            'correo' => Str::lower(trim((string) $request->input('correo'))),
+        ]);
+
         $data = $request->validate([
             'nombre' => ['required','string','min:3','max:180'],
+            'correo' => ['required','email','max:160'],
             'telefono' => ['required','regex:/^[0-9]{7,15}$/'],
             'whatsapp' => ['nullable','regex:/^[0-9]{7,15}$/'],
             'documento' => ['nullable','string','max:50'],
@@ -38,6 +43,8 @@ class PublicSolicitudController extends Controller
             'modalidad' => ['nullable',Rule::in(['mensual','anual'])],
         ], [
             'nombre.required' => 'Ingresa tu nombre completo.',
+            'correo.required' => 'Ingresa el correo donde deseas recibir la invitación de acceso.',
+            'correo.email' => 'Ingresa un correo electrónico válido.',
             'telefono.required' => 'Ingresa tu número de teléfono.',
             'telefono.regex' => 'El teléfono debe contener entre 7 y 15 dígitos.',
             'whatsapp.regex' => 'El número de WhatsApp debe contener entre 7 y 15 dígitos.',
@@ -60,14 +67,24 @@ class PublicSolicitudController extends Controller
 
         [$cliente, $empresa, $solicitud] = DB::transaction(function () use ($data, $questionnaireId, $selectedPlan): array {
             $documento = filled($data['documento'] ?? null) ? trim($data['documento']) : null;
-            $cliente = Cliente::query()->where('telefono', $data['telefono'])->first();
+            $byPhone = Cliente::query()->where('telefono', $data['telefono'])->first();
+            $byEmail = Cliente::query()->where('correo', $data['correo'])->first();
+
+            abort_if($byPhone && $byEmail && (int) $byPhone->id !== (int) $byEmail->id, 422, 'El teléfono y el correo pertenecen a registros diferentes. Contacta a AGR Studio para revisar tus datos.');
+            $cliente = $byPhone ?: $byEmail;
 
             if ($cliente) {
+                abort_if($cliente->usuario()->exists(), 422, 'Este correo o teléfono ya tiene una cuenta VITI. Inicia sesión para solicitar una nueva solución desde tu portal.');
+                abort_if(filled($cliente->correo) && Str::lower((string) $cliente->correo) !== $data['correo'], 422, 'El correo no coincide con el responsable registrado para ese teléfono.');
+                abort_if($cliente->telefono !== $data['telefono'] && Cliente::query()->where('telefono', $data['telefono'])->whereKeyNot($cliente->id)->exists(), 422, 'Ese teléfono ya pertenece a otro responsable.');
                 if ($documento) {
                     abort_if(Cliente::query()->where('documento', $documento)->whereKeyNot($cliente->id)->exists(),422,'Ese documento ya pertenece a otro cliente.');
                     abort_if(filled($cliente->documento) && $cliente->documento !== $documento,422,'El documento indicado no coincide con el cliente registrado para ese teléfono.');
                 }
                 $cliente->update([
+                    'nombre' => trim($data['nombre']),
+                    'telefono' => $data['telefono'],
+                    'correo' => $data['correo'],
                     'whatsapp' => $cliente->whatsapp ?: ($data['whatsapp'] ?? $data['telefono']),
                     'documento' => $cliente->documento ?: $documento,
                     'ci_expedido' => $cliente->ci_expedido ?: ($data['ci_expedido'] ?? null),
@@ -80,6 +97,7 @@ class PublicSolicitudController extends Controller
                 $cliente = Cliente::create([
                     'nombre' => trim($data['nombre']),
                     'telefono' => $data['telefono'],
+                    'correo' => $data['correo'],
                     'whatsapp' => $data['whatsapp'] ?? $data['telefono'],
                     'documento' => $documento,
                     'ci_expedido' => $data['ci_expedido'] ?? null,
@@ -156,6 +174,7 @@ class PublicSolicitudController extends Controller
             'data' => [
                 'solicitud_codigo' => $solicitud->codigo,
                 'estado' => 'recibida',
+                'correo' => $cliente->correo,
             ],
         ], 201);
     }

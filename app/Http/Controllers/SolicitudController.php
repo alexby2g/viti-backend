@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{Cuestionario,Empresa,SolicitudRespuesta,SolicitudSistema};
-use App\Services\WorkflowStateService;
+use App\Services\{AccessInvitationService,WorkflowStateService};
 use App\Support\{Audit,Code};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -48,7 +48,8 @@ class SolicitudController extends Controller
 
     public function show(SolicitudSistema $solicitud): JsonResponse
     {
-        $solicitud->load(['empresa','cliente','planViti','cuestionario.secciones.preguntas','respuestas.pregunta','proyecto','conversacion:id,solicitud_id,cliente_id,empresa_id,asunto,estado','archivos']);
+        $solicitud->load(['empresa','cliente.usuario','planViti','cuestionario.secciones.preguntas','respuestas.pregunta','proyecto','conversacion:id,solicitud_id,cliente_id,empresa_id,asunto,estado','archivos']);
+        $solicitud->setAttribute('acceso_cliente', app(AccessInvitationService::class)->snapshotForSolicitud($solicitud));
         return response()->json(['data'=>$this->withWorkflow($solicitud)]);
     }
 

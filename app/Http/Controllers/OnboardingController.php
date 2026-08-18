@@ -3,7 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\{Cliente,Cuestionario,Empresa,InvitacionCliente,SolicitudSistema,Usuario};
-use App\Support\Code;
+use App\Services\AccessInvitationService;
+use App\Support\{Audit,Code};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -40,14 +41,72 @@ class OnboardingController extends Controller
         ], 201);
     }
 
+    public function createSolicitudInvitation(Request $request, SolicitudSistema $solicitud, AccessInvitationService $service): JsonResponse
+    {
+        $data = $request->validate([
+            'dias_vigencia' => ['nullable','integer','min:1','max:30'],
+        ]);
+
+        $snapshot = $service->createAndSend($solicitud, $request->user(), (int) ($data['dias_vigencia'] ?? 7));
+        Audit::log($request, 'invitacion_cliente_creada', $solicitud, 'Se generó una invitación de acceso vinculada a la solicitud.');
+
+        return response()->json([
+            'data' => $snapshot,
+            'message' => $snapshot['email_enviado']
+                ? 'Invitación creada y enviada por correo.'
+                : 'Invitación creada. El correo no pudo entregarse automáticamente; puedes copiar el enlace y configurar SMTP para el envío.',
+        ], 201);
+    }
+
+    public function resendSolicitudInvitation(Request $request, SolicitudSistema $solicitud, AccessInvitationService $service): JsonResponse
+    {
+        $snapshot = $service->resend($solicitud);
+        Audit::log($request, 'invitacion_cliente_reenviada', $solicitud, 'Se intentó reenviar la invitación de acceso del cliente.');
+
+        return response()->json([
+            'data' => $snapshot,
+            'message' => $snapshot['email_enviado']
+                ? 'Invitación reenviada por correo.'
+                : 'No se pudo entregar el correo. El enlace sigue disponible para copiarlo manualmente.',
+        ]);
+    }
+
+    public function revokeSolicitudInvitation(Request $request, SolicitudSistema $solicitud, AccessInvitationService $service): JsonResponse
+    {
+        $snapshot = $service->revoke($solicitud);
+        Audit::log($request, 'invitacion_cliente_revocada', $solicitud, 'Se revocó la invitación de acceso del cliente.');
+
+        return response()->json(['data' => $snapshot, 'message' => 'Invitación revocada.']);
+    }
+
     public function showInvitation(string $token): JsonResponse
     {
-        $invitation = $this->resolveInvitation($token);
+        $invitation = $this->resolveInvitation($token)->loadMissing(['cliente','solicitud.empresa']);
+        $cliente = $invitation->cliente;
+        $solicitud = $invitation->solicitud;
+        $empresa = $solicitud?->empresa;
 
         return response()->json([
             'data' => [
                 'estado' => $invitation->estado,
                 'expira_at' => $invitation->expira_at,
+                'correo' => $invitation->correo_destino ?: $cliente?->correo,
+                'vinculada_solicitud' => (bool) ($cliente && $solicitud),
+                'prefill' => $cliente && $solicitud ? [
+                    'nombre' => $cliente->nombre,
+                    'telefono' => $cliente->telefono,
+                    'whatsapp' => $cliente->whatsapp,
+                    'ciudad' => $cliente->ciudad,
+                    'direccion' => $cliente->direccion,
+                    'empresa_nombre' => $empresa?->nombre_comercial,
+                    'empresa_actividad' => $empresa?->actividad,
+                    'empresa_telefono' => $empresa?->telefono,
+                    'empresa_whatsapp' => $empresa?->whatsapp,
+                    'empresa_ciudad' => $empresa?->ciudad,
+                    'empresa_direccion' => $empresa?->direccion,
+                    'titulo_sistema' => $solicitud->titulo,
+                    'resumen' => $solicitud->resumen,
+                ] : null,
             ],
         ]);
     }
@@ -119,16 +178,28 @@ class OnboardingController extends Controller
         try {
             $result = DB::transaction(function () use ($data, $photoPath, $invitation): array {
                 $locked = InvitacionCliente::query()->lockForUpdate()->findOrFail($invitation->id);
-                abort_unless($locked->estado === 'pendiente', 410, 'Este enlace ya fue utilizado.');
+                abort_unless(in_array($locked->estado, ['pendiente','enviada'], true), 410, 'Este enlace ya fue utilizado o deshabilitado.');
                 abort_if($locked->expira_at && $locked->expira_at->isPast(), 410, 'Este enlace de registro ya venció.');
 
-                $questionnaireId = Cuestionario::query()->where('activo', true)->value('id');
-                abort_unless($questionnaireId, 422, 'VITI no tiene un cuestionario activo en este momento.');
-
                 $document = trim($data['ci']);
-                $cliente = Cliente::query()->where('telefono', $data['telefono'])->lockForUpdate()->first();
-                $documentOwner = Cliente::query()->where('documento', $document)->lockForUpdate()->first();
+                $linked = filled($locked->cliente_id) && filled($locked->solicitud_id);
+                $cliente = null;
+                $empresa = null;
+                $solicitud = null;
 
+                if ($linked) {
+                    $cliente = Cliente::query()->lockForUpdate()->findOrFail($locked->cliente_id);
+                    $solicitud = SolicitudSistema::query()->lockForUpdate()->findOrFail($locked->solicitud_id);
+                    abort_unless((int) $solicitud->cliente_id === (int) $cliente->id, 422, 'La invitación no coincide con el responsable de la solicitud.');
+                    $empresa = $solicitud->empresa_id
+                        ? Empresa::query()->lockForUpdate()->findOrFail($solicitud->empresa_id)
+                        : null;
+                    abort_unless($empresa, 422, 'La solicitud todavía no tiene un negocio asociado.');
+                } else {
+                    $cliente = Cliente::query()->where('telefono', $data['telefono'])->lockForUpdate()->first();
+                }
+
+                $documentOwner = Cliente::query()->where('documento', $document)->lockForUpdate()->first();
                 abort_if(
                     $documentOwner && (!$cliente || (int) $documentOwner->id !== (int) $cliente->id),
                     422,
@@ -139,7 +210,7 @@ class OnboardingController extends Controller
                     abort_if(
                         filled($cliente->documento) && $cliente->documento !== $document,
                         422,
-                        'La cédula no coincide con la ficha existente para ese teléfono.'
+                        'La cédula no coincide con la ficha existente para este responsable.'
                     );
                     abort_if(
                         Usuario::query()->where('cliente_id', $cliente->id)->exists(),
@@ -150,6 +221,7 @@ class OnboardingController extends Controller
                     $oldPhotoPath = $cliente->foto_path;
                     $cliente->update([
                         'nombre' => trim($data['nombre']),
+                        'telefono' => $data['telefono'],
                         'whatsapp' => $data['whatsapp'] ?? $data['telefono'],
                         'documento' => $document,
                         'ci_expedido' => $data['ci_expedido'] ?? $cliente->ci_expedido,
@@ -176,25 +248,26 @@ class OnboardingController extends Controller
                     ]);
                 }
 
+                $email = Str::lower(trim((string) ($locked->correo_destino ?: $cliente->correo)));
+                abort_if($linked && $email === '', 422, 'La invitación vinculada no tiene un correo de destino.');
+                abort_if($email !== '' && Usuario::query()->where('correo', $email)->exists(), 422, 'Ese correo ya pertenece a otra cuenta VITI.');
+                if ($email !== '' && !$cliente->correo) $cliente->update(['correo' => $email]);
+
                 $usuario = Usuario::create([
                     'cliente_id' => $cliente->id,
                     'nombre' => trim($data['nombre']),
                     'usuario' => $data['usuario'],
                     'documento' => $document,
                     'telefono' => $data['telefono'],
+                    'correo' => $email !== '' ? $email : null,
                     'password' => $data['password'],
                     'rol' => 'cliente',
                     'estado' => 'activo',
                 ]);
 
                 $companyName = trim($data['empresa_nombre']);
-                $empresa = Empresa::query()
-                    ->where('cliente_id', $cliente->id)
-                    ->whereRaw('LOWER(nombre_comercial) = ?', [Str::lower($companyName)])
-                    ->lockForUpdate()
-                    ->first();
-
                 $companyData = [
+                    'nombre_comercial' => $companyName,
                     'actividad' => $data['empresa_actividad'] ?? null,
                     'telefono' => $data['empresa_telefono'] ?? $data['telefono'],
                     'whatsapp' => $data['empresa_whatsapp'] ?? ($data['whatsapp'] ?? $data['telefono']),
@@ -202,15 +275,30 @@ class OnboardingController extends Controller
                     'direccion' => $data['empresa_direccion'] ?? $data['direccion'] ?? null,
                 ];
 
-                if ($empresa) {
+                if ($linked) {
+                    abort_if(
+                        Empresa::query()->where('cliente_id', $cliente->id)->whereKeyNot($empresa->id)
+                            ->whereRaw('LOWER(nombre_comercial) = ?', [Str::lower($companyName)])->exists(),
+                        422,
+                        'Ya existe otro negocio registrado con ese nombre.'
+                    );
                     $empresa->update(array_filter($companyData, fn ($value) => filled($value)));
                 } else {
-                    $empresa = Empresa::create(array_merge($companyData, [
-                        'cliente_id' => $cliente->id,
-                        'codigo' => Code::next('empresas','EMP'),
-                        'nombre_comercial' => $companyName,
-                        'estado' => 'pendiente_revision',
-                    ]));
+                    $empresa = Empresa::query()
+                        ->where('cliente_id', $cliente->id)
+                        ->whereRaw('LOWER(nombre_comercial) = ?', [Str::lower($companyName)])
+                        ->lockForUpdate()
+                        ->first();
+
+                    if ($empresa) {
+                        $empresa->update(array_filter($companyData, fn ($value) => filled($value)));
+                    } else {
+                        $empresa = Empresa::create(array_merge($companyData, [
+                            'cliente_id' => $cliente->id,
+                            'codigo' => Code::next('empresas','EMP'),
+                            'estado' => 'pendiente_revision',
+                        ]));
+                    }
                 }
 
                 $empresa->usuarios()->syncWithoutDetaching([$usuario->id => [
@@ -219,42 +307,55 @@ class OnboardingController extends Controller
                 ]]);
 
                 $requestTitle = trim($data['titulo_sistema']);
-                $solicitud = SolicitudSistema::query()
-                    ->where('cliente_id', $cliente->id)
-                    ->where('empresa_id', $empresa->id)
-                    ->whereRaw('LOWER(titulo) = ?', [Str::lower($requestTitle)])
-                    ->whereIn('estado', ['borrador','en_revision'])
-                    ->latest('id')
-                    ->lockForUpdate()
-                    ->first();
-
-                if ($solicitud) {
+                if ($linked) {
                     $solicitud->update([
                         'public_token' => $solicitud->public_token ?: Str::random(48),
                         'publico_habilitado' => true,
-                        'resumen' => $solicitud->resumen ?: ($data['resumen'] ?? null),
+                        'titulo' => $requestTitle,
+                        'resumen' => $data['resumen'] ?? $solicitud->resumen,
                         'acuerdo_comercial_requerido' => true,
                     ]);
                 } else {
-                    $solicitud = SolicitudSistema::create([
-                        'empresa_id' => $empresa->id,
-                        'cliente_id' => $cliente->id,
-                        'cuestionario_id' => $questionnaireId,
-                        'codigo' => Code::next('solicitudes_sistema','SOL'),
-                        'public_token' => Str::random(48),
-                        'publico_habilitado' => true,
-                        'titulo' => $requestTitle,
-                        'resumen' => $data['resumen'] ?? null,
-                        'estado' => 'borrador',
-                        'prioridad' => 'normal',
-                        'acuerdo_comercial_requerido' => true,
-                    ]);
+                    $questionnaireId = Cuestionario::query()->where('activo', true)->value('id');
+                    abort_unless($questionnaireId, 422, 'VITI no tiene un cuestionario activo en este momento.');
+                    $solicitud = SolicitudSistema::query()
+                        ->where('cliente_id', $cliente->id)
+                        ->where('empresa_id', $empresa->id)
+                        ->whereRaw('LOWER(titulo) = ?', [Str::lower($requestTitle)])
+                        ->whereIn('estado', ['borrador','en_revision'])
+                        ->latest('id')
+                        ->lockForUpdate()
+                        ->first();
+
+                    if ($solicitud) {
+                        $solicitud->update([
+                            'public_token' => $solicitud->public_token ?: Str::random(48),
+                            'publico_habilitado' => true,
+                            'resumen' => $solicitud->resumen ?: ($data['resumen'] ?? null),
+                            'acuerdo_comercial_requerido' => true,
+                        ]);
+                    } else {
+                        $solicitud = SolicitudSistema::create([
+                            'empresa_id' => $empresa->id,
+                            'cliente_id' => $cliente->id,
+                            'cuestionario_id' => $questionnaireId,
+                            'codigo' => Code::next('solicitudes_sistema','SOL'),
+                            'public_token' => Str::random(48),
+                            'publico_habilitado' => true,
+                            'titulo' => $requestTitle,
+                            'resumen' => $data['resumen'] ?? null,
+                            'estado' => 'borrador',
+                            'prioridad' => 'normal',
+                            'acuerdo_comercial_requerido' => true,
+                        ]);
+                    }
                 }
 
                 $locked->update([
                     'estado' => 'usada',
                     'cliente_id' => $cliente->id,
                     'solicitud_id' => $solicitud->id,
+                    'correo_destino' => $email !== '' ? $email : $locked->correo_destino,
                     'usada_at' => now(),
                 ]);
 
@@ -288,7 +389,7 @@ class OnboardingController extends Controller
     private function resolveInvitation(string $token): InvitacionCliente
     {
         $invitation = InvitacionCliente::query()->where('token', $token)->firstOrFail();
-        abort_unless($invitation->estado === 'pendiente', 410, 'Este enlace ya fue utilizado o deshabilitado.');
+        abort_unless(in_array($invitation->estado, ['pendiente','enviada'], true), 410, 'Este enlace ya fue utilizado o deshabilitado.');
         abort_if($invitation->expira_at && $invitation->expira_at->isPast(), 410, 'Este enlace de registro ya venció.');
         return $invitation;
     }

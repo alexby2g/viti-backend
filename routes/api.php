@@ -146,6 +146,9 @@ Route::prefix('v1')->group(function (): void {
             Route::get('dashboard', DashboardController::class);
             Route::get('almacenamiento/estado', [StorageController::class,'status'])->middleware('superadmin');
             Route::post('invitaciones-clientes', [OnboardingController::class,'createInvitation']);
+            Route::post('solicitudes/{solicitud}/invitacion', [OnboardingController::class,'createSolicitudInvitation']);
+            Route::post('solicitudes/{solicitud}/invitacion/reenviar', [OnboardingController::class,'resendSolicitudInvitation']);
+            Route::delete('solicitudes/{solicitud}/invitacion', [OnboardingController::class,'revokeSolicitudInvitation']);
 
             Route::post('clientes/registro-completo', [ClienteController::class,'storeComplete']);
             Route::apiResource('clientes', ClienteController::class)->parameters(['clientes' => 'cliente']);

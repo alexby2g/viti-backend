@@ -31,6 +31,7 @@ class SolicitudSistema extends Model
     public function asignado(){return $this->belongsTo(Usuario::class,'asignado_a');}
     public function respuestas(){return $this->hasMany(SolicitudRespuesta::class,'solicitud_id');}
     public function proyecto(){return $this->hasOne(Proyecto::class,'solicitud_id');}
+    public function invitaciones(){return $this->hasMany(InvitacionCliente::class,'solicitud_id')->latest('id');}
     public function conversacion(){return $this->hasOne(Conversacion::class,'solicitud_id');}
     public function archivos(){return $this->morphMany(Archivo::class,'adjuntable');}
 }

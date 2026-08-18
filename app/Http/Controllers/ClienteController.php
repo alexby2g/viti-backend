@@ -23,6 +23,7 @@ class ClienteController extends Controller
             $term = '%'.$request->string('buscar').'%';
             $query->where(fn ($q) => $q->where('nombre','like',$term)
                 ->orWhere('telefono','like',$term)
+                ->orWhere('correo','like',$term)
                 ->orWhere('whatsapp','like',$term)
                 ->orWhereHas('empresas', fn ($e) => $e->where('nombre_comercial','like',$term)));
         }
@@ -42,6 +43,7 @@ class ClienteController extends Controller
         $data = $request->validate([
             'cliente.nombre' => ['required','string','max:180'],
             'cliente.telefono' => ['required','string','max:30','unique:clientes,telefono'],
+            'cliente.correo' => ['nullable','email','max:160','unique:clientes,correo'],
             'cliente.whatsapp' => ['nullable','string','max:30'],
             'cliente.documento' => ['nullable','string','max:50','unique:clientes,documento'],
             'cliente.ci_expedido' => ['nullable','string','max:20'],
@@ -92,7 +94,11 @@ class ClienteController extends Controller
 
     public function update(Request $request, Cliente $cliente): JsonResponse
     {
-        $cliente->update($this->validateData($request,$cliente));
+        $data = $this->validateData($request,$cliente);
+        $cliente->update($data);
+        if (array_key_exists('correo', $data) && $cliente->usuario) {
+            $cliente->usuario->update(['correo' => $data['correo'] ?: null]);
+        }
         Audit::log($request,'cliente_actualizado',$cliente,'Se actualizaron los datos del cliente.');
         return response()->json(['data'=>$cliente->fresh()->load('empresas')]);
     }
@@ -121,6 +127,7 @@ class ClienteController extends Controller
         return $request->validate([
             'nombre'=>['required','string','max:180'],
             'telefono'=>['required','string','max:30',Rule::unique('clientes','telefono')->ignore($cliente?->id)],
+            'correo'=>['nullable','email','max:160',Rule::unique('clientes','correo')->ignore($cliente?->id),Rule::unique('usuarios','correo')->ignore($cliente?->usuario?->id)],
             'whatsapp'=>['nullable','string','max:30'],
             'documento'=>['nullable','string','max:50',Rule::unique('clientes','documento')->ignore($cliente?->id)],
             'ci_expedido'=>['nullable','string','max:20'],
@@ -128,6 +135,6 @@ class ClienteController extends Controller
             'direccion'=>['nullable','string','max:255'],
             'observaciones'=>['nullable','string','max:3000'],
             'estado'=>['nullable',Rule::in(['prospecto','activo','inactivo'])],
-        ], ['telefono.unique'=>'Ese teléfono ya pertenece a otro cliente.','documento.unique'=>'Esa cédula de identidad ya pertenece a otro cliente.']);
+        ], ['telefono.unique'=>'Ese teléfono ya pertenece a otro cliente.','correo.unique'=>'Ese correo ya pertenece a otro cliente o usuario.','documento.unique'=>'Esa cédula de identidad ya pertenece a otro cliente.']);
     }
 }

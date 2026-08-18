@@ -14,7 +14,7 @@ class Cliente extends Model
     protected $casts = ['foto_verificada'=>'boolean','perfil_completo_at'=>'datetime'];
     protected $appends = ['foto_url'];
 
-    protected $fillable = ['nombre','telefono','whatsapp','documento','ci_expedido','ciudad','direccion','foto_path','foto_verificada','perfil_completo_at','observaciones','estado','canal_origen'];
+    protected $fillable = ['nombre','telefono','whatsapp','correo','documento','ci_expedido','ciudad','direccion','foto_path','foto_verificada','perfil_completo_at','observaciones','estado','canal_origen'];
 
     public function getFotoUrlAttribute(): ?string
     {
@@ -31,6 +31,7 @@ class Cliente extends Model
     }
 
     public function usuario() { return $this->hasOne(Usuario::class); }
+    public function invitaciones() { return $this->hasMany(InvitacionCliente::class); }
     public function empresas() { return $this->hasMany(Empresa::class); }
     public function solicitudes() { return $this->hasMany(SolicitudSistema::class); }
     public function proyectos() { return $this->hasMany(Proyecto::class); }

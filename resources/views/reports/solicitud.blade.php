@@ -34,7 +34,7 @@ if($plan?->precio_anual!==null)$subscriptionParts[]=number_format((float)$plan->
 ?>
 <div class="brand">
   <h1><?= e($solicitud->codigo) ?> · <?= e($solicitud->titulo) ?></h1>
-  <div class="muted">Empresa: <?= e($solicitud->empresa?->nombre_comercial ?: 'Sin empresa') ?> · Responsable: <?= e($solicitud->cliente?->nombre ?: 'Sin responsable') ?> · Teléfono: <?= e($solicitud->cliente?->telefono ?: 'Sin teléfono') ?></div>
+  <div class="muted">Empresa: <?= e($solicitud->empresa?->nombre_comercial ?: 'Sin empresa') ?> · Responsable: <?= e($solicitud->cliente?->nombre ?: 'Sin responsable') ?> · Teléfono: <?= e($solicitud->cliente?->telefono ?: 'Sin teléfono') ?> · Correo: <?= e($solicitud->cliente?->correo ?: 'Sin correo') ?></div>
   <div class="muted">Generado: <?= e(now()->format('d/m/Y H:i')) ?></div>
 </div>
 <p><span class="badge"><?= e(str_replace('_',' ',$solicitud->estado ?: 'sin estado')) ?></span></p>

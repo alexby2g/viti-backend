@@ -17,6 +17,7 @@ class PublicAccessRequestTest extends TestCase
 
         $response = $this->postJson('/api/v1/publico/solicitudes', [
             'nombre' => 'María Pérez',
+            'correo' => 'maria@example.com',
             'telefono' => '70012345',
             'whatsapp' => '70012345',
             'ciudad' => 'Santa Cruz',
@@ -37,6 +38,7 @@ class PublicAccessRequestTest extends TestCase
         $request = SolicitudSistema::query()->where('empresa_id', $company->id)->firstOrFail();
 
         $this->assertSame('prospecto', $client->estado);
+        $this->assertSame('maria@example.com', $client->correo);
         $this->assertSame('pendiente_revision', $company->estado);
         $this->assertSame('borrador', $request->estado);
         $this->assertSame('Organizar citas y servicios técnicos', $request->titulo);
