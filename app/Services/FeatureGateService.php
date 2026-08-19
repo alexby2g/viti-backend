@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Models\Empresa;
+use App\Models\{Aplicacion,Empresa};
 
 class FeatureGateService
 {
@@ -16,13 +16,22 @@ class FeatureGateService
         $modules = $empresa->planViti?->modulos;
         if ($modules === null || $modules === []) return null;
 
-        return array_values(array_unique(array_intersect(
-            self::MODULES,
-            array_values(array_filter(array_map(
-                fn ($module) => trim((string) $module),
-                (array) $modules
-            )))
-        )));
+        return $this->normalize($modules);
+    }
+
+    public function modulesForApp(Aplicacion $application): ?array
+    {
+        $application->loadMissing('empresa.planViti');
+        $config = (array) ($application->configuracion ?? []);
+        $hasOverride = array_key_exists('heredar_modulos_plan', $config) && $config['heredar_modulos_plan'] === false;
+
+        if (!$hasOverride) return $this->modules($application->empresa);
+
+        $selected = $this->normalize($config['modulos'] ?? []);
+        $planModules = $this->modules($application->empresa);
+        if ($planModules === null) return $selected;
+
+        return array_values(array_intersect($selected, $planModules));
     }
 
     public function hasModule(Empresa $empresa, string $module): bool
@@ -32,12 +41,28 @@ class FeatureGateService
         return $modules === null || in_array($module, $modules, true);
     }
 
+    public function hasModuleForApp(Aplicacion $application, string $module): bool
+    {
+        if (!in_array($module, self::MODULES, true)) return false;
+        $modules = $this->modulesForApp($application);
+        return $modules === null || in_array($module, $modules, true);
+    }
+
     public function assertModule(Empresa $empresa, string $module): void
     {
         abort_unless(
             $this->hasModule($empresa, $module),
             403,
             'Este módulo no forma parte del plan VITI asignado a tu negocio.'
+        );
+    }
+
+    public function assertAppModule(Aplicacion $application, string $module): void
+    {
+        abort_unless(
+            $this->hasModuleForApp($application, $module),
+            403,
+            'Este módulo no está habilitado para esta aplicación.'
         );
     }
 
@@ -76,6 +101,31 @@ class FeatureGateService
             'usuarios' => $this->usage($users, $plan?->max_usuarios),
             'aplicaciones' => $this->usage($apps, $plan?->max_aplicaciones),
         ];
+    }
+
+    public function moduleCatalog(): array
+    {
+        return [
+            ['key'=>'inicio','label'=>'Inicio','icon'=>'dashboard'],
+            ['key'=>'agenda','label'=>'Agenda','icon'=>'calendar_month'],
+            ['key'=>'ordenes','label'=>'Órdenes','icon'=>'assignment'],
+            ['key'=>'clientes','label'=>'Clientes','icon'=>'groups'],
+            ['key'=>'equipos','label'=>'Equipos','icon'=>'devices_other'],
+            ['key'=>'tecnicos','label'=>'Técnicos','icon'=>'engineering'],
+            ['key'=>'inventario','label'=>'Inventario','icon'=>'inventory_2'],
+            ['key'=>'pagos','label'=>'Pagos','icon'=>'payments'],
+            ['key'=>'garantias','label'=>'Garantías','icon'=>'verified'],
+            ['key'=>'historial','label'=>'Historial','icon'=>'history'],
+            ['key'=>'buzon','label'=>'Buzón','icon'=>'forum'],
+        ];
+    }
+
+    private function normalize(array $modules): array
+    {
+        return array_values(array_unique(array_intersect(
+            self::MODULES,
+            array_values(array_filter(array_map(fn ($module) => trim((string) $module), $modules)))
+        )));
     }
 
     private function usage(int $used, ?int $limit): array
