@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{AlertaSaas,Aplicacion,Empresa,Proyecto};
+use App\Models\{AlertaSaas,Aplicacion,Empresa,Proyecto,Usuario};
 use App\Services\FeatureGateService;
 use App\Support\Audit;
 use Illuminate\Http\JsonResponse;
@@ -21,16 +21,45 @@ class AplicacionController extends Controller
             'catalogo',
             'suscripcion:id,aplicacion_id,estado,prueba_hasta,fecha_vencimiento,dias_gracia',
         ])->latest();
-        if($r->filled('buscar')){$t='%'.$r->string('buscar').'%';$q->where(fn($x)=>$x->where('nombre','like',$t)->orWhereHas('empresa',fn($e)=>$e->where('nombre_comercial','like',$t)));}
+
+        if($r->filled('buscar')){
+            $t='%'.$r->string('buscar').'%';
+            $q->where(fn($x)=>$x->where('nombre','like',$t)->orWhereHas('empresa',fn($e)=>$e->where('nombre_comercial','like',$t)));
+        }
+
         return response()->json($q->paginate(20));
     }
 
     public function store(Request $r, FeatureGateService $features): JsonResponse
     {
-        $d=$this->data($r);$base=Str::slug($d['nombre']);$slug=$base.'-'.Str::lower(Str::random(5));
-        $a=DB::transaction(function() use($d,$slug,$features): Aplicacion {
+        $d=$this->data($r);
+        $cloneFromId=$r->integer('clone_from_id');
+        $base=Str::slug($d['nombre']);
+        $slug=$base.'-'.Str::lower(Str::random(5));
+
+        $a=DB::transaction(function() use($d,$slug,$cloneFromId,$features): Aplicacion {
             $empresa=Empresa::query()->with('planViti')->lockForUpdate()->findOrFail($d['empresa_id']);
             $features->assertAppLimit($empresa);
+
+            if($cloneFromId){
+                $source=Aplicacion::query()->findOrFail($cloneFromId);
+                $row=$source->only([
+                    'catalogo_aplicacion_id','descripcion','icono','color_primario','color_secundario','modulos','configuracion',
+                    'version','tipo','tecnologias','proveedor_hosting','notas','repositorio_url','url_administracion'
+                ]);
+                $row=array_merge($row,$d);
+                $row['slug']=$slug;
+                $row['aplicacion_origen_id']=$source->id;
+                $row['es_plantilla']=false;
+                $row['entorno']=$d['entorno'] ?? 'beta';
+                $row['estado']=$d['estado'] ?? 'en_pruebas';
+                $row['acceso_cliente']=false;
+                $row['entregado_at']=null;
+                $row['provisionado_at']=null;
+                $row['publicado_at']=null;
+                $row['url']=null;
+                return Aplicacion::create($row);
+            }
 
             if(!empty($d['proyecto_id'])){
                 $proyecto=Proyecto::query()->lockForUpdate()->findOrFail($d['proyecto_id']);
@@ -40,22 +69,53 @@ class AplicacionController extends Controller
 
             return Aplicacion::create($d+['slug'=>$slug]);
         });
-        Audit::log($r,'aplicacion_integrada',$a,'Se integró una aplicación a VITI.');
-        return response()->json(['data'=>$a->load('empresa')],201);
+
+        Audit::log($r,$cloneFromId?'aplicacion_clonada':'aplicacion_integrada',$a,$cloneFromId?'Se clonó una aplicación desde AppHub.':'Se integró una aplicación a VITI.');
+        return response()->json(['data'=>$a->fresh()->load(['empresa','catalogo','origen'])],201);
     }
 
     public function show(Aplicacion $aplicacion): JsonResponse
     {
-        return response()->json(['data'=>$aplicacion->load(['empresa','proyecto','catalogo','suscripcion','mantenimientos','archivos'])]);
+        return response()->json(['data'=>$aplicacion->load([
+            'empresa','proyecto','catalogo','suscripcion','mantenimientos','archivos','origen',
+            'usuarios:id,nombre,apellido,usuario,correo'
+        ])]);
     }
 
     public function update(Request $r,Aplicacion $aplicacion): JsonResponse
     {
+        if($r->boolean('integrar_usuario')){
+            $data=$r->validate([
+                'user_id'=>['required','integer','exists:usuarios,id'],
+                'role'=>['nullable','string','max:50'],
+                'activo'=>['sometimes','boolean'],
+                'permisos'=>['nullable','array'],
+            ]);
+
+            $user=Usuario::findOrFail($data['user_id']);
+            abort_unless(
+                $aplicacion->empresa->usuarios()->whereKey($user->id)->wherePivot('activo',true)->exists(),
+                422,
+                'El usuario debe pertenecer primero a la empresa de esta aplicación.'
+            );
+
+            $aplicacion->usuarios()->syncWithoutDetaching([
+                $user->id=>[
+                    'rol'=>$data['role'] ?? 'consulta',
+                    'permisos'=>isset($data['permisos']) ? json_encode($data['permisos']) : null,
+                    'activo'=>$data['activo'] ?? true,
+                ]
+            ]);
+
+            Audit::log($r,'usuario_integrado_aplicacion',$aplicacion,'Se integró un usuario a una aplicación desde AppHub.');
+            return response()->json(['message'=>'Usuario integrado correctamente.','data'=>$aplicacion->fresh()->load('usuarios:id,nombre,apellido,usuario,correo')]);
+        }
+
         $data=$this->data($r,$aplicacion);
         unset($data['empresa_id'],$data['proyecto_id'],$data['catalogo_aplicacion_id'],$data['entorno'],$data['estado'],$data['acceso_cliente']);
         $aplicacion->update($data);
         Audit::log($r,'aplicacion_actualizada',$aplicacion,'Se actualizó una aplicación.');
-        return response()->json(['data'=>$aplicacion->fresh()->load('empresa')]);
+        return response()->json(['data'=>$aplicacion->fresh()->load(['empresa','catalogo','origen'])]);
     }
 
     public function actualizarCiclo(Request $r,Aplicacion $aplicacion): JsonResponse
@@ -78,7 +138,6 @@ class AplicacionController extends Controller
 
         $aplicacion->update($data);
         Audit::log($r,'aplicacion_ciclo_actualizado',$aplicacion,'Se actualizó manualmente el ciclo técnico y operativo de la aplicación.');
-
         return response()->json(['message'=>'Estado de la aplicación actualizado.','data'=>$aplicacion->fresh()->load(['empresa','suscripcion'])]);
     }
 
@@ -125,11 +184,29 @@ class AplicacionController extends Controller
     private function data(Request $r,?Aplicacion $a=null): array
     {
         return $r->validate([
-            'empresa_id'=>'required|integer|exists:empresas,id','proyecto_id'=>['nullable','integer','exists:proyectos,id',Rule::unique('aplicaciones','proyecto_id')->ignore($a?->id)],
-            'catalogo_aplicacion_id'=>'nullable|integer|exists:catalogo_aplicaciones,id','nombre'=>'required|string|max:200','version'=>'nullable|string|max:40',
-            'tipo'=>['nullable',Rule::in(['web','movil','escritorio','hibrido','api','otro'])],'tecnologias'=>'nullable|string|max:255','entorno'=>['nullable',Rule::in(['desarrollo','beta','produccion'])],
-            'estado'=>['nullable',Rule::in(['en_pruebas','activo','pausado','retirado'])],'acceso_cliente'=>'sometimes|boolean','url'=>'nullable|url|max:255','url_administracion'=>'nullable|url|max:255',
-            'repositorio_url'=>'nullable|url|max:255','proveedor_hosting'=>'nullable|string|max:100','notas'=>'nullable|string|max:5000','publicado_at'=>'nullable|date'
+            'empresa_id'=>'required|integer|exists:empresas,id',
+            'proyecto_id'=>['nullable','integer','exists:proyectos,id',Rule::unique('aplicaciones','proyecto_id')->ignore($a?->id)],
+            'catalogo_aplicacion_id'=>'nullable|integer|exists:catalogo_aplicaciones,id',
+            'nombre'=>'required|string|max:200',
+            'descripcion'=>'nullable|string|max:5000',
+            'icono'=>'nullable|string|max:1000',
+            'color_primario'=>'nullable|string|max:30',
+            'color_secundario'=>'nullable|string|max:30',
+            'modulos'=>'nullable|array',
+            'configuracion'=>'nullable|array',
+            'es_plantilla'=>'sometimes|boolean',
+            'version'=>'nullable|string|max:40',
+            'tipo'=>['nullable',Rule::in(['web','movil','escritorio','hibrido','api','otro'])],
+            'tecnologias'=>'nullable|string|max:255',
+            'entorno'=>['nullable',Rule::in(['desarrollo','beta','produccion'])],
+            'estado'=>['nullable',Rule::in(['en_pruebas','activo','pausado','retirado'])],
+            'acceso_cliente'=>'sometimes|boolean',
+            'url'=>'nullable|url|max:255',
+            'url_administracion'=>'nullable|url|max:255',
+            'repositorio_url'=>'nullable|url|max:255',
+            'proveedor_hosting'=>'nullable|string|max:100',
+            'notas'=>'nullable|string|max:5000',
+            'publicado_at'=>'nullable|date'
         ]);
     }
 }

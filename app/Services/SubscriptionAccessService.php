@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Aplicacion;
 use App\Models\Suscripcion;
+use App\Models\SuscripcionPago;
 
 class SubscriptionAccessService
 {
@@ -16,6 +17,18 @@ class SubscriptionAccessService
 
         $today = now()->startOfDay();
         $trialEnd = $subscription->prueba_hasta?->copy()->startOfDay();
+        $firstChargeComplete = $this->firstChargeComplete($subscription);
+
+        // El primer cobro pendiente bloquea el acceso aunque la fecha general
+        // de vencimiento de la suscripción todavía no haya llegado.
+        if ($subscription->primer_cobro_monto !== null && !$firstChargeComplete) {
+            if ($subscription->estado !== 'suspendida') {
+                $subscription->update(['estado' => 'suspendida']);
+                $subscription->refresh();
+            }
+            return $subscription;
+        }
+
         if ($trialEnd && $today->lte($trialEnd)) {
             if ($subscription->estado !== 'activa') {
                 $subscription->update(['estado'=>'activa']);
@@ -52,7 +65,26 @@ class SubscriptionAccessService
         $trialEnd = $subscription->prueba_hasta?->copy()->startOfDay();
         $due = $subscription->fecha_vencimiento?->copy()->startOfDay();
         $graceEnd = $due?->copy()->addDays((int)$subscription->dias_gracia);
-        $inTrial = $trialEnd && $today->lte($trialEnd);
+
+        $firstChargeAmount = $subscription->primer_cobro_monto !== null
+            ? (float)$subscription->primer_cobro_monto
+            : null;
+        $firstChargeConfirmed = $this->firstChargeConfirmedAmount($subscription, $firstChargeAmount);
+        $firstChargeRemaining = $firstChargeAmount !== null
+            ? max(0.0, round($firstChargeAmount - $firstChargeConfirmed, 2))
+            : null;
+        $firstChargeComplete = $firstChargeAmount !== null
+            ? $firstChargeRemaining <= 0.0
+            : false;
+        $firstChargePaid = (bool)$subscription->primer_cobro_pagado || $firstChargeComplete;
+
+        // Un primer cobro pendiente tiene prioridad sobre el periodo de prueba:
+        // refresh() ya suspende la suscripción y statusFor() no debe volver a
+        // conceder acceso solo porque prueba_hasta todavía no haya vencido.
+        $inTrial = $trialEnd
+            && $today->lte($trialEnd)
+            && ($firstChargeAmount === null || $firstChargeComplete);
+
         $daysToDue = $due && $today->lte($due) ? (int)$today->diffInDays($due) : null;
         $daysLate = $due && $today->gt($due) ? (int)$due->diffInDays($today) : 0;
         $stage = $this->stage($subscription,$inTrial,$daysToDue);
@@ -66,10 +98,13 @@ class SubscriptionAccessService
             'fecha_inicio'=>$subscription->fecha_inicio?->format('Y-m-d'),
             'prueba_hasta'=>$subscription->prueba_hasta?->format('Y-m-d'),
             'en_prueba'=>(bool)$inTrial,
-            'primer_cobro_monto'=>$subscription->primer_cobro_monto !== null ? (float)$subscription->primer_cobro_monto : null,
+            'primer_cobro_monto'=>$firstChargeAmount,
             'primer_cobro_desde'=>$subscription->primer_cobro_desde?->format('Y-m-d'),
             'primer_cobro_hasta'=>$subscription->primer_cobro_hasta?->format('Y-m-d'),
-            'primer_cobro_pagado'=>(bool)$subscription->primer_cobro_pagado,
+            'primer_cobro_confirmado'=>$firstChargeConfirmed,
+            'primer_cobro_restante'=>$firstChargeRemaining,
+            'primer_cobro_completo'=>$firstChargeComplete,
+            'primer_cobro_pagado'=>$firstChargePaid,
             'fecha_vencimiento'=>$subscription->fecha_vencimiento?->format('Y-m-d'),
             'dias_gracia'=>(int)$subscription->dias_gracia,
             'gracia_hasta'=>$graceEnd?->format('Y-m-d'),
@@ -89,6 +124,37 @@ class SubscriptionAccessService
         if (!$status) return;
 
         abort_unless($status['puede_usar'], 402, 'Tu suscripción VITI está suspendida. Regulariza el pago para volver a utilizar la aplicación.');
+    }
+
+    private function firstChargeConfirmedAmount(Suscripcion $subscription, ?float $amount): float
+    {
+        if ($amount === null) return 0.0;
+        if ((bool)$subscription->primer_cobro_pagado) return $amount;
+
+        $query = SuscripcionPago::query()
+            ->where('suscripcion_id', $subscription->id)
+            ->where('estado_revision', 'confirmado');
+
+        if ($subscription->primer_cobro_desde) {
+            $query->whereDate('fecha_pago', '>=', $subscription->primer_cobro_desde->format('Y-m-d'));
+        }
+        if ($subscription->primer_cobro_hasta) {
+            $query->whereDate('fecha_pago', '<=', $subscription->primer_cobro_hasta->format('Y-m-d'));
+        }
+
+        return min($amount, round((float)$query->sum('monto'), 2));
+    }
+
+    private function firstChargeComplete(Suscripcion $subscription): bool
+    {
+        $amount = $subscription->primer_cobro_monto !== null
+            ? (float)$subscription->primer_cobro_monto
+            : null;
+
+        if ($amount === null) return (bool)$subscription->primer_cobro_pagado;
+        if ((bool)$subscription->primer_cobro_pagado) return true;
+
+        return $this->firstChargeConfirmedAmount($subscription, $amount) >= $amount;
     }
 
     private function stage(Suscripcion $subscription, bool $inTrial, ?int $daysToDue): string

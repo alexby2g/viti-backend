@@ -44,6 +44,11 @@ class Usuario extends Authenticatable
         return $this->belongsToMany(Empresa::class,'empresa_usuario','usuario_id','empresa_id')
             ->withPivot(['rol_negocio','permisos','activo'])->withTimestamps();
     }
+    public function aplicaciones()
+    {
+        return $this->belongsToMany(Aplicacion::class,'aplicacion_usuario','usuario_id','aplicacion_id')
+            ->withPivot(['rol','permisos','activo'])->withTimestamps();
+    }
     public function alertasSaas(){ return $this->hasMany(AlertaSaas::class,'usuario_id'); }
 
     public function isSuperAdmin(): bool { return $this->rol === 'superadmin'; }
