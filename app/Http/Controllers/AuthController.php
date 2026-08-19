@@ -71,6 +71,16 @@ class AuthController extends Controller
             $usuario->forceFill(['password' => $data['password']])->save();
         }
 
+        // El login web de VITI necesita una sesión stateful de Sanctum. Si un
+        // frontend autorizado por CORS no fue reconocido como stateful por una
+        // configuración desalineada, no intentamos regenerar una sesión inexistente:
+        // devolvemos un error controlado en vez de provocar un 500.
+        if (!$request->hasSession()) {
+            return response()->json([
+                'message'=>'No pudimos establecer la sesión segura de VITI. Actualiza la página e inténtalo nuevamente.',
+            ], 419);
+        }
+
         auth()->login($usuario, false);
         $request->session()->regenerate();
         $usuario->forceFill(['ultimo_acceso'=>now()])->save();
@@ -127,8 +137,10 @@ class AuthController extends Controller
     {
         Audit::log($request, 'cierre_sesion', $request->user(), 'Cierre de sesión.');
         auth()->guard('web')->logout();
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
+        if ($request->hasSession()) {
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
         return response()->json(['message'=>'Sesión cerrada correctamente.']);
     }
 
