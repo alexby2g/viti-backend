@@ -42,7 +42,7 @@ class SubscriptionAccessService
 
         if ($today->lte($due)) {
             $status = 'activa';
-        } elseif ($today->lte($due->copy()->addDays((int)$subscription->dias_gracia)) ) {
+        } elseif ($today->lte($due->copy()->addDays((int)$subscription->dias_gracia))) {
             $status = 'gracia';
         } else {
             $status = 'suspendida';
@@ -65,10 +65,6 @@ class SubscriptionAccessService
         $trialEnd = $subscription->prueba_hasta?->copy()->startOfDay();
         $due = $subscription->fecha_vencimiento?->copy()->startOfDay();
         $graceEnd = $due?->copy()->addDays((int)$subscription->dias_gracia);
-        $inTrial = $trialEnd && $today->lte($trialEnd);
-        $daysToDue = $due && $today->lte($due) ? (int)$today->diffInDays($due) : null;
-        $daysLate = $due && $today->gt($due) ? (int)$due->diffInDays($today) : 0;
-        $stage = $this->stage($subscription,$inTrial,$daysToDue);
 
         $firstChargeAmount = $subscription->primer_cobro_monto !== null
             ? (float)$subscription->primer_cobro_monto
@@ -81,6 +77,17 @@ class SubscriptionAccessService
             ? $firstChargeRemaining <= 0.0
             : false;
         $firstChargePaid = (bool)$subscription->primer_cobro_pagado || $firstChargeComplete;
+
+        // Un primer cobro pendiente tiene prioridad sobre el periodo de prueba:
+        // refresh() ya suspende la suscripción y statusFor() no debe volver a
+        // conceder acceso solo porque prueba_hasta todavía no haya vencido.
+        $inTrial = $trialEnd
+            && $today->lte($trialEnd)
+            && ($firstChargeAmount === null || $firstChargeComplete);
+
+        $daysToDue = $due && $today->lte($due) ? (int)$today->diffInDays($due) : null;
+        $daysLate = $due && $today->gt($due) ? (int)$due->diffInDays($today) : 0;
+        $stage = $this->stage($subscription,$inTrial,$daysToDue);
 
         return [
             'id'=>$subscription->id,
