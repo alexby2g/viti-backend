@@ -77,8 +77,9 @@ class AplicacionController extends Controller
         return response()->json(['data'=>$a->fresh()->load(['empresa','catalogo','origen'])],201);
     }
 
-    public function show(Aplicacion $aplicacion): JsonResponse
+    public function show(Aplicacion $aplicacion, TenantContext $tenants, Request $r): JsonResponse
     {
+        $tenants->assertCanManage($r->user(),$aplicacion->empresa);
         return response()->json(['data'=>$aplicacion->load([
             'empresa','proyecto','catalogo','suscripcion','mantenimientos','archivos','origen',
             'usuarios:id,nombre,apellido,usuario,correo'
@@ -125,9 +126,9 @@ class AplicacionController extends Controller
         return response()->json(['data'=>$aplicacion->fresh()->load(['empresa','catalogo','origen'])]);
     }
 
-    public function actualizarCiclo(Request $r,Aplicacion $aplicacion): JsonResponse
+    public function actualizarCiclo(Request $r,Aplicacion $aplicacion,TenantContext $tenants): JsonResponse
     {
-        if($aplicacion->estado==='retirado' && $r->input('estado')!=='retirado') abort(422,'Una aplicación retirada no puede reactivarse desde el ciclo normal. Crea una nueva versión o aplicación si debe volver a operar.');
+        $tenants->assertCanManage($r->user(),$aplicacion->empresa);
         $data=$r->validate([
             'entorno'=>['required',Rule::in(['desarrollo','beta','produccion'])],
             'estado'=>['required',Rule::in(['en_pruebas','activo','pausado','retirado'])],
@@ -149,8 +150,9 @@ class AplicacionController extends Controller
         return response()->json(['message'=>'Estado de la aplicación actualizado.','data'=>$aplicacion->fresh()->load(['empresa','suscripcion'])]);
     }
 
-    public function entregar(Request $r,Aplicacion $aplicacion): JsonResponse
+    public function entregar(Request $r,Aplicacion $aplicacion,TenantContext $tenants): JsonResponse
     {
+        $tenants->assertCanManage($r->user(),$aplicacion->empresa);
         if($aplicacion->acceso_cliente && $aplicacion->entregado_at){
             return response()->json(['message'=>'La aplicación ya estaba entregada.','data'=>$aplicacion->load('empresa')]);
         }
@@ -173,8 +175,9 @@ class AplicacionController extends Controller
         return response()->json(['message'=>'Aplicación entregada correctamente.','data'=>$aplicacion->fresh()->load('empresa')]);
     }
 
-    public function revocar(Request $r,Aplicacion $aplicacion): JsonResponse
+    public function revocar(Request $r,Aplicacion $aplicacion,TenantContext $tenants): JsonResponse
     {
+        $tenants->assertCanManage($r->user(),$aplicacion->empresa);
         if(!$aplicacion->acceso_cliente){
             return response()->json(['message'=>'El acceso de esta aplicación ya estaba revocado.','data'=>$aplicacion->load('empresa')]);
         }
@@ -183,8 +186,9 @@ class AplicacionController extends Controller
         return response()->json(['message'=>'Acceso revocado correctamente.','data'=>$aplicacion->fresh()->load('empresa')]);
     }
 
-    public function destroy(Request $r,Aplicacion $aplicacion): JsonResponse
+    public function destroy(Request $r,Aplicacion $aplicacion,TenantContext $tenants): JsonResponse
     {
+        $tenants->assertCanManage($r->user(),$aplicacion->empresa);
         abort_if($aplicacion->mantenimientos()->whereNotIn('estado',['resuelto','cerrado'])->exists(),422,'La aplicación tiene mantenimientos abiertos.');
         $aplicacion->delete();Audit::log($r,'aplicacion_eliminada',$aplicacion);return response()->json(status:204);
     }
