@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Suscripcion;
 use App\Models\SuscripcionPago;
 use App\Services\SubscriptionAccessService;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\{CreatesVitiTenants,TestCase};
 
@@ -64,5 +65,23 @@ class SubscriptionPaymentBalanceTest extends TestCase
         $this->assertSame(0.0, $status['primer_cobro_restante']);
         $this->assertTrue($status['primer_cobro_completo']);
         $this->assertTrue($status['primer_cobro_pagado']);
+    }
+
+    private function subscription(array $tenant, string $start, int $graceDays): Suscripcion
+    {
+        return Suscripcion::create([
+            'aplicacion_id'=>$tenant['app']->id,
+            'empresa_id'=>$tenant['company']->id,
+            'plan'=>'Plan Profesional',
+            'monto'=>129,
+            'frecuencia'=>'mensual',
+            'moneda'=>'BOB',
+            'fecha_inicio'=>$start,
+            'prueba_hasta'=>$start,
+            'fecha_vencimiento'=>Carbon::parse($start)->addMonthNoOverflow()->toDateString(),
+            'dias_gracia'=>$graceDays,
+            'estado'=>'activa',
+            'primer_cobro_pagado'=>false,
+        ]);
     }
 }
