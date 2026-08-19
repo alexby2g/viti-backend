@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{AlertaSaas,Aplicacion,Empresa,Proyecto,Usuario};
-use App\Services\FeatureGateService;
+use App\Services\{FeatureGateService,TenantContext};
 use App\Support\Audit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -30,19 +30,22 @@ class AplicacionController extends Controller
         return response()->json($q->paginate(20));
     }
 
-    public function store(Request $r, FeatureGateService $features): JsonResponse
+    public function store(Request $r, FeatureGateService $features, TenantContext $tenants): JsonResponse
     {
         $d=$this->data($r);
         $cloneFromId=$r->integer('clone_from_id');
         $base=Str::slug($d['nombre']);
         $slug=$base.'-'.Str::lower(Str::random(5));
 
-        $a=DB::transaction(function() use($d,$slug,$cloneFromId,$features): Aplicacion {
+        $a=DB::transaction(function() use($d,$slug,$cloneFromId,$features,$r,$tenants): Aplicacion {
             $empresa=Empresa::query()->with('planViti')->lockForUpdate()->findOrFail($d['empresa_id']);
+            $tenants->assertCanManage($r->user(),$empresa);
             $features->assertAppLimit($empresa);
 
             if($cloneFromId){
                 $source=Aplicacion::query()->findOrFail($cloneFromId);
+                $sourceEmpresa=$source->empresa;
+                abort_unless($sourceEmpresa && (int)$sourceEmpresa->id === (int)$empresa->id,403,'No puedes clonar una aplicación de otra empresa.');
                 $row=$source->only([
                     'catalogo_aplicacion_id','descripcion','icono','color_primario','color_secundario','modulos','configuracion',
                     'version','tipo','tecnologias','proveedor_hosting','notas','repositorio_url','url_administracion'
@@ -82,8 +85,12 @@ class AplicacionController extends Controller
         ])]);
     }
 
-    public function update(Request $r,Aplicacion $aplicacion): JsonResponse
+    public function update(Request $r,Aplicacion $aplicacion,TenantContext $tenants): JsonResponse
     {
+        $empresa=$aplicacion->empresa;
+        abort_unless($empresa,404,'La empresa de la aplicación no existe.');
+        $tenants->assertCanManage($r->user(),$empresa);
+
         if($r->boolean('integrar_usuario')){
             $data=$r->validate([
                 'user_id'=>['required','integer','exists:usuarios,id'],
@@ -120,6 +127,7 @@ class AplicacionController extends Controller
 
     public function actualizarCiclo(Request $r,Aplicacion $aplicacion): JsonResponse
     {
+        if($aplicacion->estado==='retirado' && $r->input('estado')!=='retirado') abort(422,'Una aplicación retirada no puede reactivarse desde el ciclo normal. Crea una nueva versión o aplicación si debe volver a operar.');
         $data=$r->validate([
             'entorno'=>['required',Rule::in(['desarrollo','beta','produccion'])],
             'estado'=>['required',Rule::in(['en_pruebas','activo','pausado','retirado'])],
