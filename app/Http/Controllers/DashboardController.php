@@ -4,8 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\{Aplicacion,Empresa,Mantenimiento,Proyecto,SolicitudSistema,Suscripcion};
 use App\Services\{AppLifecycleService,AgrActivityService,AgrAssistantService,AgrAutopilotService,AgrIncidentService,AgrMemoryService,AgrPermissionService,AgrProjectConversionService,AgrRecoveryService,AgrSystemGuardService,AgrEventStreamService,AgrEventRuleService};
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
+use Illuminate\Http\{JsonResponse,Request,Response};
+use Illuminate\Support\Facades\Http;
 
 class DashboardController extends Controller
 {
@@ -23,12 +23,58 @@ class DashboardController extends Controller
         AgrRecoveryService $recovery,
         AgrEventStreamService $events,
         AgrEventRuleService $eventRules
-    ): JsonResponse {
+    ): JsonResponse|Response {
         if ($request->filled('agr')) {
             $agrInput = (string) $request->query('agr');
             $conversion = $projectConversion->handle($agrInput);
             if ($conversion !== null) return response()->json($conversion);
             return response()->json($memory->handle($agrInput, $assistant));
+        }
+
+        if ($request->filled('agr_voice')) {
+            $text = trim((string) $request->query('agr_voice'));
+            $apiKey = (string) config('services.elevenlabs.api_key');
+            $voiceId = (string) config('services.elevenlabs.voice_id');
+            $modelId = (string) config('services.elevenlabs.model_id', 'eleven_multilingual_v2');
+            $outputFormat = (string) config('services.elevenlabs.output_format', 'mp3_44100_128');
+
+            if ($text === '') {
+                return response()->json(['message' => '006 recibió un texto vacío.'], 422);
+            }
+
+            if ($apiKey === '' || $voiceId === '') {
+                return response()->json(['message' => 'La voz premium de 006 aún no está configurada en VITI.'], 503);
+            }
+
+            $tts = Http::timeout(30)
+                ->withHeaders([
+                    'xi-api-key' => $apiKey,
+                    'Accept' => 'audio/mpeg',
+                    'Content-Type' => 'application/json',
+                ])
+                ->post('https://api.elevenlabs.io/v1/text-to-speech/'.rawurlencode($voiceId).'?output_format='.rawurlencode($outputFormat), [
+                    'text' => $text,
+                    'model_id' => $modelId,
+                    'voice_settings' => [
+                        'stability' => 0.62,
+                        'similarity_boost' => 0.82,
+                        'style' => 0.1,
+                        'use_speaker_boost' => true,
+                        'speed' => 0.94,
+                    ],
+                ]);
+
+            if (!$tts->successful()) {
+                return response()->json([
+                    'message' => 'El proveedor de voz de 006 no respondió correctamente.',
+                    'provider_status' => $tts->status(),
+                ], 502);
+            }
+
+            return response($tts->body(), 200, [
+                'Content-Type' => 'audio/mpeg',
+                'Cache-Control' => 'no-store, max-age=0',
+            ]);
         }
 
         if ($request->boolean('agr_events')) {
