@@ -6,6 +6,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class AgrVoiceController extends Controller
 {
@@ -21,6 +22,14 @@ class AgrVoiceController extends Controller
         $outputFormat = (string) config('services.elevenlabs.output_format', 'mp3_44100_128');
 
         if ($apiKey === '' || $voiceId === '') {
+            Log::warning('AGR 006 premium voice is not configured', [
+                'has_api_key' => $apiKey !== '',
+                'has_voice_id' => $voiceId !== '',
+                'voice_id' => $voiceId,
+                'model_id' => $modelId,
+                'output_format' => $outputFormat,
+            ]);
+
             return response()->json([
                 'message' => 'La voz premium de 006 no está configurada todavía.',
                 'code' => 'AGR_VOICE_NOT_CONFIGURED',
@@ -45,7 +54,14 @@ class AgrVoiceController extends Controller
             ]);
 
         if (!$response->successful()) {
-            report(new \RuntimeException('ElevenLabs TTS failed: '.$response->status()));
+            $providerBody = $response->body();
+            Log::error('AGR 006 ElevenLabs TTS failed', [
+                'status' => $response->status(),
+                'voice_id' => $voiceId,
+                'model_id' => $modelId,
+                'output_format' => $outputFormat,
+                'provider_body' => mb_substr($providerBody, 0, 2000),
+            ]);
 
             return response()->json([
                 'message' => '006 no pudo generar audio en este momento.',
