@@ -2,103 +2,93 @@
 
 namespace Tests\Feature;
 
-use App\Mail\VitiAccessInvitation;
-use App\Models\{Cliente,Empresa,InvitacionCliente,SolicitudSistema,Usuario};
+use App\Models\Cuestionario;
 use Database\Seeders\CuestionarioSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 class AccessInvitationFlowTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function admin(): Usuario
+    public function test_legacy_public_application_flow_is_retired(): void
     {
-        return Usuario::create([
-            'nombre' => 'Admin Invitaciones',
-            'usuario' => 'admin_invitaciones',
-            'documento' => '99000123',
-            'telefono' => '79900123',
-            'correo' => 'admin@viti.test',
-            'password' => 'Prueba123456',
-            'rol' => 'superadmin',
-            'estado' => 'activo',
-        ]);
-    }
-
-    public function test_access_request_invitation_and_registration_reuse_the_same_business_records(): void
-    {
-        $this->seed(CuestionarioSeeder::class);
-        Mail::fake();
-        config(['mail.default' => 'smtp']);
-
-        $requestResponse = $this->postJson('/api/v1/publico/solicitudes', [
+        $this->postJson('/api/v1/publico/solicitudes', [
             'nombre' => 'Roberto Pérez',
             'correo' => 'roberto@example.com',
             'telefono' => '7777789',
-            'whatsapp' => '7777789',
-            'ciudad' => 'Santa Cruz',
             'empresa_nombre' => 'Trinicenter',
-            'empresa_actividad' => 'Servicios técnicos a dispositivos móviles',
-            'titulo_sistema' => 'Clientes y pagos',
-            'resumen' => 'Necesito organizar clientes, trabajos y pagos.',
-        ])->assertCreated();
+        ])->assertStatus(410);
 
-        $solicitud = SolicitudSistema::query()->where('codigo', $requestResponse->json('data.solicitud_codigo'))->firstOrFail();
-        $clienteId = $solicitud->cliente_id;
-        $empresaId = $solicitud->empresa_id;
+        $this->getJson('/api/v1/publico/solicitudes/demo-token')
+            ->assertStatus(410);
 
-        $inviteResponse = $this->actingAs($this->admin())
-            ->postJson('/api/v1/solicitudes/'.$solicitud->id.'/invitacion', ['dias_vigencia' => 7])
-            ->assertCreated()
-            ->assertJsonPath('data.estado', 'enviada')
-            ->assertJsonPath('data.correo', 'roberto@example.com');
+        $this->putJson('/api/v1/publico/solicitudes/demo-token', [])
+            ->assertStatus(410);
 
-        $invitation = InvitacionCliente::query()->where('solicitud_id', $solicitud->id)->firstOrFail();
-        $this->assertSame($clienteId, $invitation->cliente_id);
-        $this->assertSame('roberto@example.com', $invitation->correo_destino);
-        Mail::assertSent(VitiAccessInvitation::class, fn ($mail) => $mail->hasTo('roberto@example.com'));
+        $this->postJson('/api/v1/publico/solicitudes/demo-token/enviar', [])
+            ->assertStatus(410);
+    }
 
-        $this->getJson('/api/v1/publico/registro/'.$invitation->token)
+    public function test_official_viti_application_flow_creates_a_reviewable_request_without_account_access(): void
+    {
+        $this->seed(CuestionarioSeeder::class);
+
+        $catalog = $this->getJson('/api/v1/publico/solicitud/catalogo')
             ->assertOk()
-            ->assertJsonPath('data.vinculada_solicitud', true)
-            ->assertJsonPath('data.prefill.empresa_nombre', 'Trinicenter')
-            ->assertJsonPath('data.correo', 'roberto@example.com');
+            ->json('data');
 
-        $this->post('/api/v1/publico/registro/'.$invitation->token, [
+        $plan = collect($catalog['planes'])->first();
+        $questionnaire = Cuestionario::query()
+            ->where('activo', true)
+            ->with(['secciones.preguntas'])
+            ->latest('id')
+            ->firstOrFail();
+
+        $answers = collect($questionnaire->secciones)
+            ->flatMap(fn ($section) => $section->preguntas)
+            ->filter(fn ($question) => $question->obligatoria)
+            ->map(fn ($question) => [
+                'pregunta_id' => $question->id,
+                'valor' => 'Respuesta de prueba',
+            ])->values()->all();
+
+        $payload = [
             'nombre' => 'Roberto Pérez',
-            'usuario' => 'roberto_viti',
+            'correo' => 'roberto-'.uniqid().'@example.com',
             'telefono' => '7777789',
             'whatsapp' => '7777789',
-            'ci' => '12345678',
-            'ci_expedido' => 'SC',
             'ciudad' => 'Santa Cruz',
-            'direccion' => 'Zona Centro',
-            'password' => 'Registro12345',
-            'password_confirmation' => 'Registro12345',
-            'empresa_nombre' => 'Trinicenter',
-            'empresa_actividad' => 'Servicios técnicos a dispositivos móviles',
+            'empresa_nombre' => 'Trinicenter '.uniqid(),
+            'empresa_actividad' => 'Servicios técnicos',
             'empresa_telefono' => '7777789',
             'empresa_whatsapp' => '7777789',
             'empresa_ciudad' => 'Santa Cruz',
             'titulo_sistema' => 'Clientes y pagos',
-            'resumen' => 'Necesito organizar clientes, trabajos y pagos.',
-        ])->assertCreated();
+            'resumen' => 'Solicitud de prueba del flujo oficial.',
+            'plan_codigo' => $plan['codigo'],
+            'forma_pago_preferida' => in_array($plan['codigo'], ['custom'], true) ? 'por_definir' : 'contado',
+            'frecuencia_suscripcion_preferida' => ($plan['precio_mensual'] !== null && $plan['precio_anual'] !== null) ? 'mensual' : null,
+            'declaracion_aceptada' => true,
+            'declaracion_nombre' => 'Roberto Pérez',
+            'declaracion_fecha' => now()->toDateString(),
+            'acuerdo_comercial_aceptado' => true,
+            'acuerdo_comercial_nombre' => 'Roberto Pérez',
+            'acuerdo_comercial_fecha' => now()->toDateString(),
+            'respuestas' => $answers,
+        ];
 
-        $this->assertSame(1, Cliente::query()->where('correo', 'roberto@example.com')->count());
-        $this->assertSame(1, Empresa::query()->whereKey($empresaId)->count());
-        $this->assertSame(1, SolicitudSistema::query()->whereKey($solicitud->id)->count());
-        $this->assertDatabaseHas('usuarios', [
-            'cliente_id' => $clienteId,
-            'usuario' => 'roberto_viti',
-            'correo' => 'roberto@example.com',
+        $response = $this->postJson('/api/v1/publico/solicitud/enviar', $payload)
+            ->assertCreated()
+            ->assertJsonPath('data.estado', 'en_revision');
+
+        $this->assertDatabaseHas('solicitudes_sistema', [
+            'codigo' => $response->json('data.codigo'),
+            'estado' => 'en_revision',
         ]);
-        $this->assertDatabaseHas('invitaciones_clientes', [
-            'id' => $invitation->id,
-            'estado' => 'usada',
-            'cliente_id' => $clienteId,
-            'solicitud_id' => $solicitud->id,
+
+        $this->assertDatabaseMissing('usuarios', [
+            'correo' => $payload['correo'],
         ]);
     }
 }
