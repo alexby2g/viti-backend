@@ -28,6 +28,10 @@ class DashboardController extends Controller
             return response()->json($memory->handle($agrInput, $assistant));
         }
 
+        if ($request->boolean('agr_incidents')) {
+            return response()->json(['incidents' => $incidents->active()]);
+        }
+
         if ($request->boolean('agr_guard')) {
             $scan = $guard->scan();
             $activity->record('system_guard_scan', 'AGR completó una ronda del sistema', $scan['summary'], [
@@ -87,6 +91,7 @@ class DashboardController extends Controller
                     'severity' => $incident['severity'],
                     'category' => $incident['category'],
                     'signals' => $incident['signal_keys'],
+                    'status' => $incident['status'],
                 ]);
             }
             return response()->json(['agr_autopilot' => $snapshot, 'agr_activity' => $activity->latest()]);
@@ -114,6 +119,7 @@ class DashboardController extends Controller
                 'aplicaciones_pendientes_entrega'=>$cycles->where('ciclo.estado','lista_entrega')->count(),
             ],
             'agr_autopilot'=>$agrSnapshot,
+            'agr_incidents'=>$incidents->active(),
             'agr_activity'=>$activity->latest(),
             'requieren_atencion'=>$attention,
             'solicitudes_recientes'=>SolicitudSistema::with(['empresa:id,nombre_comercial','cliente:id,nombre'])->latest()->limit(5)->get(),
