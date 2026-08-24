@@ -23,6 +23,30 @@ class AgrAssistantService
             return $this->summaryResponse();
         }
 
+        if ($this->matches($text, ['abrir clientes', 'ir a clientes', 'mostrar clientes'])) {
+            return $this->navigationResponse('clients', 'Claro. Abriendo clientes.', '/empresas');
+        }
+
+        if ($this->matches($text, ['abrir empresas', 'ir a empresas', 'mostrar empresas'])) {
+            return $this->navigationResponse('companies', 'Claro. Abriendo empresas.', '/empresas');
+        }
+
+        if ($this->matches($text, ['abrir solicitudes', 'ir a solicitudes', 'mostrar solicitudes'])) {
+            return $this->navigationResponse('requests', 'Claro. Abriendo solicitudes.', '/solicitudes');
+        }
+
+        if ($this->matches($text, ['abrir proyectos', 'ir a proyectos', 'mostrar proyectos'])) {
+            return $this->navigationResponse('projects', 'Claro. Abriendo proyectos.', '/proyectos');
+        }
+
+        if ($this->matches($text, ['abrir pagos', 'ir a pagos', 'mostrar pagos'])) {
+            return $this->navigationResponse('payments', 'Claro. Abriendo pagos.', '/pagos');
+        }
+
+        if ($this->matches($text, ['abrir soportes', 'ir a soportes', 'mostrar soportes', 'abrir mantenimiento'])) {
+            return $this->navigationResponse('support', 'Claro. Abriendo soporte y mantenimientos.', '/mantenimientos');
+        }
+
         if ($this->matches($text, ['cuantos clientes', 'cantidad de clientes', 'total de clientes', 'numero de clientes'])) {
             $count = Cliente::query()->count();
             return $this->countResponse('count_clients', 'Actualmente hay '.$count.' clientes registrados en VITI.', $count);
@@ -83,7 +107,7 @@ class AgrAssistantService
 
         return [
             'intent' => 'unknown',
-            'message' => 'Todavía no conozco ese comando. Prueba con "resumen", "cuántos clientes tengo", "proyectos activos", "pagos vencidos", "soportes abiertos" o "buscar cliente Juan".',
+            'message' => 'Todavía no conozco ese comando. Prueba con "resumen", "abrir clientes", "cuántos clientes tengo", "proyectos activos", "pagos vencidos" o "buscar cliente Juan".',
             'data' => [],
         ];
     }
@@ -110,6 +134,21 @@ class AgrAssistantService
             'intent' => $intent,
             'message' => $message,
             'data' => ['count' => $count],
+        ];
+    }
+
+    private function navigationResponse(string $intent, string $message, string $to): array
+    {
+        return [
+            'intent' => 'navigate_'.$intent,
+            'message' => $message,
+            'data' => [
+                'action' => [
+                    'type' => 'navigate',
+                    'to' => $to,
+                    'label' => 'Abrir',
+                ],
+            ],
         ];
     }
 
@@ -193,6 +232,9 @@ class AgrAssistantService
             'data' => [
                 'commands' => [
                     'Resumen',
+                    'Abrir clientes',
+                    'Abrir solicitudes',
+                    'Abrir proyectos',
                     'Cuántos clientes tengo',
                     'Cuántas empresas tengo',
                     'Solicitudes pendientes',
