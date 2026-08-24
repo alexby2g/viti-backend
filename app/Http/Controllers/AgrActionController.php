@@ -3,12 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\Cliente;
+use App\Services\AgrActionWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class AgrActionController extends Controller
 {
-    public function confirmCreateClient(Request $request): JsonResponse
+    public function confirmCreateClient(Request $request, AgrActionWorkflowService $workflow): JsonResponse
     {
         $data = $request->validate([
             'nombre' => ['required', 'string', 'max:180'],
@@ -27,6 +28,8 @@ class AgrActionController extends Controller
             'estado' => 'activo',
             'canal_origen' => 'agr_assistant',
         ]);
+
+        $workflow->clear();
 
         return response()->json([
             'message' => 'Cliente registrado correctamente desde AGR Assistant.',
