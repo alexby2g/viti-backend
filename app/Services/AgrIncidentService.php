@@ -43,7 +43,18 @@ class AgrIncidentService
     {
         $existing = Cache::get(self::CACHE_KEY, []);
         $byKey = collect($existing)->keyBy('key');
+        $detectedKeys = collect($detected)->pluck('key')->all();
         $now = now()->toIso8601String();
+
+        foreach ($byKey as $key => $current) {
+            if (!in_array($key, $detectedKeys, true) && !in_array($current['status'] ?? 'detected', ['resolved', 'closed'], true)) {
+                $current['status'] = 'resolved';
+                $current['updated_at'] = $now;
+                $current['history'] = $current['history'] ?? [];
+                $current['history'][] = ['at' => $now, 'status' => 'resolved', 'event' => 'condition_cleared'];
+                $byKey->put($key, $current);
+            }
+        }
 
         foreach ($detected as $incident) {
             $current = $byKey->get($incident['key']);
@@ -61,8 +72,7 @@ class AgrIncidentService
             $byKey->put($incident['key'], $incident);
         }
 
-        $items = $byKey->values()->all();
-        Cache::put(self::CACHE_KEY, $items, now()->addHours(self::TTL_HOURS));
+        Cache::put(self::CACHE_KEY, $byKey->values()->all(), now()->addHours(self::TTL_HOURS));
         return $this->active();
     }
 
