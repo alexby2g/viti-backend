@@ -12,24 +12,20 @@ class AgrMemoryService
     public function handle(string $message, AgrAssistantService $assistant): array
     {
         $key = $this->key();
-        $memory = Cache::get($key, ['turns' => [], 'last_result' => null]);
+        $memory = Cache::get($key, ['turns' => [], 'last_result' => null, 'pending' => null]);
         $text = mb_strtolower(trim($message));
-        $workflow = app(AgrActionWorkflowService::class);
 
-        if ($this->isCancel($text)) {
-            $workflow->clear();
-            return $this->remember($key, $memory, $message, [
-                'intent' => 'workflow_cancelled',
-                'message' => 'Entendido. Dejé sin efecto la operación pendiente. No se modificó ningún dato.',
-                'data' => [],
-                'meta' => ['style' => 'safe_action', 'source' => 'agr_memory'],
-            ]);
-        }
-
-        $activeWorkflow = $workflow->current();
-        if ($activeWorkflow && ($activeWorkflow['status'] ?? null) === 'collecting') {
-            $response = $this->continueWorkflow($text, $activeWorkflow, $workflow);
-            if ($response !== null) return $this->remember($key, $memory, $message, $response);
+        if ($this->matches($text, ['cancelar', 'cancelar operacion', 'cancela'])) {
+            if ($memory['pending']) {
+                $memory['pending'] = null;
+                Cache::put($key, $memory, now()->addHours(self::TTL_HOURS));
+                return $this->remember($key, $memory, $message, [
+                    'intent' => 'action_cancelled',
+                    'message' => 'Operación cancelada. No se modificó ningún dato.',
+                    'data' => [],
+                    'meta' => ['style' => 'safe_action'],
+                ]);
+            }
         }
 
         if ($this->isRepeat($text) && !empty($memory['last_result'])) {
@@ -38,104 +34,125 @@ class AgrMemoryService
             return $this->remember($key, $memory, $message, $response);
         }
 
-        $response = $assistant->handle($message);
-
-        if (($response['intent'] ?? '') === 'create_client') {
-            $workflow->start('create_client');
-            $response['data']['workflow'] = ['status' => 'collecting', 'step' => 1, 'next' => 'nombre'];
-            $response['message'] = 'Perfecto. Empezaremos por lo esencial. ¿Cuál es el nombre completo del cliente?';
+        if ($memory['pending']) {
+            $followUp = $this->continuePending($message, $memory);
+            if ($followUp !== null) return $this->remember($key, $memory, $message, $followUp);
         }
 
-        $followUp = $this->resolveFollowUp($text, $memory);
-        if ($followUp !== null) $response = $followUp;
+        $response = $assistant->handle($message);
 
-        $response['memory'] = [
+        if (in_array($response['intent'] ?? '', ['create_client', 'create_company'], true)) {
+            $memory['pending'] = ['type' => $response['intent'], 'step' => 0, 'data' => []];
+            $response['memory'] = ['active' => true, 'pending_action' => true, 'hint' => 'AGR recopilará los datos paso a paso.'];
+        } else {
+            $followUp = $this->resolveFollowUp($text, $memory);
+            if ($followUp !== null) $response = $followUp;
+        }
+
+        $response['memory'] = array_merge($response['memory'] ?? [], [
             'active' => true,
             'turns' => count($memory['turns']) + 1,
+            'pending_action' => (bool) $memory['pending'],
             'hint' => $this->hint($response),
-        ];
+        ]);
 
         return $this->remember($key, $memory, $message, $response);
     }
 
-    public function clear(): void
-    {
-        Cache::forget($this->key());
-        app(AgrActionWorkflowService::class)->clear();
-    }
+    public function clear(): void { Cache::forget($this->key()); }
 
     public function snapshot(): array
     {
-        return Cache::get($this->key(), ['turns' => [], 'last_result' => null]);
+        return Cache::get($this->key(), ['turns' => [], 'last_result' => null, 'pending' => null]);
     }
 
-    private function continueWorkflow(string $text, array $workflow, AgrActionWorkflowService $state): ?array
+    public function clearPending(): void
     {
-        if (($workflow['intent'] ?? '') !== 'create_client') return null;
+        $key = $this->key();
+        $memory = $this->snapshot();
+        $memory['pending'] = null;
+        Cache::put($key, $memory, now()->addHours(self::TTL_HOURS));
+    }
 
-        $step = (int) ($workflow['step'] ?? 1);
-        $data = $workflow['data'] ?? [];
+    private function continuePending(string $message, array &$memory): ?array
+    {
+        $pending = $memory['pending'];
+        $type = $pending['type'];
+        $data = $pending['data'] ?? [];
 
-        if ($step === 1) {
-            $data['nombre'] = trim($text);
-            $state->update($data, 2);
-            return $this->workflowResponse('nombre', '¿Qué número de teléfono tendrá '.$data['nombre'].'?', $data, 2);
-        }
-        if ($step === 2) {
-            $data['telefono'] = trim($text);
-            $state->update($data, 3);
-            return $this->workflowResponse('telefono', '¿Quieres guardar también un número de WhatsApp? Puedes responder “igual” o indicar otro.', $data, 3);
-        }
-        if ($step === 3) {
-            $data['whatsapp'] = $text === 'igual' ? ($data['telefono'] ?? '') : trim($text);
-            $state->update($data, 4);
-            return $this->workflowResponse('whatsapp', '¿Cuál es el correo del cliente? Si no tiene, escribe “sin correo”.', $data, 4);
-        }
-        if ($step === 4) {
-            $data['correo'] = $text === 'sin correo' ? null : trim($text);
-            $state->update($data, 5);
-            return $this->workflowResponse('correo', '¿En qué ciudad está el cliente?', $data, 5);
-        }
-        if ($step === 5) {
-            $data['ciudad'] = trim($text);
-            $state->update($data, 6);
-            return $this->workflowResponse('ciudad', '¿Quieres agregar una dirección? Escribe la dirección o “sin dirección”.', $data, 6);
-        }
-        if ($step === 6) {
-            $data['direccion'] = $text === 'sin dirección' ? null : trim($text);
-            $state->update($data, 7);
-            return $this->workflowResponse('direccion', 'Último paso: ¿alguna observación para este cliente? Escribe “ninguna” si no hay.', $data, 7);
-        }
-        if ($step === 7) {
-            $data['observaciones'] = $text === 'ninguna' ? null : trim($text);
-            $workflow = $state->update($data, 8);
-            $state->ready();
+        if ($this->matches(mb_strtolower(trim($message)), ['si', 'sí', 'confirmar', 'confirmo', 'guardar']) && $this->requiredComplete($type, $data)) {
             return [
-                'intent' => 'create_client_ready',
-                'message' => 'Listo. Ya tengo todos los datos. Revisa el registro y confirma cuando estés seguro de guardarlo.',
-                'data' => [
-                    'action' => ['type' => 'form', 'target' => 'client_create', 'confirm_required' => true],
-                    'draft' => $workflow['data'],
-                ],
-                'meta' => ['style' => 'safe_action', 'source' => 'agr_workflow', 'confirm_required' => true],
+                'intent' => $type.'_ready',
+                'message' => $this->confirmationMessage($type, $data),
+                'data' => ['action' => ['type' => 'form', 'target' => $type === 'create_client' ? 'client_create' : 'company_create', 'confirm_required' => true, 'draft' => $data]],
+                'meta' => ['style' => 'safe_action', 'confirm_required' => true],
             ];
         }
-        return null;
-    }
 
-    private function workflowResponse(string $field, string $message, array $data, int $step): array
-    {
+        $fields = $type === 'create_client'
+            ? ['nombre','telefono','whatsapp','correo','ciudad','direccion']
+            : ['nombre_comercial','razon_social','actividad','telefono','whatsapp','ciudad','direccion'];
+        $step = $pending['step'];
+        $field = $fields[$step] ?? null;
+        if (!$field) return null;
+
+        $data[$field] = $this->value($message);
+        $step++;
+
+        if ($this->requiredComplete($type, $data) && ($type === 'create_client' || $step >= count($fields))) {
+            $memory['pending'] = ['type' => $type, 'step' => 999, 'data' => $data];
+            return [
+                'intent' => $type.'_ready',
+                'message' => $this->confirmationMessage($type, $data),
+                'data' => ['action' => ['type' => 'form', 'target' => $type === 'create_client' ? 'client_create' : 'company_create', 'confirm_required' => true, 'draft' => $data]],
+                'meta' => ['style' => 'safe_action', 'confirm_required' => true],
+            ];
+        }
+
+        $memory['pending'] = ['type' => $type, 'step' => $step, 'data' => $data];
         return [
-            'intent' => 'create_client_workflow',
-            'message' => $message,
-            'data' => ['field' => $field, 'step' => $step, 'draft' => $data],
-            'meta' => ['style' => 'conversational_action', 'source' => 'agr_workflow'],
+            'intent' => $type.'_collecting',
+            'message' => $this->nextQuestion($type, $step),
+            'data' => ['draft' => $data, 'next_field' => $fields[$step] ?? null],
+            'meta' => ['style' => 'conversational_form'],
         ];
     }
 
-    private function isCancel(string $text): bool
+    private function requiredComplete(string $type, array $data): bool
     {
-        return $this->matches($text, ['cancelar', 'cancela', 'olvidalo', 'olvídalo', 'detener']);
+        return $type === 'create_client'
+            ? !empty(trim((string) ($data['nombre'] ?? '')))
+            : !empty(trim((string) ($data['nombre_comercial'] ?? '')));
+    }
+
+    private function nextQuestion(string $type, int $step): string
+    {
+        $fields = $type === 'create_client'
+            ? ['nombre','telefono','whatsapp','correo','ciudad','direccion']
+            : ['nombre_comercial','razon_social','actividad','telefono','whatsapp','ciudad','direccion'];
+        return match ($fields[$step] ?? null) {
+            'nombre' => 'Perfecto. ¿Cuál es el nombre completo del cliente?',
+            'telefono' => '¿Qué número de teléfono tendrá?',
+            'whatsapp' => '¿Deseas registrar un número de WhatsApp?',
+            'correo' => '¿Cuál es el correo electrónico?',
+            'ciudad' => '¿En qué ciudad está?',
+            'direccion' => '¿Cuál es la dirección?',
+            'nombre_comercial' => 'Perfecto. ¿Cuál será el nombre comercial?',
+            'razon_social' => '¿Cuál es la razón social? Si no la tienes, podemos dejarla vacía.',
+            'actividad' => '¿A qué actividad o rubro se dedica?',
+            default => '¿Hay algún dato adicional que quieras incluir?',
+        };
+    }
+
+    private function confirmationMessage(string $type, array $data): string
+    {
+        if ($type === 'create_client') return 'Tengo preparado el cliente '.$data['nombre'].'. Revisa los datos y confirma el registro en el formulario.';
+        return 'Tengo preparada la empresa '.$data['nombre_comercial'].'. Revisa los datos y confirma el registro en el formulario.';
+    }
+
+    private function value(string $message): string
+    {
+        return trim(preg_replace('/^\s*(si|sí|igual|correcto|ok|es)\s*[:,-]?\s*/iu', '', $message) ?? $message);
     }
 
     private function resolveFollowUp(string $text, array $memory): ?array
@@ -163,14 +180,13 @@ class AgrMemoryService
     {
         $turns = $memory['turns'] ?? [];
         $turns[] = ['at'=>now()->toIso8601String(),'user'=>$message,'intent'=>$response['intent'] ?? 'unknown','assistant'=>$response['message'] ?? ''];
-        Cache::put($key,['turns'=>array_slice($turns,-self::MAX_TURNS),'last_result'=>$response],now()->addHours(self::TTL_HOURS));
+        $memory['turns'] = array_slice($turns, -self::MAX_TURNS);
+        $memory['last_result'] = $response;
+        Cache::put($key, $memory, now()->addHours(self::TTL_HOURS));
         return $response;
     }
 
-    private function isRepeat(string $text): bool
-    {
-        return $this->matches($text, ['repite', 'repite eso', 'otra vez', 'dime otra vez', 'que dijiste', 'qué dijiste']);
-    }
+    private function isRepeat(string $text): bool { return $this->matches($text, ['repite','repite eso','otra vez','dime otra vez','que dijiste','qué dijiste']); }
 
     private function matches(string $text, array $phrases): bool
     {
@@ -183,15 +199,11 @@ class AgrMemoryService
         return match ($response['intent'] ?? 'unknown') {
             'search_client' => 'Puedes decir “ese cliente” o “el primero”.',
             'search_company' => 'Puedes decir “esa empresa” o “la primera empresa”.',
-            'select_client', 'select_company' => 'AGR mantiene esta referencia durante la sesión.',
-            'create_client_workflow' => 'Puedes cancelar en cualquier momento escribiendo “cancelar”.',
-            'create_client_ready' => 'La escritura sigue bloqueada hasta tu confirmación.',
+            'create_client_collecting','create_company_collecting' => 'Responde con el dato solicitado o escribe “cancelar”.',
+            'create_client_ready','create_company_ready' => 'AGR espera tu revisión y confirmación antes de guardar.',
             default => 'AGR conserva el contexto reciente durante la sesión.',
         };
     }
 
-    private function key(): string
-    {
-        return 'agr.memory.'.(auth()->id() ?: 'guest');
-    }
+    private function key(): string { return 'agr.memory.'.(auth()->id() ?: 'guest'); }
 }
