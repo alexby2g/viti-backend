@@ -10,15 +10,16 @@ class AgrAutopilotService
 {
     private const CACHE_KEY = 'agr.autopilot.latest';
 
-    public function run(): array
+    public function run(AgrPermissionService $permissions): array
     {
         $snapshot = [
             'generated_at' => now()->toIso8601String(),
             'mode' => 'local_safe',
+            'permissions' => $permissions->policy(),
             'autonomy' => [
-                'can_read' => true,
-                'can_navigate' => false,
-                'can_write_business_data' => false,
+                'can_read' => $permissions->can('read_data'),
+                'can_navigate' => $permissions->can('navigate_modules'),
+                'can_write_business_data' => $permissions->can('write_safe_data'),
                 'requires_confirmation_for_writes' => true,
             ],
             'metrics' => [
