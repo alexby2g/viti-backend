@@ -53,10 +53,17 @@ class ElectrofrioCustomerChatTest extends TestCase
             ->assertJsonPath('data.mensajes.1.es_cliente_final', false);
 
         $admin = Usuario::create(['nombre'=>'Admin prueba','usuario'=>'admin_chat','documento'=>'765432109','password'=>'Prueba1234','rol'=>'superadmin','estado'=>'activo']);
-        $this->actingAs($admin)
+        $adminInbox = $this->actingAs($admin)
             ->getJson('/api/v1/buzon')
-            ->assertOk()
-            ->assertJsonMissing(['id'=>$conversationId,'contexto'=>'electrofrio']);
+            ->assertOk();
+
+        foreach ($adminInbox->json('data', []) as $conversation) {
+            $this->assertFalse(
+                (int) ($conversation['id'] ?? 0) === $conversationId
+                && ($conversation['contexto'] ?? null) === 'electrofrio',
+                'El buzón VITI no debe exponer la conversación privada de Electro Frío.'
+            );
+        }
 
         $this->assertDatabaseHas('conversaciones', ['id'=>$conversationId,'empresa_id'=>$tenant['company']->id,'electrofrio_cliente_id'=>$final['customer']->id,'canal_principal'=>true]);
         $this->assertSame(1, Conversacion::query()->where('contexto','electrofrio')->where('canal_principal',true)->count());
