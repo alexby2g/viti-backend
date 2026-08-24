@@ -20,6 +20,8 @@ class AccessInvitationService
                 ->lockForUpdate()
                 ->findOrFail($solicitud->id);
 
+            abort_unless($solicitud->estado === 'aprobada', 422, 'La solicitud debe estar aprobada antes de habilitar el acceso del cliente.');
+
             $cliente = $solicitud->cliente;
             abort_unless($cliente, 422, 'La solicitud no tiene un responsable asociado.');
             abort_if($cliente->usuario, 422, 'Este responsable ya tiene una cuenta VITI activa.');
@@ -70,6 +72,7 @@ class AccessInvitationService
 
     public function resend(SolicitudSistema $solicitud): array
     {
+        abort_unless($solicitud->estado === 'aprobada', 422, 'Solo se puede reenviar una invitación cuando la solicitud está aprobada.');
         $invitation = InvitacionCliente::query()
             ->where('solicitud_id', $solicitud->id)
             ->whereIn('estado', ['pendiente','enviada'])
@@ -140,7 +143,7 @@ class AccessInvitationService
                 'estado' => filled($cliente->correo) ? 'pendiente_aprobacion' : 'sin_correo',
                 'correo' => $cliente->correo,
                 'tiene_cuenta' => false,
-                'puede_enviar' => filled($cliente->correo),
+                'puede_enviar' => filled($cliente->correo) && $solicitud->estado === 'aprobada',
             ];
         }
 
