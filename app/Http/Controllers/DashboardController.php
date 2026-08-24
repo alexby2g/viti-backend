@@ -4,12 +4,18 @@ namespace App\Http\Controllers;
 
 use App\Models\{Aplicacion,Empresa,Mantenimiento,Proyecto,SolicitudSistema,Suscripcion};
 use App\Services\AppLifecycleService;
+use App\Services\AgrAssistantService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class DashboardController extends Controller
 {
-    public function __invoke(AppLifecycleService $lifecycle): JsonResponse
+    public function __invoke(Request $request, AppLifecycleService $lifecycle, AgrAssistantService $assistant): JsonResponse
     {
+        if ($request->filled('agr')) {
+            return response()->json($assistant->handle((string) $request->query('agr')));
+        }
+
         $apps = Aplicacion::query()->with(['empresa:id,nombre_comercial','proyecto:id,codigo,nombre,progreso','suscripcion'])->latest()->get();
         $cycles = $apps->map(fn(Aplicacion $app)=>['app'=>$app,'ciclo'=>$lifecycle->status($app)]);
 
