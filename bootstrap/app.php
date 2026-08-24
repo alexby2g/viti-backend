@@ -32,11 +32,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->trustProxies(at: '*');
         $middleware->statefulApi();
         $middleware->append(SecurityHeaders::class);
+        $middleware->append(RejectLegacyVitiFlows::class);
         $middleware->append(ProtectPublicDraftRevision::class);
         $middleware->append(UseActiveCompanyForNewRequest::class);
         $middleware->append(EnsurePeluqueriaTenant::class);
         $middleware->append(EnsurePrivateVitiCommunication::class);
-        $middleware->append(RejectLegacyVitiFlows::class);
         $middleware->alias([
             'superadmin'=>EnsureSuperAdmin::class,
             'platform_admin'=>EnsurePlatformAdmin::class,
