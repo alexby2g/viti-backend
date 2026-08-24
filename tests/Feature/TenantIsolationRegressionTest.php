@@ -2,10 +2,11 @@
 
 namespace Tests\Feature;
 
-use App\Models\{Conversacion,Proyecto};
+use App\Models\{Archivo,Conversacion,Proyecto};
 use App\Services\ChatChannelService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Tests\{CreatesVitiTenants, TestCase};
+use Illuminate\Support\Facades\Storage;
+use Tests\{CreatesVitiTenants,TestCase};
 
 class TenantIsolationRegressionTest extends TestCase
 {
@@ -90,6 +91,32 @@ class TenantIsolationRegressionTest extends TestCase
 
         $this->actingAs($tenantA['user'])
             ->getJson('/api/v1/mi/buzon/'.$conversation->id)
+            ->assertStatus(403);
+    }
+
+    public function test_client_cannot_download_a_private_file_from_an_unrelated_client(): void
+    {
+        Storage::fake('private_uploads');
+
+        $tenantA = $this->createTenant('FILE-A');
+        $tenantB = $this->createTenant('FILE-B');
+        $path = 'archivos/test/private-b.txt';
+        Storage::disk('private_uploads')->put($path, 'private tenant B');
+
+        $archivo = Archivo::create([
+            'adjuntable_type' => \App\Models\Cliente::class,
+            'adjuntable_id' => $tenantB['user']->cliente_id,
+            'subido_por' => $tenantB['user']->id,
+            'categoria' => 'general',
+            'nombre_original' => 'private-b.txt',
+            'ruta' => $path,
+            'mime' => 'text/plain',
+            'tamano' => strlen('private tenant B'),
+            'descripcion' => 'Documento privado de B',
+        ]);
+
+        $this->actingAs($tenantA['user'])
+            ->get('/api/v1/mi/archivos/'.$archivo->id.'/descargar')
             ->assertStatus(403);
     }
 }
