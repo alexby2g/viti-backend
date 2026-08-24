@@ -16,7 +16,7 @@ return [
 
     'elevenlabs' => [
         'api_key' => env('ELEVENLABS_API_KEY'),
-        'voice_id' => env('ELEVENLABS_VOICE_ID', 'cIBxLwfshLYhRB9lCXEg'),
+        'voice_id' => env('ELEVENLABS_VOICE_ID', 'ZKOQuf0oY2dzqs2f3sdk'),
         'model_id' => env('ELEVENLABS_MODEL_ID', 'eleven_multilingual_v2'),
         'output_format' => env('ELEVENLABS_OUTPUT_FORMAT', 'mp3_44100_128'),
     ],
