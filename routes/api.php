@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{AplicacionController,ArchivoController,AtencionSesionController,AuditoriaController,AuthController,BuzonController,ClientAppsController,ClientAuthController,ClientElectrofrioController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,ElectrofrioController,ElectrofrioCustomerAuthController,ElectrofrioCustomerPortalController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,OnboardingController,PeluqueriaController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,StorageController,PublicSolicitudController,UsuarioController};
+use App\Http\Controllers\{AgrActionController,AplicacionController,ArchivoController,AtencionSesionController,AuditoriaController,AuthController,BuzonController,ClientAppsController,ClientAuthController,ClientElectrofrioController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,ElectrofrioController,ElectrofrioCustomerAuthController,ElectrofrioCustomerPortalController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,OnboardingController,PeluqueriaController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,StorageController,PublicSolicitudController,UsuarioController};
 use Illuminate\Support\Facades\Route;
 
 Route::get('health', fn () => ['status'=>'ok','service'=>'VITI Core API','time'=>now()->toIso8601String()]);
@@ -144,6 +144,7 @@ Route::prefix('v1')->group(function (): void {
 
         Route::middleware('platform_admin')->group(function (): void {
             Route::get('dashboard', DashboardController::class);
+            Route::post('agr/acciones/crear-cliente', [AgrActionController::class,'confirmCreateClient']);
             Route::get('almacenamiento/estado', [StorageController::class,'status'])->middleware('superadmin');
             Route::post('invitaciones-clientes', [OnboardingController::class,'createInvitation']);
             Route::post('solicitudes/{solicitud}/invitacion', [OnboardingController::class,'createSolicitudInvitation']);
@@ -173,27 +174,22 @@ Route::prefix('v1')->group(function (): void {
 
             Route::prefix('apps/peluqueria')->group(function (): void {
                 Route::get('resumen', [PeluqueriaController::class,'resumen']);
-
                 Route::get('clientes', [PeluqueriaController::class,'clientes']);
                 Route::post('clientes', [PeluqueriaController::class,'guardarCliente']);
                 Route::put('clientes/{id}', [PeluqueriaController::class,'actualizarCliente']);
                 Route::delete('clientes/{id}', [PeluqueriaController::class,'eliminarCliente']);
-
                 Route::get('servicios', [PeluqueriaController::class,'servicios']);
                 Route::post('servicios', [PeluqueriaController::class,'guardarServicio']);
                 Route::put('servicios/{id}', [PeluqueriaController::class,'actualizarServicio']);
                 Route::delete('servicios/{id}', [PeluqueriaController::class,'eliminarServicio']);
-
                 Route::get('personal', [PeluqueriaController::class,'personal']);
                 Route::post('personal', [PeluqueriaController::class,'guardarPersonal']);
                 Route::put('personal/{id}', [PeluqueriaController::class,'actualizarPersonal']);
                 Route::delete('personal/{id}', [PeluqueriaController::class,'eliminarPersonal']);
-
                 Route::get('citas', [PeluqueriaController::class,'citas']);
                 Route::post('citas', [PeluqueriaController::class,'guardarCita']);
                 Route::put('citas/{id}', [PeluqueriaController::class,'actualizarCita']);
                 Route::delete('citas/{id}', [PeluqueriaController::class,'eliminarCita']);
-
                 Route::get('atenciones', [PeluqueriaController::class,'atenciones']);
                 Route::post('atenciones', [PeluqueriaController::class,'iniciarAtencion']);
                 Route::post('atenciones/{id}/finalizar', [PeluqueriaController::class,'finalizarAtencion']);
@@ -203,17 +199,14 @@ Route::prefix('v1')->group(function (): void {
 
             Route::prefix('apps/electrofrio')->group(function (): void {
                 Route::get('resumen', [ElectrofrioController::class, 'resumen']);
-
                 Route::get('clientes', [ElectrofrioController::class, 'clientes']);
                 Route::post('clientes', [ElectrofrioController::class, 'guardarCliente']);
                 Route::put('clientes/{id}', [ElectrofrioController::class, 'actualizarCliente']);
                 Route::delete('clientes/{id}', [ElectrofrioController::class, 'eliminarCliente']);
-
                 Route::get('equipos', [ElectrofrioController::class, 'equipos']);
                 Route::post('equipos', [ElectrofrioController::class, 'guardarEquipo']);
                 Route::put('equipos/{id}', [ElectrofrioController::class, 'actualizarEquipo']);
                 Route::delete('equipos/{id}', [ElectrofrioController::class, 'eliminarEquipo']);
-
                 Route::get('tecnicos', [ElectrofrioController::class, 'tecnicos']);
                 Route::get('usuarios-negocio', [ElectrofrioController::class, 'usuariosNegocio']);
                 Route::post('tecnicos', [ElectrofrioController::class, 'guardarTecnico']);
@@ -221,12 +214,10 @@ Route::prefix('v1')->group(function (): void {
                 Route::delete('tecnicos/{id}', [ElectrofrioController::class, 'eliminarTecnico']);
                 Route::post('clientes/{id}/acceso', [ElectrofrioController::class, 'guardarAccesoCliente']);
                 Route::delete('clientes/{id}/acceso', [ElectrofrioController::class, 'revocarAccesoCliente']);
-
                 Route::get('materiales', [ElectrofrioController::class, 'materiales']);
                 Route::post('materiales', [ElectrofrioController::class, 'guardarMaterial']);
                 Route::put('materiales/{id}', [ElectrofrioController::class, 'actualizarMaterial']);
                 Route::delete('materiales/{id}', [ElectrofrioController::class, 'eliminarMaterial']);
-
                 Route::get('ordenes', [ElectrofrioController::class, 'ordenes']);
                 Route::post('ordenes', [ElectrofrioController::class, 'guardarOrden']);
                 Route::put('ordenes/{id}', [ElectrofrioController::class, 'actualizarOrden']);
@@ -236,11 +227,9 @@ Route::prefix('v1')->group(function (): void {
                 Route::post('ordenes/{id}/materiales', [ElectrofrioController::class, 'usarMaterial']);
                 Route::delete('ordenes/{orderId}/materiales/{materialId}', [ElectrofrioController::class, 'quitarMaterial']);
                 Route::post('ordenes/{id}/pagos', [ElectrofrioController::class, 'registrarPago']);
-
                 Route::get('pagos', [ElectrofrioController::class, 'pagos']);
                 Route::get('garantias', [ElectrofrioController::class, 'garantias']);
                 Route::get('historial', [ElectrofrioController::class, 'historial']);
-
                 Route::get('buzon', [BuzonController::class,'businessIndex'])->defaults('chat_context','electrofrio');
                 Route::get('buzon/{conversacion}', [BuzonController::class,'businessShow'])->defaults('chat_context','electrofrio');
                 Route::post('buzon/{conversacion}/mensajes', [BuzonController::class,'businessSend'])->defaults('chat_context','electrofrio');
@@ -260,7 +249,6 @@ Route::prefix('v1')->group(function (): void {
             Route::post('archivos', [ArchivoController::class,'store']);
             Route::get('archivos/{archivo}/descargar', [ArchivoController::class,'download']);
             Route::delete('archivos/{archivo}', [ArchivoController::class,'destroy']);
-
             Route::get('buzon', [BuzonController::class,'adminIndex']);
             Route::get('buzon/{conversacion}', [BuzonController::class,'adminShow']);
             Route::post('buzon/{conversacion}/mensajes', [BuzonController::class,'adminSend']);
@@ -269,15 +257,12 @@ Route::prefix('v1')->group(function (): void {
             Route::post('buzon/{conversacion}/presencia', [BuzonController::class,'presence']);
             Route::put('buzon/{conversacion}/estado', [BuzonController::class,'adminState']);
             Route::delete('buzon/{conversacion}', [BuzonController::class,'adminDeleteConversation']);
-
             Route::get('atencion/sesiones', [AtencionSesionController::class,'adminIndex']);
             Route::post('atencion/sesiones', [AtencionSesionController::class,'adminCreate']);
             Route::post('atencion/sesiones/{sesion}/aprobar', [AtencionSesionController::class,'approve']);
             Route::post('atencion/sesiones/{sesion}/rechazar', [AtencionSesionController::class,'reject']);
             Route::post('atencion/sesiones/{sesion}/finalizar', [AtencionSesionController::class,'finish']);
-
             Route::get('auditoria', [AuditoriaController::class,'index'])->middleware('superadmin');
-
             Route::prefix('reportes')->group(function (): void {
                 Route::get('clientes.pdf', [ReporteController::class,'clientes']);
                 Route::get('empresas.pdf', [ReporteController::class,'empresas']);
