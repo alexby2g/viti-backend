@@ -79,8 +79,11 @@ class AgrMemoryService
         $pending = $memory['pending'];
         $type = $pending['type'];
         $data = $pending['data'] ?? [];
+        $text = mb_strtolower(trim($message));
+        $fields = $this->fields($type);
+        $step = (int) ($pending['step'] ?? 0);
 
-        if ($this->matches(mb_strtolower(trim($message)), ['si', 'sí', 'confirmar', 'confirmo', 'guardar']) && $this->requiredComplete($type, $data)) {
+        if ($step === 999 && $this->matches($text, ['si', 'sí', 'confirmar', 'confirmo', 'guardar'])) {
             return [
                 'intent' => $type.'_ready',
                 'message' => $this->confirmationMessage($type, $data),
@@ -89,17 +92,13 @@ class AgrMemoryService
             ];
         }
 
-        $fields = $type === 'create_client'
-            ? ['nombre','telefono','whatsapp','correo','ciudad','direccion']
-            : ['nombre_comercial','razon_social','actividad','telefono','whatsapp','ciudad','direccion'];
-        $step = $pending['step'];
-        $field = $fields[$step] ?? null;
-        if (!$field) return null;
+        if ($step >= count($fields)) return null;
 
+        $field = $fields[$step];
         $data[$field] = $this->value($message);
         $step++;
 
-        if ($this->requiredComplete($type, $data) && ($type === 'create_client' || $step >= count($fields))) {
+        if ($step >= count($fields)) {
             $memory['pending'] = ['type' => $type, 'step' => 999, 'data' => $data];
             return [
                 'intent' => $type.'_ready',
@@ -118,19 +117,16 @@ class AgrMemoryService
         ];
     }
 
-    private function requiredComplete(string $type, array $data): bool
+    private function fields(string $type): array
     {
         return $type === 'create_client'
-            ? !empty(trim((string) ($data['nombre'] ?? '')))
-            : !empty(trim((string) ($data['nombre_comercial'] ?? '')));
+            ? ['nombre','telefono','whatsapp','correo','ciudad','direccion']
+            : ['nombre_comercial','razon_social','actividad','telefono','whatsapp','ciudad','direccion'];
     }
 
     private function nextQuestion(string $type, int $step): string
     {
-        $fields = $type === 'create_client'
-            ? ['nombre','telefono','whatsapp','correo','ciudad','direccion']
-            : ['nombre_comercial','razon_social','actividad','telefono','whatsapp','ciudad','direccion'];
-        return match ($fields[$step] ?? null) {
+        return match ($this->fields($type)[$step] ?? null) {
             'nombre' => 'Perfecto. ¿Cuál es el nombre completo del cliente?',
             'telefono' => '¿Qué número de teléfono tendrá?',
             'whatsapp' => '¿Deseas registrar un número de WhatsApp?',
@@ -138,7 +134,7 @@ class AgrMemoryService
             'ciudad' => '¿En qué ciudad está?',
             'direccion' => '¿Cuál es la dirección?',
             'nombre_comercial' => 'Perfecto. ¿Cuál será el nombre comercial?',
-            'razon_social' => '¿Cuál es la razón social? Si no la tienes, podemos dejarla vacía.',
+            'razon_social' => '¿Cuál es la razón social? Si no la tienes, puedes escribir “sin razón social”.',
             'actividad' => '¿A qué actividad o rubro se dedica?',
             default => '¿Hay algún dato adicional que quieras incluir?',
         };
@@ -146,8 +142,8 @@ class AgrMemoryService
 
     private function confirmationMessage(string $type, array $data): string
     {
-        if ($type === 'create_client') return 'Tengo preparado el cliente '.$data['nombre'].'. Revisa los datos y confirma el registro en el formulario.';
-        return 'Tengo preparada la empresa '.$data['nombre_comercial'].'. Revisa los datos y confirma el registro en el formulario.';
+        if ($type === 'create_client') return 'Tengo preparado el cliente '.($data['nombre'] ?? '').'. Revisa los datos y confirma el registro en el formulario.';
+        return 'Tengo preparada la empresa '.($data['nombre_comercial'] ?? '').'. Revisa los datos y confirma el registro en el formulario.';
     }
 
     private function value(string $message): string
