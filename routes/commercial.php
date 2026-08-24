@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{AplicacionController,BillingController,ChatDocumentController,ClientBillingController,ClientPaymentController,ClientPortalController,PaymentReviewController,SaasController,SolicitudDecisionController};
+use App\Http\Controllers\{AplicacionController,BillingController,ChatDocumentController,ClientBillingController,ClientPaymentController,ClientPortalController,PaymentReviewController,SaasController};
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:sanctum','throttle:api'])->group(function (): void {
@@ -26,7 +26,6 @@ Route::middleware(['auth:sanctum','throttle:api'])->group(function (): void {
         Route::post('aplicaciones/{aplicacion}/entregar', [AplicacionController::class,'entregar']);
         Route::post('aplicaciones/{aplicacion}/revocar', [AplicacionController::class,'revocar']);
         Route::post('apps/electrofrio/buzon/{conversacion}/documentos', [ChatDocumentController::class,'store'])->defaults('chat_access','electro-admin');
-        Route::post('solicitudes/{solicitud}/aprobar', [SolicitudDecisionController::class,'approve']);
     });
 
     Route::middleware('superadmin')->group(function (): void {
