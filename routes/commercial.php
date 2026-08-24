@@ -13,7 +13,7 @@ Route::middleware(['auth:sanctum','throttle:api'])->group(function (): void {
         Route::post('mi/pagos/proyectos/{proyecto}/comprobante', [ClientPaymentController::class,'proyecto']);
         Route::post('mi/pagos/suscripciones/{suscripcion}/comprobante', [ClientPaymentController::class,'suscripcion']);
         Route::get('mi/pagos/proyecto-pagos/{pago}/comprobante', [ClientPaymentController::class,'comprobanteProyecto']);
-        Route::get('mi/pagos/suscripcion-pagos/{pago}/comprobante', [ClientBillingController::class,'comprobanteSuscripcion']);
+        Route::get('mi/pagos/suscripcion-pagos/{pago}/comprobante', [ClientPaymentController::class,'comprobanteSuscripcion']);
     });
 
     Route::middleware('electrofrio_customer')->group(function (): void {
