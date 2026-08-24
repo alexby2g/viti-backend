@@ -13,4 +13,11 @@ return [
         'reply_to_email' => env('BREVO_REPLY_TO_EMAIL'),
         'reply_to_name' => env('BREVO_REPLY_TO_NAME', env('MAIL_FROM_NAME', 'AGR Studio · VITI')),
     ],
+
+    'elevenlabs' => [
+        'api_key' => env('ELEVENLABS_API_KEY'),
+        'voice_id' => env('ELEVENLABS_VOICE_ID', 'cIBxLwfshLYhRB9lCXEg'),
+        'model_id' => env('ELEVENLABS_MODEL_ID', 'eleven_multilingual_v2'),
+        'output_format' => env('ELEVENLABS_OUTPUT_FORMAT', 'mp3_44100_128'),
+    ],
 ];
