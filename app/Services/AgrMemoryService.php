@@ -130,8 +130,8 @@ class AgrMemoryService
         if ($step === 999 && $this->matches($text, ['si', 'sí', 'confirmar', 'confirmo', 'guardar'])) {
             return [
                 'intent' => 'create_request_ready',
-                'message' => 'La solicitud está preparada. Revisa el resumen y confirma para registrarla en VITI.',
-                'data' => ['action' => ['type' => 'form', 'target' => 'request_create', 'confirm_required' => true, 'draft' => $data]],
+                'message' => 'La solicitud está preparada. Revísala en el módulo de solicitudes antes de guardarla.',
+                'data' => ['action' => ['type' => 'navigate', 'to' => '/solicitudes', 'label' => 'Revisar solicitud']],
                 'meta' => ['style' => 'safe_action', 'confirm_required' => true],
             ];
         }
@@ -146,7 +146,7 @@ class AgrMemoryService
                     $data['cliente_id'] = $company['cliente_id'];
                     unset($data['candidate_companies']);
                     $memory['pending'] = ['type' => 'create_request', 'step' => 1, 'data' => $data];
-                    return $this->requestCollecting('empresa', 'Perfecto. Tomo '. $company['nombre_comercial'] .'. ¿Cuál será el título de la solicitud?', $data, 1);
+                    return $this->requestCollecting('empresa', 'Perfecto. Tomo '.$company['nombre_comercial'].'. ¿Cuál será el título de la solicitud?', $data, 1);
                 }
             }
 
@@ -172,7 +172,7 @@ class AgrMemoryService
                 $memory['pending'] = ['type' => 'create_request', 'step' => 0, 'data' => $data];
                 return [
                     'intent' => 'create_request_company_selection',
-                    'message' => "Encontré varias empresas. Elige una por número:\n" . implode("\n", $lines),
+                    'message' => "Encontré varias empresas. Elige una por número:\n".implode("\n", $lines),
                     'data' => ['results' => $data['candidate_companies']],
                     'meta' => ['style' => 'selection', 'source' => 'viti_local'],
                 ];
@@ -201,9 +201,9 @@ class AgrMemoryService
             $memory['pending'] = ['type' => 'create_request', 'step' => 999, 'data' => $data];
             return [
                 'intent' => 'create_request_ready',
-                'message' => 'Listo. Ya tengo la solicitud de '.$data['empresa_nombre'].' preparada. Revisa el resumen y confirma para registrarla.',
-                'data' => ['action' => ['type' => 'form', 'target' => 'request_create', 'confirm_required' => true, 'draft' => $data]],
-                'meta' => ['style' => 'safe_action', 'confirm_required' => true],
+                'message' => 'Listo. Ya tengo la solicitud de '.$data['empresa_nombre'].' preparada. Revisa el módulo de solicitudes antes de registrarla.',
+                'data' => ['action' => ['type' => 'navigate', 'to' => '/solicitudes', 'label' => 'Revisar solicitud']],
+                'meta' => ['style' => 'safe_action', 'confirm_required' => true, 'draft' => $data],
             ];
         }
 
