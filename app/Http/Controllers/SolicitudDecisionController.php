@@ -2,18 +2,17 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{Conversacion,SolicitudSistema};
+use App\Models\{Conversacion,Mensaje,SolicitudSistema};
 use App\Services\{AccessInvitationService,WorkflowStateService};
-use App\Support\Audit;
+use App\Support\{Audit,FirebasePush};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\ValidationException;
 
 class SolicitudDecisionController extends Controller
 {
     public function approve(Request $request, SolicitudSistema $solicitud, WorkflowStateService $workflow): JsonResponse
     {
-        $solicitud->loadMissing(['cliente','empresa','planViti']);
+        $solicitud->loadMissing(['cliente.usuario','empresa','planViti']);
 
         abort_unless($solicitud->estado === 'en_revision', 422, 'Solo se pueden aprobar solicitudes que están en revisión.');
         $workflow->assertSolicitudTransition($solicitud->estado, 'aprobada');
@@ -27,25 +26,54 @@ class SolicitudDecisionController extends Controller
             'aprobado_at' => now(),
         ]);
 
-        Conversacion::firstOrCreate(
+        $conversation = Conversacion::firstOrCreate(
             ['cliente_id' => $solicitud->cliente_id, 'solicitud_id' => $solicitud->id],
-            ['asunto' => 'Seguimiento de '.$solicitud->codigo, 'estado' => 'abierta', 'ultimo_mensaje_at' => now()]
+            [
+                'asunto' => 'Seguimiento de '.$solicitud->codigo,
+                'estado' => 'abierta',
+                'ultimo_mensaje_at' => now(),
+            ]
         );
+
+        $messageText = 'Tu solicitud '.$solicitud->codigo.' fue aprobada. AGR Studio continuará contigo por este buzón para orientarte, coordinar el acceso y preparar el inicio del proyecto.';
+        $message = Mensaje::create([
+            'conversacion_id' => $conversation->id,
+            'usuario_id' => $request->user()->id,
+            'tipo' => 'texto',
+            'mensaje' => $messageText,
+        ]);
+        $conversation->update(['ultimo_mensaje_at' => now()]);
+
+        if ($solicitud->cliente?->usuario?->id) {
+            FirebasePush::sendToUsers(
+                [$solicitud->cliente->usuario->id],
+                'Solicitud VITI aprobada',
+                $messageText,
+                [
+                    'type' => 'buzon',
+                    'contexto' => 'viti',
+                    'conversation_id' => $conversation->id,
+                    'path' => '/mi-buzon?c='.$conversation->id,
+                ]
+            );
+        }
 
         Audit::log(
             $request,
             'solicitud_aprobada',
             $solicitud,
-            'AGR Studio aprobó la solicitud para continuar con orientación, acceso y desarrollo.'
+            'AGR Studio aprobó la solicitud y envió una orientación inicial por el buzón privado.'
         );
 
         $access = app(AccessInvitationService::class)->snapshotForSolicitud($solicitud->fresh());
 
         return response()->json([
-            'message' => 'Solicitud aprobada. El siguiente paso es orientar al cliente y generar su invitación de acceso.',
+            'message' => 'Solicitud aprobada y orientación inicial enviada al buzón del cliente.',
             'data' => [
                 'solicitud' => $solicitud->fresh()->load(['empresa','cliente','planViti']),
                 'acceso' => $access,
+                'conversacion_id' => $conversation->id,
+                'mensaje_id' => $message->id,
             ],
         ]);
     }
