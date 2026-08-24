@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{Aplicacion,Empresa,Mantenimiento,Proyecto,SolicitudSistema,Suscripcion};
-use App\Services\{AppLifecycleService,AgrActivityService,AgrAssistantService,AgrAutopilotService,AgrMemoryService,AgrPermissionService,AgrProjectConversionService,AgrSystemGuardService};
+use App\Services\{AppLifecycleService,AgrActivityService,AgrAssistantService,AgrAutopilotService,AgrIncidentService,AgrMemoryService,AgrPermissionService,AgrProjectConversionService,AgrSystemGuardService};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -18,7 +18,8 @@ class DashboardController extends Controller
         AgrProjectConversionService $projectConversion,
         AgrAutopilotService $autopilot,
         AgrPermissionService $permissions,
-        AgrSystemGuardService $guard
+        AgrSystemGuardService $guard,
+        AgrIncidentService $incidents
     ): JsonResponse {
         if ($request->filled('agr')) {
             $agrInput = (string) $request->query('agr');
@@ -58,11 +59,14 @@ class DashboardController extends Controller
                 ];
                 $snapshot['health'] = $guardScan['status'] === 'critical' ? 'attention' : $snapshot['health'];
             }
+            $snapshot['incidents'] = $incidents->fromSnapshot($snapshot);
+
             $activity->record('autopilot_review', 'AGR revisó VITI', $snapshot['message'], [
                 'health' => $snapshot['health'],
                 'permissions' => $snapshot['permissions'],
                 'priorities' => count($snapshot['priorities']),
                 'workflow_recommendations' => count($snapshot['workflow_recommendations']),
+                'incidents' => count($snapshot['incidents']),
                 'system_guard' => $guardScan['status'],
                 'metrics' => $snapshot['metrics'],
             ]);
@@ -75,6 +79,14 @@ class DashboardController extends Controller
                 $activity->record('workflow_recommendation', $recommendation['title'], $recommendation['message'], [
                     'key' => $recommendation['key'], 'severity' => $recommendation['severity'],
                     'recommended_action' => $recommendation['recommended_action'], 'route' => $recommendation['route'],
+                ]);
+            }
+            foreach ($snapshot['incidents'] as $incident) {
+                $activity->record('incident_detected', $incident['title'], $incident['summary'], [
+                    'incident_id' => $incident['id'],
+                    'severity' => $incident['severity'],
+                    'category' => $incident['category'],
+                    'signals' => $incident['signal_keys'],
                 ]);
             }
             return response()->json(['agr_autopilot' => $snapshot, 'agr_activity' => $activity->latest()]);
