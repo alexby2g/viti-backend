@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{Aplicacion,Empresa,Mantenimiento,Proyecto,SolicitudSistema,Suscripcion};
-use App\Services\{AppLifecycleService,AgrActivityService,AgrAssistantService,AgrAutopilotService,AgrIncidentService,AgrMemoryService,AgrPermissionService,AgrProjectConversionService,AgrSystemGuardService};
+use App\Services\{AppLifecycleService,AgrActivityService,AgrAssistantService,AgrAutopilotService,AgrIncidentService,AgrMemoryService,AgrPermissionService,AgrProjectConversionService,AgrRecoveryService,AgrSystemGuardService};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -19,7 +19,8 @@ class DashboardController extends Controller
         AgrAutopilotService $autopilot,
         AgrPermissionService $permissions,
         AgrSystemGuardService $guard,
-        AgrIncidentService $incidents
+        AgrIncidentService $incidents,
+        AgrRecoveryService $recovery
     ): JsonResponse {
         if ($request->filled('agr')) {
             $agrInput = (string) $request->query('agr');
@@ -29,7 +30,12 @@ class DashboardController extends Controller
         }
 
         if ($request->boolean('agr_incidents')) {
-            return response()->json(['incidents' => $incidents->active()]);
+            return response()->json([
+                'incidents' => collect($incidents->active())->map(fn (array $incident) => [
+                    'incident' => $incident,
+                    'recovery_plans' => $recovery->plans($incident),
+                ])->values(),
+            ]);
         }
 
         if ($request->boolean('agr_guard')) {
@@ -64,6 +70,10 @@ class DashboardController extends Controller
                 $snapshot['health'] = $guardScan['status'] === 'critical' ? 'attention' : $snapshot['health'];
             }
             $snapshot['incidents'] = $incidents->fromSnapshot($snapshot);
+            $snapshot['incident_recovery'] = collect($snapshot['incidents'])->map(fn (array $incident) => [
+                'incident_id' => $incident['id'],
+                'plans' => $recovery->plans($incident),
+            ])->values()->all();
 
             $activity->record('autopilot_review', 'AGR revisó VITI', $snapshot['message'], [
                 'health' => $snapshot['health'],
