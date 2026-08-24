@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{AgrActionController,AplicacionController,ArchivoController,AtencionSesionController,AuditoriaController,AuthController,BuzonController,ClientAppsController,ClientAuthController,ClientElectrofrioController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,ElectrofrioController,ElectrofrioCustomerAuthController,ElectrofrioCustomerPortalController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,OnboardingController,PeluqueriaController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,StorageController,PublicSolicitudController,UsuarioController};
+use App\Http\Controllers\{AgrActionController,AgrVoiceController,AplicacionController,ArchivoController,AtencionSesionController,AuditoriaController,AuthController,BuzonController,ClientAppsController,ClientAuthController,ClientElectrofrioController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,ElectrofrioController,ElectrofrioCustomerAuthController,ElectrofrioCustomerPortalController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,OnboardingController,PeluqueriaController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,StorageController,PublicSolicitudController,UsuarioController};
 use Illuminate\Support\Facades\Route;
 
 Route::get('health', fn () => ['status'=>'ok','service'=>'VITI Core API','time'=>now()->toIso8601String()]);
@@ -103,26 +103,25 @@ Route::prefix('v1')->group(function (): void {
                 Route::get('usuarios-negocio', [ClientElectrofrioController::class, 'usuariosNegocio']);
                 Route::post('tecnicos', [ClientElectrofrioController::class, 'guardarTecnico']);
                 Route::put('tecnicos/{id}', [ClientElectrofrioController::class, 'actualizarTecnico']);
-                Route::delete('tecnicos/{id}', [ClientElectrofrioController::class, 'eliminarTecnico']);
-                Route::post('clientes/{id}/acceso', [ClientElectrofrioController::class, 'guardarAccesoCliente']);
-                Route::delete('clientes/{id}/acceso', [ClientElectrofrioController::class, 'revocarAccesoCliente']);
-                Route::get('materiales', [ClientElectrofrioController::class, 'materiales']);
-                Route::post('materiales', [ClientElectrofrioController::class, 'guardarMaterial']);
-                Route::put('materiales/{id}', [ClientElectrofrioController::class, 'actualizarMaterial']);
-                Route::delete('materiales/{id}', [ClientElectrofrioController::class, 'eliminarMaterial']);
-                Route::get('ordenes', [ClientElectrofrioController::class, 'ordenes']);
-                Route::post('ordenes', [ClientElectrofrioController::class, 'guardarOrden']);
-                Route::put('ordenes/{id}', [ClientElectrofrioController::class, 'actualizarOrden']);
-                Route::delete('ordenes/{id}', [ClientElectrofrioController::class, 'eliminarOrden']);
-                Route::post('ordenes/{id}/decision', [ClientElectrofrioController::class, 'decision']);
-                Route::post('ordenes/{id}/finalizar', [ClientElectrofrioController::class, 'finalizar']);
-                Route::post('ordenes/{id}/materiales', [ClientElectrofrioController::class, 'usarMaterial']);
-                Route::delete('ordenes/{orderId}/materiales/{materialId}', [ClientElectrofrioController::class, 'quitarMaterial']);
-                Route::post('ordenes/{id}/pagos', [ClientElectrofrioController::class, 'registrarPago']);
-                Route::get('pagos', [ClientElectrofrioController::class, 'pagos']);
-                Route::get('garantias', [ClientElectrofrioController::class, 'garantias']);
-                Route::get('historial', [ClientElectrofrioController::class, 'historial']);
-
+                Route::delete('tecnicos/{id}', [ClientElectrofrioController::class,'eliminarTecnico']);
+                Route::post('clientes/{id}/acceso', [ClientElectrofrioController::class,'guardarAccesoCliente']);
+                Route::delete('clientes/{id}/acceso', [ClientElectrofrioController::class,'revocarAccesoCliente']);
+                Route::get('materiales', [ClientElectrofrioController::class,'materiales']);
+                Route::post('materiales', [ClientElectrofrioController::class,'guardarMaterial']);
+                Route::put('materiales/{id}', [ClientElectrofrioController::class,'actualizarMaterial']);
+                Route::delete('materiales/{id}', [ClientElectrofrioController::class,'eliminarMaterial']);
+                Route::get('ordenes', [ClientElectrofrioController::class,'ordenes']);
+                Route::post('ordenes', [ClientElectrofrioController::class,'guardarOrden']);
+                Route::put('ordenes/{id}', [ClientElectrofrioController::class,'actualizarOrden']);
+                Route::delete('ordenes/{id}', [ClientElectrofrioController::class,'eliminarOrden']);
+                Route::post('ordenes/{id}/decision', [ClientElectrofrioController::class,'decision']);
+                Route::post('ordenes/{id}/finalizar', [ClientElectrofrioController::class,'finalizar']);
+                Route::post('ordenes/{id}/materiales', [ClientElectrofrioController::class,'usarMaterial']);
+                Route::delete('ordenes/{orderId}/materiales/{materialId}', [ClientElectrofrioController::class,'quitarMaterial']);
+                Route::post('ordenes/{id}/pagos', [ClientElectrofrioController::class,'registrarPago']);
+                Route::get('pagos', [ClientElectrofrioController::class,'pagos']);
+                Route::get('garantias', [ClientElectrofrioController::class,'garantias']);
+                Route::get('historial', [ClientElectrofrioController::class,'historial']);
                 Route::get('buzon', [BuzonController::class,'businessIndex'])->defaults('chat_context','electrofrio');
                 Route::get('buzon/{conversacion}', [BuzonController::class,'businessShow'])->defaults('chat_context','electrofrio');
                 Route::post('buzon/{conversacion}/mensajes', [BuzonController::class,'businessSend'])->defaults('chat_context','electrofrio');
@@ -131,11 +130,11 @@ Route::prefix('v1')->group(function (): void {
                 Route::post('buzon/{conversacion}/presencia', [BuzonController::class,'presence'])->defaults('chat_context','electrofrio');
                 Route::put('buzon/{conversacion}/estado',[BuzonController::class,'businessState'])->defaults('chat_context','electrofrio');
                 Route::delete('buzon/{conversacion}',[BuzonController::class,'businessDeleteConversation'])->defaults('chat_context','electrofrio');
-                Route::get('atencion/sesiones', [AtencionSesionController::class,'adminIndex'])->defaults('chat_context','electrofrio');
-                Route::post('atencion/sesiones', [AtencionSesionController::class,'adminCreate'])->defaults('chat_context','electrofrio');
-                Route::post('atencion/sesiones/{sesion}/aprobar', [AtencionSesionController::class,'approve'])->defaults('chat_context','electrofrio');
-                Route::post('atencion/sesiones/{sesion}/rechazar', [AtencionSesionController::class,'reject'])->defaults('chat_context','electrofrio');
-                Route::post('atencion/sesiones/{sesion}/finalizar', [AtencionSesionController::class,'finish'])->defaults('chat_context','electrofrio');
+                Route::get('atencion/sesiones',[AtencionSesionController::class,'adminIndex'])->defaults('chat_context','electrofrio');
+                Route::post('atencion/sesiones',[AtencionSesionController::class,'adminCreate'])->defaults('chat_context','electrofrio');
+                Route::post('atencion/sesiones/{sesion}/aprobar',[AtencionSesionController::class,'approve'])->defaults('chat_context','electrofrio');
+                Route::post('atencion/sesiones/{sesion}/rechazar',[AtencionSesionController::class,'reject'])->defaults('chat_context','electrofrio');
+                Route::post('atencion/sesiones/{sesion}/finalizar',[AtencionSesionController::class,'finish'])->defaults('chat_context','electrofrio');
             });
 
             Route::get('solicitudes/{solicitud}.pdf', [ReporteController::class,'clienteSolicitud']);
@@ -144,34 +143,30 @@ Route::prefix('v1')->group(function (): void {
 
         Route::middleware('platform_admin')->group(function (): void {
             Route::get('dashboard', DashboardController::class);
+            Route::post('agr/voice', AgrVoiceController::class);
             Route::post('agr/acciones/crear-cliente', [AgrActionController::class,'confirmCreateClient']);
             Route::get('almacenamiento/estado', [StorageController::class,'status'])->middleware('superadmin');
             Route::post('invitaciones-clientes', [OnboardingController::class,'createInvitation']);
             Route::post('solicitudes/{solicitud}/invitacion', [OnboardingController::class,'createSolicitudInvitation']);
             Route::post('solicitudes/{solicitud}/invitacion/reenviar', [OnboardingController::class,'resendSolicitudInvitation']);
             Route::delete('solicitudes/{solicitud}/invitacion', [OnboardingController::class,'revokeSolicitudInvitation']);
-
             Route::post('clientes/registro-completo', [ClienteController::class,'storeComplete']);
-            Route::apiResource('clientes', ClienteController::class)->parameters(['clientes' => 'cliente']);
+            Route::apiResource('clientes', ClienteController::class)->parameters(['clientes'=>'cliente']);
             Route::put('clientes/{cliente}/verificar-foto', [ClienteController::class,'verifyPhoto']);
-            Route::apiResource('usuarios', UsuarioController::class)->parameters(['usuarios' => 'usuario'])->except('show')->middleware('superadmin');
-            Route::apiResource('empresas', EmpresaController::class)->parameters(['empresas' => 'empresa']);
+            Route::apiResource('usuarios', UsuarioController::class)->parameters(['usuarios'=>'usuario'])->except('show')->middleware('superadmin');
+            Route::apiResource('empresas', EmpresaController::class)->parameters(['empresas'=>'empresa']);
             Route::post('empresas/{empresa}/logo', [EmpresaController::class,'uploadLogo']);
-
             Route::get('cuestionarios', [CuestionarioController::class,'index']);
             Route::get('cuestionarios/{cuestionario}', [CuestionarioController::class,'show']);
-
-            Route::apiResource('solicitudes', SolicitudController::class)->parameters(['solicitudes' => 'solicitud']);
+            Route::apiResource('solicitudes', SolicitudController::class)->parameters(['solicitudes'=>'solicitud']);
             Route::put('solicitudes/{solicitud}/respuestas', [SolicitudController::class,'saveAnswers']);
             Route::post('solicitudes/{solicitud}/enviar', [SolicitudController::class,'submit']);
             Route::post('solicitudes/{solicitud}/rechazar', [SolicitudController::class,'reject']);
             Route::get('solicitudes/{solicitud}/historial', [SolicitudController::class,'timeline']);
-
-            Route::apiResource('proyectos', ProyectoController::class)->parameters(['proyectos' => 'proyecto']);
+            Route::apiResource('proyectos', ProyectoController::class)->parameters(['proyectos'=>'proyecto']);
             Route::post('proyectos/{proyecto}/avances', [ProyectoController::class,'addProgress']);
-            Route::apiResource('aplicaciones', AplicacionController::class)->parameters(['aplicaciones' => 'aplicacion']);
-            Route::apiResource('mantenimientos', MantenimientoController::class)->parameters(['mantenimientos' => 'mantenimiento'])->except('show');
-
+            Route::apiResource('aplicaciones', AplicacionController::class)->parameters(['aplicaciones'=>'aplicacion']);
+            Route::apiResource('mantenimientos', MantenimientoController::class)->parameters(['mantenimientos'=>'mantenimiento'])->except('show');
             Route::prefix('apps/peluqueria')->group(function (): void {
                 Route::get('resumen', [PeluqueriaController::class,'resumen']);
                 Route::get('clientes', [PeluqueriaController::class,'clientes']);
@@ -196,40 +191,39 @@ Route::prefix('v1')->group(function (): void {
                 Route::post('atenciones/{id}/pagos', [PeluqueriaController::class,'registrarPago']);
                 Route::get('historial', [PeluqueriaController::class,'historial']);
             });
-
             Route::prefix('apps/electrofrio')->group(function (): void {
-                Route::get('resumen', [ElectrofrioController::class, 'resumen']);
-                Route::get('clientes', [ElectrofrioController::class, 'clientes']);
-                Route::post('clientes', [ElectrofrioController::class, 'guardarCliente']);
-                Route::put('clientes/{id}', [ElectrofrioController::class, 'actualizarCliente']);
-                Route::delete('clientes/{id}', [ElectrofrioController::class, 'eliminarCliente']);
-                Route::get('equipos', [ElectrofrioController::class, 'equipos']);
-                Route::post('equipos', [ElectrofrioController::class, 'guardarEquipo']);
-                Route::put('equipos/{id}', [ElectrofrioController::class, 'actualizarEquipo']);
-                Route::delete('equipos/{id}', [ElectrofrioController::class, 'eliminarEquipo']);
-                Route::get('tecnicos', [ElectrofrioController::class, 'tecnicos']);
-                Route::get('usuarios-negocio', [ElectrofrioController::class, 'usuariosNegocio']);
-                Route::post('tecnicos', [ElectrofrioController::class, 'guardarTecnico']);
-                Route::put('tecnicos/{id}', [ElectrofrioController::class, 'actualizarTecnico']);
-                Route::delete('tecnicos/{id}', [ElectrofrioController::class, 'eliminarTecnico']);
-                Route::post('clientes/{id}/acceso', [ElectrofrioController::class, 'guardarAccesoCliente']);
-                Route::delete('clientes/{id}/acceso', [ElectrofrioController::class, 'revocarAccesoCliente']);
-                Route::get('materiales', [ElectrofrioController::class, 'materiales']);
-                Route::post('materiales', [ElectrofrioController::class, 'guardarMaterial']);
-                Route::put('materiales/{id}', [ElectrofrioController::class, 'actualizarMaterial']);
-                Route::delete('materiales/{id}', [ElectrofrioController::class, 'eliminarMaterial']);
-                Route::get('ordenes', [ElectrofrioController::class, 'ordenes']);
-                Route::post('ordenes', [ElectrofrioController::class, 'guardarOrden']);
-                Route::put('ordenes/{id}', [ElectrofrioController::class, 'actualizarOrden']);
-                Route::delete('ordenes/{id}', [ElectrofrioController::class, 'eliminarOrden']);
-                Route::post('ordenes/{id}/decision', [ElectrofrioController::class, 'decision']);
-                Route::post('ordenes/{id}/finalizar', [ElectrofrioController::class, 'finalizar']);
-                Route::post('ordenes/{id}/materiales', [ElectrofrioController::class, 'usarMaterial']);
-                Route::delete('ordenes/{orderId}/materiales/{materialId}', [ElectrofrioController::class, 'quitarMaterial']);
-                Route::post('ordenes/{id}/pagos', [ElectrofrioController::class, 'registrarPago']);
-                Route::get('pagos', [ElectrofrioController::class, 'pagos']);
-                Route::get('garantias', [ElectrofrioController::class, 'garantias']);
-                Route::get('historial', [ElectrofrioController::class, 'historial']);
+                Route::get('resumen', [ElectrofrioController::class,'resumen']);
+                Route::get('clientes', [ElectrofrioController::class,'clientes']);
+                Route::post('clientes', [ElectrofrioController::class,'guardarCliente']);
+                Route::put('clientes/{id}', [ElectrofrioController::class,'actualizarCliente']);
+                Route::delete('clientes/{id}', [ElectrofrioController::class,'eliminarCliente']);
+                Route::get('equipos', [ElectrofrioController::class,'equipos']);
+                Route::post('equipos', [ElectrofrioController::class,'guardarEquipo']);
+                Route::put('equipos/{id}', [ElectrofrioController::class,'actualizarEquipo']);
+                Route::delete('equipos/{id}', [ElectrofrioController::class,'eliminarEquipo']);
+                Route::get('tecnicos', [ElectrofrioController::class,'tecnicos']);
+                Route::get('usuarios-negocio', [ElectrofrioController::class,'usuariosNegocio']);
+                Route::post('tecnicos', [ElectrofrioController::class,'guardarTecnico']);
+                Route::put('tecnicos/{id}', [ElectrofrioController::class,'actualizarTecnico']);
+                Route::delete('tecnicos/{id}', [ElectrofrioController::class,'eliminarTecnico']);
+                Route::post('clientes/{id}/acceso', [ElectrofrioController::class,'guardarAccesoCliente']);
+                Route::delete('clientes/{id}/acceso', [ElectrofrioController::class,'revocarAccesoCliente']);
+                Route::get('materiales', [ElectrofrioController::class,'materiales']);
+                Route::post('materiales', [ElectrofrioController::class,'guardarMaterial']);
+                Route::put('materiales/{id}', [ElectrofrioController::class,'actualizarMaterial']);
+                Route::delete('materiales/{id}', [ElectrofrioController::class,'eliminarMaterial']);
+                Route::get('ordenes', [ElectrofrioController::class,'ordenes']);
+                Route::post('ordenes', [ElectrofrioController::class,'guardarOrden']);
+                Route::put('ordenes/{id}', [ElectrofrioController::class,'actualizarOrden']);
+                Route::delete('ordenes/{id}', [ElectrofrioController::class,'eliminarOrden']);
+                Route::post('ordenes/{id}/decision', [ElectrofrioController::class,'decision']);
+                Route::post('ordenes/{id}/finalizar', [ElectrofrioController::class,'finalizar']);
+                Route::post('ordenes/{id}/materiales', [ElectrofrioController::class,'usarMaterial']);
+                Route::delete('ordenes/{orderId}/materiales/{materialId}', [ElectrofrioController::class,'quitarMaterial']);
+                Route::post('ordenes/{id}/pagos', [ElectrofrioController::class,'registrarPago']);
+                Route::get('pagos', [ElectrofrioController::class,'pagos']);
+                Route::get('garantias', [ElectrofrioController::class,'garantias']);
+                Route::get('historial', [ElectrofrioController::class,'historial']);
                 Route::get('buzon', [BuzonController::class,'businessIndex'])->defaults('chat_context','electrofrio');
                 Route::get('buzon/{conversacion}', [BuzonController::class,'businessShow'])->defaults('chat_context','electrofrio');
                 Route::post('buzon/{conversacion}/mensajes', [BuzonController::class,'businessSend'])->defaults('chat_context','electrofrio');
@@ -244,7 +238,6 @@ Route::prefix('v1')->group(function (): void {
                 Route::post('atencion/sesiones/{sesion}/rechazar', [AtencionSesionController::class,'reject'])->defaults('chat_context','electrofrio');
                 Route::post('atencion/sesiones/{sesion}/finalizar', [AtencionSesionController::class,'finish'])->defaults('chat_context','electrofrio');
             });
-
             Route::get('archivos', [ArchivoController::class,'index']);
             Route::post('archivos', [ArchivoController::class,'store']);
             Route::get('archivos/{archivo}/descargar', [ArchivoController::class,'download']);
