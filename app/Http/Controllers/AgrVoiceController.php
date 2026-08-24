@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\{AgrAssistantService, AgrLocalLanguageService, AgrMemoryService, AgrProjectConversionService};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -10,8 +11,27 @@ use Illuminate\Support\Facades\Log;
 
 class AgrVoiceController extends Controller
 {
-    public function __invoke(Request $request): Response|JsonResponse
-    {
+    public function __invoke(
+        Request $request,
+        AgrLocalLanguageService $language,
+        AgrMemoryService $memory,
+        AgrAssistantService $assistant,
+        AgrProjectConversionService $projectConversion
+    ): Response|JsonResponse {
+        // 006 command channel: local VITI language engine first, then the existing AGR stack.
+        if ($request->filled('command')) {
+            $input = trim((string) $request->input('command'));
+            if ($input === '') return response()->json(['message' => '006 recibió un comando vacío.'], 422);
+
+            $local = $language->interpret($input);
+            if ($local !== null) return response()->json($local);
+
+            $conversion = $projectConversion->handle($input);
+            if ($conversion !== null) return response()->json($conversion);
+
+            return response()->json($memory->handle($input, $assistant));
+        }
+
         $data = $request->validate([
             'text' => ['required', 'string', 'max:5000'],
         ]);
