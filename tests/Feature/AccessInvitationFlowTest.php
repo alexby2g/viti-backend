@@ -78,9 +78,9 @@ class AccessInvitationFlowTest extends TestCase
             'respuestas' => $answers,
         ];
 
-        $response = $this->postJson('/api/v1/publico/solicitud/enviar', $payload)
-            ->assertCreated()
-            ->assertJsonPath('data.estado', 'en_revision');
+        $response = $this->postJson('/api/v1/publico/solicitud/enviar', $payload);
+        $this->assertSame(201, $response->status(), $response->getContent());
+        $response->assertJsonPath('data.estado', 'en_revision');
 
         $this->assertDatabaseHas('solicitudes_sistema', [
             'codigo' => $response->json('data.codigo'),
