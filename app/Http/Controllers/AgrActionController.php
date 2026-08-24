@@ -4,12 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Models\Cliente;
 use App\Services\AgrActionWorkflowService;
+use App\Services\AgrEventStreamService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class AgrActionController extends Controller
 {
-    public function confirmCreateClient(Request $request, AgrActionWorkflowService $workflow): JsonResponse
+    public function confirmCreateClient(Request $request, AgrActionWorkflowService $workflow, AgrEventStreamService $events): JsonResponse
     {
         $data = $request->validate([
             'nombre' => ['required', 'string', 'max:180'],
@@ -29,6 +30,9 @@ class AgrActionController extends Controller
             'canal_origen' => 'agr_assistant',
         ]);
 
+        $events->emit('client_created', 'Nuevo cliente registrado', 'AGR registró un cliente mediante el flujo conversacional.', [
+            'client_id' => $client->id,
+        ]);
         $workflow->clear();
 
         return response()->json([
@@ -39,7 +43,7 @@ class AgrActionController extends Controller
         ], 201);
     }
 
-    public function confirmCreateRequest(Request $request, AgrActionWorkflowService $workflow, SolicitudController $solicitudController): JsonResponse
+    public function confirmCreateRequest(Request $request, AgrActionWorkflowService $workflow, SolicitudController $solicitudController, AgrEventStreamService $events): JsonResponse
     {
         $data = $request->validate([
             'empresa_id' => ['required', 'integer', 'exists:empresas,id'],
@@ -59,6 +63,14 @@ class AgrActionController extends Controller
 
         $response = $solicitudController->store($forwarded);
         $workflow->clear();
+
+        if ($response->getStatusCode() < 300) {
+            $events->emit('request_created', 'Nueva solicitud registrada', 'AGR creó una solicitud mediante el flujo conversacional.', [
+                'empresa_id' => $data['empresa_id'],
+                'cliente_id' => $data['cliente_id'],
+                'titulo' => $data['titulo'],
+            ]);
+        }
 
         return $response;
     }
