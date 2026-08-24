@@ -2,7 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\Proyecto;
+use App\Models\{Conversacion,Proyecto};
+use App\Services\ChatChannelService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\{CreatesVitiTenants, TestCase};
 
@@ -70,6 +71,25 @@ class TenantIsolationRegressionTest extends TestCase
             ->getJson('/api/v1/mi/proyecto', [
                 'X-VITI-Empresa' => (string) $tenantB['company']->id,
             ])
+            ->assertStatus(403);
+    }
+
+    public function test_client_cannot_read_a_private_viti_conversation_from_an_unrelated_client(): void
+    {
+        $tenantA = $this->createTenant('CHAT-A');
+        $tenantB = $this->createTenant('CHAT-B');
+
+        $conversation = Conversacion::create([
+            'cliente_id' => $tenantB['user']->cliente_id,
+            'responsable_usuario_id' => null,
+            'asunto' => 'Conversación privada B',
+            'estado' => 'abierta',
+            'contexto' => ChatChannelService::VITI,
+            'canal_principal' => true,
+        ]);
+
+        $this->actingAs($tenantA['user'])
+            ->getJson('/api/v1/mi/buzon/'.$conversation->id)
             ->assertStatus(403);
     }
 }
