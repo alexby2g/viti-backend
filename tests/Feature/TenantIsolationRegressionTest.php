@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Proyecto;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\{CreatesVitiTenants, TestCase};
 
@@ -45,6 +46,28 @@ class TenantIsolationRegressionTest extends TestCase
 
         $this->actingAs($tenantA['user'])
             ->getJson('/api/v1/mi/aplicaciones', [
+                'X-VITI-Empresa' => (string) $tenantB['company']->id,
+            ])
+            ->assertStatus(403);
+    }
+
+    public function test_user_cannot_read_project_data_from_an_unrelated_tenant(): void
+    {
+        $tenantA = $this->createTenant('PROJECT-A');
+        $tenantB = $this->createTenant('PROJECT-B');
+
+        Proyecto::create([
+            'empresa_id' => $tenantB['company']->id,
+            'cliente_id' => null,
+            'codigo' => 'PRO-B-CROSS-TENANT',
+            'nombre' => 'Proyecto ajeno',
+            'fase' => 'levantamiento',
+            'estado' => 'activo',
+            'progreso' => 10,
+        ]);
+
+        $this->actingAs($tenantA['user'])
+            ->getJson('/api/v1/mi/proyecto', [
                 'X-VITI-Empresa' => (string) $tenantB['company']->id,
             ])
             ->assertStatus(403);
