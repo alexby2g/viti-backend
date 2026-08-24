@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{Aplicacion,Empresa,Mantenimiento,Proyecto,SolicitudSistema,Suscripcion};
-use App\Services\{AppLifecycleService,AgrActivityService,AgrAssistantService,AgrAutopilotService,AgrIncidentService,AgrMemoryService,AgrPermissionService,AgrProjectConversionService,AgrRecoveryService,AgrSystemGuardService};
+use App\Services\{AppLifecycleService,AgrActivityService,AgrAssistantService,AgrAutopilotService,AgrIncidentService,AgrMemoryService,AgrPermissionService,AgrProjectConversionService,AgrRecoveryService,AgrSystemGuardService,AgrWatchdogService};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -20,7 +20,8 @@ class DashboardController extends Controller
         AgrPermissionService $permissions,
         AgrSystemGuardService $guard,
         AgrIncidentService $incidents,
-        AgrRecoveryService $recovery
+        AgrRecoveryService $recovery,
+        AgrWatchdogService $watchdog
     ): JsonResponse {
         if ($request->filled('agr')) {
             $agrInput = (string) $request->query('agr');
@@ -85,10 +86,15 @@ class DashboardController extends Controller
             return response()->json(['agr_guard' => $scan, 'agr_activity' => $activity->latest()]);
         }
 
+        if ($request->boolean('agr_watchdog')) {
+            return response()->json(['agr_watchdog' => $watchdog->check()]);
+        }
+
         if ($request->boolean('agr_autopilot')) {
             $snapshot = $autopilot->run($permissions);
             $guardScan = $guard->scan();
             $snapshot['system_guard'] = $guardScan;
+            $snapshot['watchdog'] = $watchdog->check();
             if ($guardScan['status'] !== 'healthy') {
                 $snapshot['priorities'][] = [
                     'key' => 'system_guard',
@@ -98,6 +104,16 @@ class DashboardController extends Controller
                     'route' => '/dashboard',
                 ];
                 $snapshot['health'] = $guardScan['status'] === 'critical' ? 'attention' : $snapshot['health'];
+            }
+            if (in_array($snapshot['watchdog']['status'], ['critical', 'warning'], true)) {
+                $snapshot['priorities'][] = [
+                    'key' => 'agr_watchdog',
+                    'severity' => $snapshot['watchdog']['status'] === 'critical' ? 'critical' : 'high',
+                    'title' => 'AGR Watchdog',
+                    'message' => $snapshot['watchdog']['message'],
+                    'route' => '/dashboard',
+                ];
+                $snapshot['health'] = 'attention';
             }
             $snapshot['incidents'] = $incidents->fromSnapshot($snapshot);
             $snapshot['incident_recovery'] = collect($snapshot['incidents'])->map(fn (array $incident) => [
@@ -112,6 +128,7 @@ class DashboardController extends Controller
                 'workflow_recommendations' => count($snapshot['workflow_recommendations']),
                 'incidents' => count($snapshot['incidents']),
                 'system_guard' => $guardScan['status'],
+                'watchdog' => $snapshot['watchdog']['status'],
                 'metrics' => $snapshot['metrics'],
             ]);
             foreach ($snapshot['priorities'] as $priority) {
@@ -159,6 +176,7 @@ class DashboardController extends Controller
                 'aplicaciones_pendientes_entrega'=>$cycles->where('ciclo.estado','lista_entrega')->count(),
             ],
             'agr_autopilot'=>$agrSnapshot,
+            'agr_watchdog'=>$watchdog->latest() ?? $watchdog->check(),
             'agr_incidents'=>$incidents->active(),
             'agr_activity'=>$activity->latest(),
             'requieren_atencion'=>$attention,
