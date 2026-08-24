@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{Empresa,Proyecto,ProyectoAvance,SolicitudSistema};
+use App\Models\{Empresa,Proyecto,ProyectoAvance,ProyectoAmbiente,ProyectoDominio,ProyectoMiembro,ProyectoRepositorio,SolicitudSistema};
 use App\Services\WorkflowStateService;
 use App\Support\{Audit,Code};
 use Illuminate\Http\JsonResponse;
@@ -44,8 +44,6 @@ class ProyectoController extends Controller
                 if($solicitud->plan_viti_id){
                     $solicitud->empresa()->update(['plan_viti_id'=>$solicitud->plan_viti_id]);
                 }
-                // El observer de Solicitud exige que el proyecto exista antes de marcar
-                // la solicitud como convertida. En este punto la relación ya es real.
                 $solicitud->update(['estado'=>'convertida','aprobado_at'=>$solicitud->aprobado_at ?: now()]);
             }
 
@@ -58,7 +56,10 @@ class ProyectoController extends Controller
 
     public function show(Proyecto $proyecto): JsonResponse
     {
-        $proyecto->load(['empresa','cliente','solicitud.planViti','responsable','avances.creador','avances.archivos','aplicacion','archivos']);
+        $proyecto->load([
+            'empresa','cliente','solicitud.planViti','responsable','avances.creador','avances.archivos','aplicacion','archivos',
+            'repositorios','miembros.usuario','ambientes.dominios','dominios',
+        ]);
         return response()->json(['data'=>$this->withWorkflow($proyecto)]);
     }
 
@@ -76,9 +77,17 @@ class ProyectoController extends Controller
         $workflow->assertProyectoStateTransition($proyecto->estado,$targetState);
         $workflow->assertProyectoIntegrity($proyecto->fase,$proyecto->estado,$targetPhase,$targetState,$targetProgress);
 
-        $proyecto->update($data);
-        Audit::log($request,'proyecto_actualizado',$proyecto,'Se actualizó el proyecto.');
-        return response()->json(['data'=>$this->withWorkflow($proyecto->fresh()->load(['empresa','cliente']))]);
+        $developmentPresent=$request->has('development');
+
+        DB::transaction(function () use ($proyecto,$data,$request,$developmentPresent): void {
+            $proyecto->update($data);
+            if ($developmentPresent) $this->syncDevelopment($proyecto->fresh(), $request);
+        });
+
+        Audit::log($request,'proyecto_actualizado',$proyecto,'Se actualizó el proyecto y, cuando correspondía, su configuración de desarrollo.');
+        return response()->json(['data'=>$this->withWorkflow($proyecto->fresh()->load([
+            'empresa','cliente','repositorios','miembros.usuario','ambientes.dominios','dominios'
+        ]))]);
     }
 
     public function addProgress(Request $request, Proyecto $proyecto): JsonResponse
@@ -141,6 +150,105 @@ class ProyectoController extends Controller
             'fecha_inicio'=>['nullable','date'],'fecha_beta'=>['nullable','date'],'fecha_entrega'=>['nullable','date'],
             'repositorio_url'=>['nullable','url','max:255'],'produccion_url'=>['nullable','url','max:255'],'observaciones'=>['nullable','string','max:5000'],
         ]);
+    }
+
+    private function syncDevelopment(Proyecto $proyecto, Request $request): void
+    {
+        $development=$request->validate([
+            'development'=>['required','array'],
+            'development.repositorios'=>['sometimes','array'],
+            'development.repositorios.*.tipo'=>['required','string',Rule::in(['frontend','backend','mobile','infra','otro'])],
+            'development.repositorios.*.proveedor'=>['required','string',Rule::in(['github','gitlab','bitbucket','otro'])],
+            'development.repositorios.*.nombre'=>['required','string','max:180'],
+            'development.repositorios.*.url'=>['required','url','max:500'],
+            'development.repositorios.*.rama_principal'=>['nullable','string','max:120'],
+            'development.repositorios.*.privado'=>['nullable','boolean'],
+            'development.repositorios.*.descripcion'=>['nullable','string','max:2000'],
+
+            'development.miembros'=>['sometimes','array'],
+            'development.miembros.*.usuario_id'=>['required','integer','exists:usuarios,id'],
+            'development.miembros.*.rol'=>['required','string',Rule::in(['responsable','desarrollador','qa','devops','diseno','cliente_lector'])],
+            'development.miembros.*.permisos'=>['nullable','array'],
+            'development.miembros.*.activo'=>['nullable','boolean'],
+
+            'development.ambientes'=>['sometimes','array'],
+            'development.ambientes.*.tipo'=>['required','string',Rule::in(['desarrollo','staging','produccion'])],
+            'development.ambientes.*.nombre'=>['required','string','max:120'],
+            'development.ambientes.*.frontend_url'=>['nullable','url','max:500'],
+            'development.ambientes.*.backend_url'=>['nullable','url','max:500'],
+            'development.ambientes.*.proveedor_frontend'=>['nullable','string','max:60'],
+            'development.ambientes.*.proveedor_backend'=>['nullable','string','max:60'],
+            'development.ambientes.*.base_datos_referencia'=>['nullable','string','max:180'],
+            'development.ambientes.*.estado'=>['nullable','string',Rule::in(['pendiente','en_pruebas','estable','bloqueado','activo'])],
+            'development.ambientes.*.notas'=>['nullable','string','max:3000'],
+
+            'development.dominios'=>['sometimes','array'],
+            'development.dominios.*.ambiente_tipo'=>['nullable','string',Rule::in(['desarrollo','staging','produccion'])],
+            'development.dominios.*.dominio'=>['required','string','max:255'],
+            'development.dominios.*.tipo'=>['nullable','string',Rule::in(['web','api','staging','otro'])],
+            'development.dominios.*.estado'=>['nullable','string',Rule::in(['pendiente','configurando','activo','bloqueado'])],
+            'development.dominios.*.verificado_at'=>['nullable','date'],
+            'development.dominios.*.notas'=>['nullable','string','max:2000'],
+        ]);
+
+        $payload=$development['development'];
+
+        $proyecto->dominios()->delete();
+        $proyecto->ambientes()->delete();
+        $proyecto->miembros()->delete();
+        $proyecto->repositorios()->delete();
+
+        foreach (($payload['repositorios'] ?? []) as $item) {
+            ProyectoRepositorio::create([
+                'proyecto_id'=>$proyecto->id,
+                'tipo'=>$item['tipo'],
+                'proveedor'=>$item['proveedor'],
+                'nombre'=>$item['nombre'],
+                'url'=>$item['url'],
+                'rama_principal'=>$item['rama_principal'] ?? 'main',
+                'privado'=>(bool)($item['privado'] ?? true),
+                'descripcion'=>$item['descripcion'] ?? null,
+            ]);
+        }
+
+        foreach (($payload['miembros'] ?? []) as $item) {
+            ProyectoMiembro::create([
+                'proyecto_id'=>$proyecto->id,
+                'usuario_id'=>$item['usuario_id'],
+                'rol'=>$item['rol'],
+                'permisos'=>$item['permisos'] ?? null,
+                'activo'=>(bool)($item['activo'] ?? true),
+            ]);
+        }
+
+        $environmentIds=[];
+        foreach (($payload['ambientes'] ?? []) as $item) {
+            $environment=ProyectoAmbiente::create([
+                'proyecto_id'=>$proyecto->id,
+                'tipo'=>$item['tipo'],
+                'nombre'=>$item['nombre'],
+                'frontend_url'=>$item['frontend_url'] ?? null,
+                'backend_url'=>$item['backend_url'] ?? null,
+                'proveedor_frontend'=>$item['proveedor_frontend'] ?? null,
+                'proveedor_backend'=>$item['proveedor_backend'] ?? null,
+                'base_datos_referencia'=>$item['base_datos_referencia'] ?? null,
+                'estado'=>$item['estado'] ?? 'pendiente',
+                'notas'=>$item['notas'] ?? null,
+            ]);
+            $environmentIds[$environment->tipo]=$environment->id;
+        }
+
+        foreach (($payload['dominios'] ?? []) as $item) {
+            ProyectoDominio::create([
+                'proyecto_id'=>$proyecto->id,
+                'ambiente_id'=>isset($item['ambiente_tipo']) ? ($environmentIds[$item['ambiente_tipo']] ?? null) : null,
+                'dominio'=>strtolower(trim($item['dominio'])),
+                'tipo'=>$item['tipo'] ?? 'web',
+                'estado'=>$item['estado'] ?? 'pendiente',
+                'verificado_at'=>$item['verificado_at'] ?? null,
+                'notas'=>$item['notas'] ?? null,
+            ]);
+        }
     }
 
     private function assertStructuralLinks(Proyecto $proyecto,array $data):void
