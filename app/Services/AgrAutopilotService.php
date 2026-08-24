@@ -10,7 +10,7 @@ class AgrAutopilotService
 {
     private const CACHE_KEY = 'agr.autopilot.latest';
 
-    public function run(AgrPermissionService $permissions, AgrHealthMonitorService $healthMonitor): array
+    public function run(AgrPermissionService $permissions, AgrHealthMonitorService $healthMonitor, AgrBaselineService $baseline): array
     {
         $systemHealth = $healthMonitor->check();
 
@@ -30,10 +30,7 @@ class AgrAutopilotService
                 'companies' => Empresa::query()->where('estado', 'activo')->count(),
                 'projects_active' => Proyecto::query()->where('estado', 'activo')->count(),
                 'requests_pending' => SolicitudSistema::query()->whereNotIn('estado', ['completada', 'rechazada', 'cancelada'])->count(),
-                'requests_approved_without_project' => SolicitudSistema::query()
-                    ->where('estado', 'aprobada')
-                    ->whereDoesntHave('proyecto')
-                    ->count(),
+                'requests_approved_without_project' => SolicitudSistema::query()->where('estado', 'aprobada')->whereDoesntHave('proyecto')->count(),
                 'payments_attention' => Suscripcion::query()->whereIn('estado', ['gracia', 'suspendida'])->count(),
                 'support_open' => Mantenimiento::query()->whereNotIn('estado', ['resuelto', 'cerrado'])->count(),
                 'applications' => Aplicacion::query()->count(),
@@ -54,6 +51,17 @@ class AgrAutopilotService
                 'convert_request_without_confirmation',
             ],
         ];
+
+        $snapshot['baseline'] = $baseline->analyze($snapshot['metrics']);
+        foreach ($snapshot['baseline']['anomalies'] as $anomaly) {
+            $snapshot['priorities'][] = [
+                'key' => $anomaly['key'],
+                'severity' => $anomaly['severity'],
+                'title' => 'Anomalía de comportamiento',
+                'message' => $anomaly['message'],
+                'route' => '/dashboard',
+            ];
+        }
 
         $m = $snapshot['metrics'];
 
@@ -134,6 +142,7 @@ class AgrAutopilotService
         Log::info('AGR Autopilot snapshot generated', [
             'health' => $snapshot['health'],
             'system_health' => $systemHealth['status'],
+            'baseline_anomalies' => count($snapshot['baseline']['anomalies']),
             'priorities' => count($snapshot['priorities']),
             'workflow_recommendations' => count($snapshot['workflow_recommendations']),
         ]);
@@ -150,10 +159,15 @@ class AgrAutopilotService
     {
         $priorityCount = count($snapshot['priorities']);
         $workflowCount = count($snapshot['workflow_recommendations']);
+        $baselineCount = count($snapshot['baseline']['anomalies'] ?? []);
         $total = $priorityCount + $workflowCount;
 
         if (($snapshot['system_health']['status'] ?? 'healthy') === 'critical') {
             return 'AGR detectó una anomalía crítica del sistema. La prioridad es revisar la salud técnica antes de continuar con operaciones administrativas.';
+        }
+
+        if ($baselineCount > 0) {
+            return 'AGR detectó '.$baselineCount.' cambio(s) de comportamiento fuera de la línea base reciente y completó la revisión operativa de VITI.';
         }
 
         if (($snapshot['system_health']['status'] ?? 'healthy') === 'warning') {
@@ -161,7 +175,7 @@ class AgrAutopilotService
         }
 
         if ($total === 0) {
-            return 'AGR revisó VITI y no detectó incidencias, procesos detenidos ni anomalías técnicas en esta revisión.';
+            return 'AGR revisó VITI y no detectó incidencias, procesos detenidos ni cambios bruscos en esta revisión.';
         }
 
         if ($workflowCount > 0 && $priorityCount > 0) {
