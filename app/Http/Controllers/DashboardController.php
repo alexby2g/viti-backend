@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{Aplicacion,Empresa,Mantenimiento,Proyecto,SolicitudSistema,Suscripcion};
-use App\Services\{AppLifecycleService,AgrAssistantService,AgrAutopilotService,AgrMemoryService,AgrProjectConversionService};
+use App\Services\{AppLifecycleService,AgrActivityService,AgrAssistantService,AgrAutopilotService,AgrMemoryService,AgrProjectConversionService};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -12,6 +12,7 @@ class DashboardController extends Controller
     public function __invoke(
         Request $request,
         AppLifecycleService $lifecycle,
+        AgrActivityService $activity,
         AgrAssistantService $assistant,
         AgrMemoryService $memory,
         AgrProjectConversionService $projectConversion,
@@ -24,13 +25,37 @@ class DashboardController extends Controller
             return response()->json($memory->handle($agrInput, $assistant));
         }
 
+        if ($request->boolean('agr_autopilot')) {
+            $snapshot = $autopilot->run();
+            $activity->record('autopilot_review', 'AGR revisó VITI', $snapshot['message'], [
+                'health' => $snapshot['health'],
+                'priorities' => count($snapshot['priorities']),
+                'workflow_recommendations' => count($snapshot['workflow_recommendations']),
+                'metrics' => $snapshot['metrics'],
+            ]);
+            foreach ($snapshot['priorities'] as $priority) {
+                $activity->record('priority_detected', $priority['title'], $priority['message'], [
+                    'key' => $priority['key'], 'severity' => $priority['severity'], 'route' => $priority['route'],
+                ]);
+            }
+            foreach ($snapshot['workflow_recommendations'] as $recommendation) {
+                $activity->record('workflow_recommendation', $recommendation['title'], $recommendation['message'], [
+                    'key' => $recommendation['key'], 'severity' => $recommendation['severity'],
+                    'recommended_action' => $recommendation['recommended_action'], 'route' => $recommendation['route'],
+                ]);
+            }
+            return response()->json(['agr_autopilot' => $snapshot, 'agr_activity' => $activity->latest()]);
+        }
+
+        if ($request->boolean('agr_activity')) {
+            return response()->json(['agr_activity' => $activity->latest((int) $request->input('limit', 20))]);
+        }
+
         $apps = Aplicacion::query()->with(['empresa:id,nombre_comercial','proyecto:id,codigo,nombre,progreso','suscripcion'])->latest()->get();
         $cycles = $apps->map(fn(Aplicacion $app)=>['app'=>$app,'ciclo'=>$lifecycle->status($app)]);
         $attention = $cycles->filter(fn($row)=>in_array($row['ciclo']['estado'],['lista_entrega','gracia','suspendida'],true))->take(8)->values();
 
-        $agrSnapshot = $request->boolean('agr_autopilot')
-            ? $autopilot->run()
-            : $autopilot->latest();
+        $agrSnapshot = $autopilot->latest();
 
         return response()->json([
             'resumen'=>[
@@ -44,6 +69,7 @@ class DashboardController extends Controller
                 'aplicaciones_pendientes_entrega'=>$cycles->where('ciclo.estado','lista_entrega')->count(),
             ],
             'agr_autopilot'=>$agrSnapshot,
+            'agr_activity'=>$activity->latest(),
             'requieren_atencion'=>$attention,
             'solicitudes_recientes'=>SolicitudSistema::with(['empresa:id,nombre_comercial','cliente:id,nombre'])->latest()->limit(5)->get(),
             'proyectos_recientes'=>Proyecto::with(['empresa:id,nombre_comercial','cliente:id,nombre'])->latest()->limit(5)->get(),
