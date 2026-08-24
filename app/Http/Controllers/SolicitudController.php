@@ -66,6 +66,8 @@ class SolicitudController extends Controller
 
     public function saveAnswers(Request $request, SolicitudSistema $solicitud): JsonResponse
     {
+        abort_unless($solicitud->estado === 'borrador', 422, 'Las respuestas quedan congeladas cuando la solicitud pasa a revisión. Crea una corrección administrativa para modificar una solicitud ya enviada.');
+
         $data=$request->validate([
             'respuestas'=>['required','array'],
             'respuestas.*.pregunta_id'=>['required','integer','exists:cuestionario_preguntas,id'],
