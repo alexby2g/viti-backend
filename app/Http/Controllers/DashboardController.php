@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{Aplicacion,Empresa,Mantenimiento,Proyecto,SolicitudSistema,Suscripcion};
-use App\Services\{AppLifecycleService,AgrActivityService,AgrAssistantService,AgrAutopilotService,AgrMemoryService,AgrPermissionService,AgrProjectConversionService};
+use App\Services\{AppLifecycleService,AgrActivityService,AgrAssistantService,AgrAutopilotService,AgrMemoryService,AgrPermissionService,AgrProjectConversionService,AgrSystemGuardService};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -17,7 +17,8 @@ class DashboardController extends Controller
         AgrMemoryService $memory,
         AgrProjectConversionService $projectConversion,
         AgrAutopilotService $autopilot,
-        AgrPermissionService $permissions
+        AgrPermissionService $permissions,
+        AgrSystemGuardService $guard
     ): JsonResponse {
         if ($request->filled('agr')) {
             $agrInput = (string) $request->query('agr');
@@ -26,13 +27,43 @@ class DashboardController extends Controller
             return response()->json($memory->handle($agrInput, $assistant));
         }
 
+        if ($request->boolean('agr_guard')) {
+            $scan = $guard->scan();
+            $activity->record('system_guard_scan', 'AGR completó una ronda del sistema', $scan['summary'], [
+                'status' => $scan['status'],
+                'score' => $scan['score'],
+                'anomalies' => count($scan['anomalies']),
+                'warnings' => count($scan['warnings']),
+            ]);
+            foreach ($scan['anomalies'] as $anomaly) {
+                $activity->record('system_anomaly', $anomaly['title'], $anomaly['message'], [
+                    'key' => $anomaly['key'],
+                    'severity' => $anomaly['severity'],
+                ]);
+            }
+            return response()->json(['agr_guard' => $scan, 'agr_activity' => $activity->latest()]);
+        }
+
         if ($request->boolean('agr_autopilot')) {
             $snapshot = $autopilot->run($permissions);
+            $guardScan = $guard->scan();
+            $snapshot['system_guard'] = $guardScan;
+            if ($guardScan['status'] !== 'healthy') {
+                $snapshot['priorities'][] = [
+                    'key' => 'system_guard',
+                    'severity' => $guardScan['status'] === 'critical' ? 'critical' : 'high',
+                    'title' => 'AGR System Guard',
+                    'message' => $guardScan['summary'],
+                    'route' => '/dashboard',
+                ];
+                $snapshot['health'] = $guardScan['status'] === 'critical' ? 'attention' : $snapshot['health'];
+            }
             $activity->record('autopilot_review', 'AGR revisó VITI', $snapshot['message'], [
                 'health' => $snapshot['health'],
                 'permissions' => $snapshot['permissions'],
                 'priorities' => count($snapshot['priorities']),
                 'workflow_recommendations' => count($snapshot['workflow_recommendations']),
+                'system_guard' => $guardScan['status'],
                 'metrics' => $snapshot['metrics'],
             ]);
             foreach ($snapshot['priorities'] as $priority) {
