@@ -60,7 +60,7 @@ class TenantIsolationRegressionTest extends TestCase
 
         Proyecto::create([
             'empresa_id' => $tenantB['company']->id,
-            'cliente_id' => null,
+            'cliente_id' => $tenantB['user']->cliente_id,
             'codigo' => 'PRO-B-CROSS-TENANT',
             'nombre' => 'Proyecto ajeno',
             'fase' => 'levantamiento',
