@@ -38,6 +38,36 @@ class DashboardController extends Controller
             ]);
         }
 
+        if ($request->filled('agr_recovery_action')) {
+            $action = (string) $request->query('agr_recovery_action');
+            $incidentId = (string) $request->query('incident_id');
+            if (!$recovery->canExecute($action)) {
+                return response()->json(['message' => 'AGR no permite esa recuperación.'], 422);
+            }
+            if (!$permissions->can('prepare_actions')) {
+                return response()->json(['message' => 'El nivel actual de AGR no permite ejecutar esta recuperación.'], 403);
+            }
+            $incident = collect($incidents->active())->firstWhere('id', $incidentId);
+            if (!$incident) {
+                return response()->json(['message' => 'El incidente ya no está activo.'], 404);
+            }
+            $result = match ($action) {
+                'recheck_system' => $guard->scan(),
+                'refresh_agr_state' => $autopilot->run($permissions),
+            };
+            $activity->record('recovery_action', 'AGR ejecutó una recuperación segura', $incident['title'].' · '.$action, [
+                'incident_id' => $incident['id'],
+                'action' => $action,
+            ]);
+            return response()->json([
+                'message' => 'AGR ejecutó la recuperación segura y volvió a comprobar el estado.',
+                'incident' => $incident,
+                'action' => $action,
+                'result' => $result,
+                'agr_activity' => $activity->latest(),
+            ]);
+        }
+
         if ($request->boolean('agr_guard')) {
             $scan = $guard->scan();
             $activity->record('system_guard_scan', 'AGR completó una ronda del sistema', $scan['summary'], [
