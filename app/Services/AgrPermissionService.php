@@ -11,7 +11,7 @@ class AgrPermissionService
 
     public function level(): int
     {
-        $configured = (int) config('agr.permissions.level', self::LEVEL_ASSISTANT);
+        $configured = (int) env('AGR_PERMISSION_LEVEL', self::LEVEL_ASSISTANT);
         return max(self::LEVEL_OBSERVER, min(self::LEVEL_AUTOPILOT, $configured));
     }
 
