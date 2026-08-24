@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{Aplicacion,Empresa,Mantenimiento,Proyecto,SolicitudSistema,Suscripcion};
-use App\Services\{AppLifecycleService,AgrActivityService,AgrAssistantService,AgrAutopilotService,AgrIncidentService,AgrMemoryService,AgrPermissionService,AgrProjectConversionService,AgrRecoveryService,AgrSystemGuardService,AgrEventStreamService};
+use App\Services\{AppLifecycleService,AgrActivityService,AgrAssistantService,AgrAutopilotService,AgrIncidentService,AgrMemoryService,AgrPermissionService,AgrProjectConversionService,AgrRecoveryService,AgrSystemGuardService,AgrEventStreamService,AgrEventRuleService};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -21,7 +21,8 @@ class DashboardController extends Controller
         AgrSystemGuardService $guard,
         AgrIncidentService $incidents,
         AgrRecoveryService $recovery,
-        AgrEventStreamService $events
+        AgrEventStreamService $events,
+        AgrEventRuleService $eventRules
     ): JsonResponse {
         if ($request->filled('agr')) {
             $agrInput = (string) $request->query('agr');
@@ -31,16 +32,20 @@ class DashboardController extends Controller
         }
 
         if ($request->boolean('agr_events')) {
-            return response()->json(['agr_events' => $events->consumeAndClassify()]);
+            $stream = $events->consumeAndClassify();
+            $stream['rules'] = $eventRules->evaluate($stream['events']);
+            return response()->json(['agr_events' => $stream]);
         }
 
         if ($request->boolean('agr_incidents')) {
+            $stream = $events->consumeAndClassify();
+            $stream['rules'] = $eventRules->evaluate($stream['events']);
             return response()->json([
                 'incidents' => collect($incidents->active())->map(fn (array $incident) => [
                     'incident' => $incident,
                     'recovery_plans' => $recovery->plans($incident),
                 ])->values(),
-                'agr_events' => $events->consumeAndClassify(),
+                'agr_events' => $stream,
             ]);
         }
 
@@ -111,6 +116,24 @@ class DashboardController extends Controller
                 'plans' => $recovery->plans($incident),
             ])->values()->all();
             $snapshot['agr_events'] = $events->consumeAndClassify();
+            $snapshot['agr_events']['rules'] = $eventRules->evaluate($snapshot['agr_events']['events']);
+
+            foreach ($snapshot['agr_events']['rules'] as $rule) {
+                $snapshot['priorities'][] = [
+                    'key' => 'event_rule_'.$rule['key'],
+                    'severity' => $rule['severity'],
+                    'title' => $rule['title'],
+                    'message' => $rule['message'],
+                    'route' => '/dashboard',
+                ];
+                $activity->record('event_rule_alert', $rule['title'], $rule['message'], [
+                    'key' => $rule['key'],
+                    'severity' => $rule['severity'],
+                    'event_id' => $rule['event_id'],
+                    'event_type' => $rule['event_type'],
+                    'context' => $rule['context'],
+                ]);
+            }
 
             $activity->record('autopilot_review', 'AGR revisó VITI', $snapshot['message'], [
                 'health' => $snapshot['health'],
@@ -120,6 +143,7 @@ class DashboardController extends Controller
                 'incidents' => count($snapshot['incidents']),
                 'system_guard' => $guardScan['status'],
                 'event_count' => count($snapshot['agr_events']['events']),
+                'event_rule_alerts' => count($snapshot['agr_events']['rules']),
                 'metrics' => $snapshot['metrics'],
             ]);
             foreach ($snapshot['priorities'] as $priority) {
@@ -169,6 +193,7 @@ class DashboardController extends Controller
             'agr_autopilot'=>$agrSnapshot,
             'agr_incidents'=>$incidents->active(),
             'agr_events'=>$events->latest(),
+            'agr_event_rules'=>$eventRules->latest(),
             'agr_activity'=>$activity->latest(),
             'requieren_atencion'=>$attention,
             'solicitudes_recientes'=>SolicitudSistema::with(['empresa:id,nombre_comercial','cliente:id,nombre'])->latest()->limit(5)->get(),
