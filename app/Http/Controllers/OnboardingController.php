@@ -18,27 +18,9 @@ class OnboardingController extends Controller
 {
     public function createInvitation(Request $request): JsonResponse
     {
-        $data = $request->validate([
-            'dias_vigencia' => ['nullable','integer','min:1','max:30'],
-        ]);
-
-        $days = (int) ($data['dias_vigencia'] ?? 7);
-        $invitation = InvitacionCliente::create([
-            'token' => Str::random(64),
-            'creada_por' => $request->user()?->id,
-            'estado' => 'pendiente',
-            'expira_at' => now()->addDays($days),
-        ]);
-
         return response()->json([
-            'data' => [
-                'token' => $invitation->token,
-                'estado' => $invitation->estado,
-                'expira_at' => $invitation->expira_at,
-                'ruta' => '/registro-cliente/'.$invitation->token,
-            ],
-            'message' => 'Enlace de registro creado correctamente.',
-        ], 201);
+            'message' => 'Las invitaciones genéricas están deshabilitadas. El acceso solo se habilita desde una solicitud VITI aprobada.',
+        ], 410);
     }
 
     public function createSolicitudInvitation(Request $request, SolicitudSistema $solicitud, AccessInvitationService $service): JsonResponse
@@ -191,6 +173,7 @@ class OnboardingController extends Controller
                     $cliente = Cliente::query()->lockForUpdate()->findOrFail($locked->cliente_id);
                     $solicitud = SolicitudSistema::query()->lockForUpdate()->findOrFail($locked->solicitud_id);
                     abort_unless((int) $solicitud->cliente_id === (int) $cliente->id, 422, 'La invitación no coincide con el responsable de la solicitud.');
+                    abort_unless($solicitud->estado === 'aprobada', 422, 'La solicitud todavía no está aprobada para crear el acceso.');
                     $empresa = $solicitud->empresa_id
                         ? Empresa::query()->lockForUpdate()->findOrFail($solicitud->empresa_id)
                         : null;
