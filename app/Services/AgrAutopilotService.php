@@ -26,21 +26,28 @@ class AgrAutopilotService
                 'companies' => Empresa::query()->where('estado', 'activo')->count(),
                 'projects_active' => Proyecto::query()->where('estado', 'activo')->count(),
                 'requests_pending' => SolicitudSistema::query()->whereNotIn('estado', ['completada', 'rechazada', 'cancelada'])->count(),
+                'requests_approved_without_project' => SolicitudSistema::query()
+                    ->where('estado', 'aprobada')
+                    ->whereDoesntHave('proyecto')
+                    ->count(),
                 'payments_attention' => Suscripcion::query()->whereIn('estado', ['gracia', 'suspendida'])->count(),
                 'support_open' => Mantenimiento::query()->whereNotIn('estado', ['resuelto', 'cerrado'])->count(),
                 'applications' => Aplicacion::query()->count(),
             ],
             'priorities' => [],
+            'workflow_recommendations' => [],
             'safe_actions' => [
                 'refresh_system_snapshot',
                 'record_priority_state',
                 'prepare_admin_attention',
+                'prepare_project_from_approved_request',
             ],
             'blocked_actions' => [
                 'delete_records',
                 'charge_customer',
                 'change_business_data',
                 'close_support_without_confirmation',
+                'convert_request_without_confirmation',
             ],
         ];
 
@@ -52,6 +59,17 @@ class AgrAutopilotService
                 'severity' => $m['requests_pending'] >= 5 ? 'high' : 'medium',
                 'title' => 'Solicitudes pendientes',
                 'message' => $m['requests_pending'].' solicitud(es) requieren revisión.',
+                'route' => '/solicitudes',
+            ];
+        }
+
+        if ($m['requests_approved_without_project'] > 0) {
+            $snapshot['workflow_recommendations'][] = [
+                'key' => 'approved_request_without_project',
+                'severity' => 'high',
+                'title' => 'Solicitud aprobada sin proyecto',
+                'message' => $m['requests_approved_without_project'].' solicitud(es) aprobada(s) todavía no tienen proyecto asociado.',
+                'recommended_action' => 'prepare_project_from_approved_request',
                 'route' => '/solicitudes',
             ];
         }
@@ -86,11 +104,20 @@ class AgrAutopilotService
             ];
         }
 
-        $snapshot['health'] = count($snapshot['priorities']) === 0 ? 'stable' : (collect($snapshot['priorities'])->contains('severity', 'high') ? 'attention' : 'watch');
+        $highWorkflow = collect($snapshot['workflow_recommendations'])->contains('severity', 'high');
+        $hasHighPriority = collect($snapshot['priorities'])->contains('severity', 'high');
+        $snapshot['health'] = (count($snapshot['priorities']) === 0 && count($snapshot['workflow_recommendations']) === 0)
+            ? 'stable'
+            : (($hasHighPriority || $highWorkflow) ? 'attention' : 'watch');
+
         $snapshot['message'] = $this->messageFor($snapshot);
 
         Cache::put(self::CACHE_KEY, $snapshot, now()->addHours(6));
-        Log::info('AGR Autopilot snapshot generated', ['health' => $snapshot['health'], 'priorities' => count($snapshot['priorities'])]);
+        Log::info('AGR Autopilot snapshot generated', [
+            'health' => $snapshot['health'],
+            'priorities' => count($snapshot['priorities']),
+            'workflow_recommendations' => count($snapshot['workflow_recommendations']),
+        ]);
 
         return $snapshot;
     }
@@ -102,10 +129,25 @@ class AgrAutopilotService
 
     private function messageFor(array $snapshot): string
     {
+        $priorityCount = count($snapshot['priorities']);
+        $workflowCount = count($snapshot['workflow_recommendations']);
+        $total = $priorityCount + $workflowCount;
+
+        if ($total === 0) {
+            return 'AGR revisó VITI y no detectó incidencias ni procesos detenidos en esta revisión.';
+        }
+
+        if ($workflowCount > 0 && $priorityCount > 0) {
+            return 'AGR detectó '.$total.' puntos de atención: '.$priorityCount.' incidencias y '.$workflowCount.' siguiente(s) paso(s) de flujo recomendado(s).';
+        }
+
+        if ($workflowCount > 0) {
+            return 'AGR detectó '.$workflowCount.' siguiente(s) paso(s) de flujo que conviene revisar.';
+        }
+
         return match ($snapshot['health']) {
-            'stable' => 'AGR revisó VITI y no detectó incidencias prioritarias.',
-            'attention' => 'AGR detectó '.count($snapshot['priorities']).' prioridad(es) que requieren atención.',
-            default => 'AGR detectó '.count($snapshot['priorities']).' punto(s) para vigilar.',
+            'attention' => 'AGR detectó '.$priorityCount.' prioridad(es) que requieren atención.',
+            default => 'AGR detectó '.$priorityCount.' punto(s) para vigilar.',
         };
     }
 }
