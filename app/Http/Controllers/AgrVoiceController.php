@@ -4,11 +4,12 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Http;
 
 class AgrVoiceController extends Controller
 {
-    public function __invoke(Request $request): JsonResponse
+    public function __invoke(Request $request): Response|JsonResponse
     {
         $data = $request->validate([
             'text' => ['required', 'string', 'max:5000'],
@@ -52,10 +53,10 @@ class AgrVoiceController extends Controller
             ], 502);
         }
 
-        return response()->json([
-            'audio' => base64_encode($response->body()),
-            'mime' => $response->header('Content-Type') ?: 'audio/mpeg',
-            'voice' => $voiceId,
+        return response($response->body(), 200, [
+            'Content-Type' => $response->header('Content-Type') ?: 'audio/mpeg',
+            'Content-Disposition' => 'inline; filename="006.mp3"',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
         ]);
     }
 }
