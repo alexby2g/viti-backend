@@ -3,23 +3,24 @@
 namespace App\Http\Controllers;
 
 use App\Models\{Aplicacion,Empresa,Mantenimiento,Proyecto,SolicitudSistema,Suscripcion};
-use App\Services\{AppLifecycleService,AgrAssistantService,AgrMemoryService};
+use App\Services\{AppLifecycleService,AgrAssistantService,AgrMemoryService,AgrProjectConversionService};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class DashboardController extends Controller
 {
-    public function __invoke(Request $request, AppLifecycleService $lifecycle, AgrAssistantService $assistant, AgrMemoryService $memory): JsonResponse
+    public function __invoke(Request $request, AppLifecycleService $lifecycle, AgrAssistantService $assistant, AgrMemoryService $memory, AgrProjectConversionService $projectConversion): JsonResponse
     {
         if ($request->filled('agr')) {
-            return response()->json($memory->handle((string) $request->query('agr'), $assistant));
+            $agrInput = (string) $request->query('agr');
+            $conversion = $projectConversion->handle($agrInput);
+            if ($conversion !== null) return response()->json($conversion);
+            return response()->json($memory->handle($agrInput, $assistant));
         }
 
         $apps = Aplicacion::query()->with(['empresa:id,nombre_comercial','proyecto:id,codigo,nombre,progreso','suscripcion'])->latest()->get();
         $cycles = $apps->map(fn(Aplicacion $app)=>['app'=>$app,'ciclo'=>$lifecycle->status($app)]);
-
-        $attention = $cycles->filter(fn($row)=>in_array($row['ciclo']['estado'],['lista_entrega','gracia','suspendida'],true))
-            ->take(8)->values();
+        $attention = $cycles->filter(fn($row)=>in_array($row['ciclo']['estado'],['lista_entrega','gracia','suspendida'],true))->take(8)->values();
 
         return response()->json([
             'resumen'=>[
