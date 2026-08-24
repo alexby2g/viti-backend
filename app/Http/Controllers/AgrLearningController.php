@@ -2,13 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\AgrActivityService;
 use App\Services\AgrLearningMemoryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class AgrLearningController extends Controller
 {
-    public function __invoke(Request $request, AgrLearningMemoryService $learning): JsonResponse
+    public function __invoke(Request $request, AgrLearningMemoryService $learning, AgrActivityService $activity): JsonResponse
     {
         abort_unless($request->user(), 401);
 
@@ -22,6 +23,18 @@ class AgrLearningController extends Controller
             if (!$updated) {
                 return response()->json(['message' => 'Registro de aprendizaje no encontrado o resultado inválido.'], 422);
             }
+
+            $activity->record(
+                'learning_feedback',
+                'AGR actualizó el resultado de una recomendación',
+                ($updated['recommendation'] ?? 'Decisión AGR').' → '.($updated['outcome'] ?? 'unknown'),
+                [
+                    'record_id' => $updated['id'],
+                    'decision_id' => $updated['decision_id'],
+                    'outcome' => $updated['outcome'],
+                    'note' => $updated['outcome_note'],
+                ],
+            );
 
             return response()->json(['data' => $updated, 'summary' => $learning->summary()]);
         }
