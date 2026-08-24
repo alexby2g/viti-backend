@@ -49,10 +49,15 @@ trait CreatesVitiTenants
             'estado' => 'activo',
         ]);
 
-        $company->usuarios()->attach($user->id, [
-            'rol_negocio' => $role,
-            'permisos' => $permissions === null ? null : json_encode($permissions),
-            'activo' => true,
+        // Idempotent fixture setup: some test bootstraps may provision the
+        // membership automatically. Avoid a duplicate pivot insert while
+        // preserving the intended business role and permissions.
+        $company->usuarios()->syncWithoutDetaching([
+            $user->id => [
+                'rol_negocio' => $role,
+                'permisos' => $permissions === null ? null : json_encode($permissions),
+                'activo' => true,
+            ],
         ]);
 
         return compact('plan', 'catalog', 'client', 'company', 'app', 'user');
