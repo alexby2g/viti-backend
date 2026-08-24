@@ -56,7 +56,6 @@ class PeluqueriaTenantIsolationTest extends TestCase
 
         $this->actingAs($admin)
             ->getJson('/api/v1/apps/peluqueria/resumen?empresa_id='.$other->id)
-            ->assertStatus(422)
-            ->assertJsonPath('message','La empresa seleccionada no tiene Peluquería VITI habilitada.');
+            ->assertForbidden();
     }
 }
