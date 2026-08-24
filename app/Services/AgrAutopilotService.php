@@ -10,8 +10,10 @@ class AgrAutopilotService
 {
     private const CACHE_KEY = 'agr.autopilot.latest';
 
-    public function run(AgrPermissionService $permissions): array
+    public function run(AgrPermissionService $permissions, AgrHealthMonitorService $healthMonitor): array
     {
+        $systemHealth = $healthMonitor->check();
+
         $snapshot = [
             'generated_at' => now()->toIso8601String(),
             'mode' => 'local_safe',
@@ -22,6 +24,7 @@ class AgrAutopilotService
                 'can_write_business_data' => $permissions->can('write_safe_data'),
                 'requires_confirmation_for_writes' => true,
             ],
+            'system_health' => $systemHealth,
             'metrics' => [
                 'clients' => Cliente::query()->count(),
                 'companies' => Empresa::query()->where('estado', 'activo')->count(),
@@ -53,6 +56,18 @@ class AgrAutopilotService
         ];
 
         $m = $snapshot['metrics'];
+
+        if ($systemHealth['status'] !== 'healthy') {
+            foreach ($systemHealth['anomalies'] as $anomaly) {
+                $snapshot['priorities'][] = [
+                    'key' => 'system_'.$anomaly['key'],
+                    'severity' => $anomaly['severity'] ?? 'warning',
+                    'title' => 'Anomalía del sistema',
+                    'message' => $anomaly['message'],
+                    'route' => '/dashboard',
+                ];
+            }
+        }
 
         if ($m['requests_pending'] > 0) {
             $snapshot['priorities'][] = [
@@ -107,15 +122,18 @@ class AgrAutopilotService
 
         $highWorkflow = collect($snapshot['workflow_recommendations'])->contains('severity', 'high');
         $hasHighPriority = collect($snapshot['priorities'])->contains('severity', 'high');
-        $snapshot['health'] = (count($snapshot['priorities']) === 0 && count($snapshot['workflow_recommendations']) === 0)
-            ? 'stable'
-            : (($hasHighPriority || $highWorkflow) ? 'attention' : 'watch');
+        $snapshot['health'] = ($systemHealth['status'] === 'critical')
+            ? 'attention'
+            : ((count($snapshot['priorities']) === 0 && count($snapshot['workflow_recommendations']) === 0)
+                ? 'stable'
+                : (($hasHighPriority || $highWorkflow || $systemHealth['status'] === 'warning') ? 'attention' : 'watch'));
 
         $snapshot['message'] = $this->messageFor($snapshot);
 
         Cache::put(self::CACHE_KEY, $snapshot, now()->addHours(6));
         Log::info('AGR Autopilot snapshot generated', [
             'health' => $snapshot['health'],
+            'system_health' => $systemHealth['status'],
             'priorities' => count($snapshot['priorities']),
             'workflow_recommendations' => count($snapshot['workflow_recommendations']),
         ]);
@@ -134,8 +152,16 @@ class AgrAutopilotService
         $workflowCount = count($snapshot['workflow_recommendations']);
         $total = $priorityCount + $workflowCount;
 
+        if (($snapshot['system_health']['status'] ?? 'healthy') === 'critical') {
+            return 'AGR detectó una anomalía crítica del sistema. La prioridad es revisar la salud técnica antes de continuar con operaciones administrativas.';
+        }
+
+        if (($snapshot['system_health']['status'] ?? 'healthy') === 'warning') {
+            return 'AGR detectó una anomalía técnica y además revisó las prioridades operativas de VITI.';
+        }
+
         if ($total === 0) {
-            return 'AGR revisó VITI y no detectó incidencias ni procesos detenidos en esta revisión.';
+            return 'AGR revisó VITI y no detectó incidencias, procesos detenidos ni anomalías técnicas en esta revisión.';
         }
 
         if ($workflowCount > 0 && $priorityCount > 0) {
