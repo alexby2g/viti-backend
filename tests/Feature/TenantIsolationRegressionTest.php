@@ -37,4 +37,16 @@ class TenantIsolationRegressionTest extends TestCase
             ])
             ->assertStatus(403);
     }
+
+    public function test_user_cannot_list_apps_from_an_unrelated_tenant(): void
+    {
+        $tenantA = $this->createTenant('APPS-A');
+        $tenantB = $this->createTenant('APPS-B');
+
+        $this->actingAs($tenantA['user'])
+            ->getJson('/api/v1/mi/aplicaciones', [
+                'X-VITI-Empresa' => (string) $tenantB['company']->id,
+            ])
+            ->assertStatus(403);
+    }
 }
