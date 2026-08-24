@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Middleware\{EnsureClient,EnsureElectrofrioCustomer,EnsureInternalSupport,EnsurePeluqueriaTenant,EnsurePlatformAdmin,EnsurePrivateVitiCommunication,EnsureServicioTecnicoClientAccess,EnsureSuperAdmin,ProtectPublicDraftRevision,RejectLegacyVitiFlows,ResolveTenant,SecurityHeaders,UseActiveCompanyForNewRequest};
+use App\Http\Middleware\{EnsureClient,EnsureElectrofrioCustomer,EnsureInternalSupport,EnsurePeluqueriaTenant,EnsurePlatformAdmin,EnsurePrivateVitiCommunication,EnsureProjectRole,EnsureServicioTecnicoClientAccess,EnsureSuperAdmin,ProtectPublicDraftRevision,RejectLegacyVitiFlows,ResolveTenant,SecurityHeaders,UseActiveCompanyForNewRequest};
 use Illuminate\Foundation\Application;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -45,6 +45,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'electrofrio_customer'=>EnsureElectrofrioCustomer::class,
             'servicio_tecnico_client'=>EnsureServicioTecnicoClientAccess::class,
             'tenant'=>ResolveTenant::class,
+            'project_role'=>EnsureProjectRole::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
