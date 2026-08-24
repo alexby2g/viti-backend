@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{AplicacionController,BillingController,ChatDocumentController,ClientBillingController,ClientPaymentController,ClientPortalController,PaymentReviewController,SaasController};
+use App\Http\Controllers\{AgrSituationController,AplicacionController,BillingController,ChatDocumentController,ClientBillingController,ClientPaymentController,ClientPortalController,PaymentReviewController,SaasController};
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:sanctum','throttle:api'])->group(function (): void {
@@ -21,6 +21,7 @@ Route::middleware(['auth:sanctum','throttle:api'])->group(function (): void {
     });
 
     Route::middleware('platform_admin')->group(function (): void {
+        Route::get('agr/situacion', AgrSituationController::class);
         Route::put('aplicaciones/{aplicacion}/ciclo', [AplicacionController::class,'actualizarCiclo']);
         Route::post('aplicaciones/{aplicacion}/ciclo', [AplicacionController::class,'actualizarCiclo']);
         Route::post('aplicaciones/{aplicacion}/entregar', [AplicacionController::class,'entregar']);
