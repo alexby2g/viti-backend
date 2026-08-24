@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{Aplicacion,Empresa,Mantenimiento,Proyecto,SolicitudSistema,Suscripcion};
-use App\Services\{AppLifecycleService,AgrActivityService,AgrAssistantService,AgrAutopilotService,AgrMemoryService,AgrProjectConversionService};
+use App\Services\{AppLifecycleService,AgrActivityService,AgrAssistantService,AgrAutopilotService,AgrMemoryService,AgrPermissionService,AgrProjectConversionService};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -16,7 +16,8 @@ class DashboardController extends Controller
         AgrAssistantService $assistant,
         AgrMemoryService $memory,
         AgrProjectConversionService $projectConversion,
-        AgrAutopilotService $autopilot
+        AgrAutopilotService $autopilot,
+        AgrPermissionService $permissions
     ): JsonResponse {
         if ($request->filled('agr')) {
             $agrInput = (string) $request->query('agr');
@@ -26,9 +27,10 @@ class DashboardController extends Controller
         }
 
         if ($request->boolean('agr_autopilot')) {
-            $snapshot = $autopilot->run();
+            $snapshot = $autopilot->run($permissions);
             $activity->record('autopilot_review', 'AGR revisó VITI', $snapshot['message'], [
                 'health' => $snapshot['health'],
+                'permissions' => $snapshot['permissions'],
                 'priorities' => count($snapshot['priorities']),
                 'workflow_recommendations' => count($snapshot['workflow_recommendations']),
                 'metrics' => $snapshot['metrics'],
