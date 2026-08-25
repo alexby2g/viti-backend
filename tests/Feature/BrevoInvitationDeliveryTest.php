@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\{Cuestionario,SolicitudSistema,Usuario};
-use App\Services\BrevoTransactionalEmailService;
 use Database\Seeders\CuestionarioSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -79,6 +78,7 @@ class BrevoInvitationDeliveryTest extends TestCase
         ])->assertCreated();
 
         $solicitud = SolicitudSistema::query()->where('codigo', $requestResponse->json('data.codigo'))->firstOrFail();
+        $solicitud->update(['estado' => 'aprobada', 'aprobado_at' => now()]);
 
         $this->actingAs($this->admin())
             ->postJson('/api/v1/solicitudes/'.$solicitud->id.'/invitacion', ['dias_vigencia' => 7])
