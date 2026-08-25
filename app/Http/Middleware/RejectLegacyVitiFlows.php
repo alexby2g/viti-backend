@@ -16,12 +16,6 @@ class RejectLegacyVitiFlows
             ], 410);
         }
 
-        if ($request->is('api/v1/publico/solicitudes') || $request->is('api/v1/publico/solicitudes/*')) {
-            return response()->json([
-                'message' => 'Este formulario público fue retirado. Utiliza el proceso oficial de solicitud VITI.',
-            ], 410);
-        }
-
         return $next($request);
     }
 }
