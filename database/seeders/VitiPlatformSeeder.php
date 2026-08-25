@@ -51,7 +51,7 @@ class VitiPlatformSeeder extends Seeder
             ->first();
 
         if (!$empresa) {
-            $empresa = Empresa::query()->create([
+            Empresa::query()->create([
                 'cliente_id' => null,
                 'codigo' => Code::next('empresas', 'EMP'),
                 'nombre_comercial' => 'Electro Frío',
@@ -60,21 +60,23 @@ class VitiPlatformSeeder extends Seeder
                 'estado' => 'activo',
                 'observaciones' => 'Empresa creada por VITI para posterior asignación de cliente y usuario propietario.',
             ]);
-        } else {
-            if ($empresa->trashed()) {
-                $empresa->restore();
-            }
+            return;
+        }
 
+        // Re-running the platform seeder must never remove a real owner,
+        // client association, or business users assigned after initial setup.
+        if ($empresa->trashed()) {
+            $empresa->restore();
+        }
+
+        if ($empresa->estado !== 'activo') {
+            $empresa->update(['estado' => 'activo']);
+        }
+
+        if (!$empresa->observaciones) {
             $empresa->update([
-                'cliente_id' => null,
-                'estado' => 'activo',
                 'observaciones' => 'Empresa creada por VITI para posterior asignación de cliente y usuario propietario.',
             ]);
         }
-
-        // Electro Frío nace como tenant disponible, pero sin propietario ni usuarios.
-        DB::table('empresa_usuario')
-            ->where('empresa_id', $empresa->id)
-            ->delete();
     }
 }
