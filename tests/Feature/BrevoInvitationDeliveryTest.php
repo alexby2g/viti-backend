@@ -6,6 +6,7 @@ use App\Models\{InvitacionCliente,SolicitudSistema,Usuario};
 use Database\Seeders\CuestionarioSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -62,9 +63,12 @@ class BrevoInvitationDeliveryTest extends TestCase
             ->where('codigo', $requestResponse->json('data.solicitud_codigo'))
             ->firstOrFail();
 
-        // Invitation delivery is intentionally gated behind approval in the
-        // real workflow; this test must model that business state explicitly.
-        $solicitud->update(['estado' => 'aprobada']);
+        // The workflow service deliberately prevents draft → approved shortcuts.
+        // This test isolates delivery and models the already-approved business state.
+        DB::table('solicitudes_sistema')
+            ->whereKey($solicitud->id)
+            ->update(['estado' => 'aprobada']);
+        $solicitud->refresh();
 
         $this->actingAs($this->admin())
             ->postJson('/api/v1/solicitudes/'.$solicitud->id.'/invitacion', ['dias_vigencia' => 7])
