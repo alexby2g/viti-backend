@@ -63,16 +63,16 @@ class BrevoInvitationDeliveryTest extends TestCase
             ->where('codigo', $requestResponse->json('data.solicitud_codigo'))
             ->firstOrFail();
 
-        // The workflow service deliberately prevents draft → approved shortcuts.
-        // This test isolates delivery and models the already-approved business state.
         DB::table('solicitudes_sistema')
             ->whereKey($solicitud->id)
             ->update(['estado' => 'aprobada']);
         $solicitud->refresh();
 
-        $this->actingAs($this->admin())
-            ->postJson('/api/v1/solicitudes/'.$solicitud->id.'/invitacion', ['dias_vigencia' => 7])
-            ->assertCreated()
+        $response = $this->actingAs($this->admin())
+            ->postJson('/api/v1/solicitudes/'.$solicitud->id.'/invitacion', ['dias_vigencia' => 7]);
+
+        $this->assertSame(201, $response->status(), $response->getContent());
+        $response
             ->assertJsonPath('data.estado', 'enviada')
             ->assertJsonPath('data.email_enviado', true);
 
