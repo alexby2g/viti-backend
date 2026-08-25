@@ -18,472 +18,65 @@ class PublicSolicitudController extends Controller
 
     public function start(Request $request): JsonResponse
     {
-        $request->merge([
-            'correo' => Str::lower(trim((string) $request->input('correo'))),
-        ]);
-
+        $request->merge(['correo' => Str::lower(trim((string) $request->input('correo')))]);
         $data = $request->validate([
-            'nombre' => ['required','string','min:3','max:180'],
-            'correo' => ['required','email','max:160'],
-            'telefono' => ['required','regex:/^[0-9]{7,15}$/'],
-            'whatsapp' => ['nullable','regex:/^[0-9]{7,15}$/'],
-            'documento' => ['nullable','string','max:50'],
-            'ci_expedido' => ['nullable','string','max:20'],
-            'ciudad' => ['required','string','max:100'],
-            'direccion' => ['nullable','string','max:255'],
-            'empresa_nombre' => ['required','string','max:180'],
-            'empresa_actividad' => ['nullable','string','max:200'],
-            'empresa_telefono' => ['nullable','string','max:30'],
-            'empresa_whatsapp' => ['nullable','string','max:30'],
-            'empresa_ciudad' => ['nullable','string','max:100'],
-            'empresa_direccion' => ['nullable','string','max:255'],
-            'titulo_sistema' => ['required','string','max:200'],
-            'resumen' => ['nullable','string','max:5000'],
-            'plan_codigo' => ['nullable','string','max:80'],
-            'modalidad' => ['nullable',Rule::in(['mensual','anual'])],
-        ], [
-            'nombre.required' => 'Ingresa tu nombre completo.',
-            'correo.required' => 'Ingresa el correo donde deseas recibir la invitación de acceso.',
-            'correo.email' => 'Ingresa un correo electrónico válido.',
-            'telefono.required' => 'Ingresa tu número de teléfono.',
-            'telefono.regex' => 'El teléfono debe contener entre 7 y 15 dígitos.',
-            'whatsapp.regex' => 'El número de WhatsApp debe contener entre 7 y 15 dígitos.',
-            'ciudad.required' => 'Indica tu ciudad o localidad.',
-            'empresa_nombre.required' => 'Ingresa el nombre de tu negocio, institución o proyecto.',
-            'titulo_sistema.required' => 'Escribe brevemente qué sistema necesitas.',
+            'nombre'=>['required','string','min:3','max:180'],'correo'=>['required','email','max:160'],'telefono'=>['required','regex:/^[0-9]{7,15}$/'],'whatsapp'=>['nullable','regex:/^[0-9]{7,15}$/'],'documento'=>['nullable','string','max:50'],'ci_expedido'=>['nullable','string','max:20'],'ciudad'=>['required','string','max:100'],'direccion'=>['nullable','string','max:255'],'empresa_nombre'=>['required','string','max:180'],'empresa_actividad'=>['nullable','string','max:200'],'empresa_telefono'=>['nullable','string','max:30'],'empresa_whatsapp'=>['nullable','string','max:30'],'empresa_ciudad'=>['nullable','string','max:100'],'empresa_direccion'=>['nullable','string','max:255'],'titulo_sistema'=>['required','string','max:200'],'resumen'=>['nullable','string','max:5000'],'plan_codigo'=>['nullable','string','max:80'],'modalidad'=>['nullable',Rule::in(['mensual','anual'])],
         ]);
-
-        $questionnaireId = Cuestionario::query()->where('activo', true)->value('id');
-        abort_unless($questionnaireId, 422, 'VITI no tiene un cuestionario activo en este momento.');
-
-        $selectedPlan = null;
-        if (filled($data['plan_codigo'] ?? null)) {
-            $selectedPlan = PlanViti::query()
-                ->where('activo', true)
-                ->where('codigo', trim((string) $data['plan_codigo']))
-                ->first();
-            abort_unless($selectedPlan, 422, 'El plan seleccionado ya no está disponible.');
-        }
-
-        [$cliente, $empresa, $solicitud] = DB::transaction(function () use ($data, $questionnaireId, $selectedPlan): array {
-            $documento = filled($data['documento'] ?? null) ? trim($data['documento']) : null;
-            $byPhone = Cliente::query()->where('telefono', $data['telefono'])->first();
-            $byEmail = Cliente::query()->where('correo', $data['correo'])->first();
-
-            abort_if($byPhone && $byEmail && (int) $byPhone->id !== (int) $byEmail->id, 422, 'El teléfono y el correo pertenecen a registros diferentes. Contacta a AGR Studio para revisar tus datos.');
-            $cliente = $byPhone ?: $byEmail;
-
-            if ($cliente) {
-                abort_if($cliente->usuario()->exists(), 422, 'Este correo o teléfono ya tiene una cuenta VITI. Inicia sesión para solicitar una nueva solución desde tu portal.');
-                abort_if(filled($cliente->correo) && Str::lower((string) $cliente->correo) !== $data['correo'], 422, 'El correo no coincide con el responsable registrado para ese teléfono.');
-                abort_if($cliente->telefono !== $data['telefono'] && Cliente::query()->where('telefono', $data['telefono'])->whereKeyNot($cliente->id)->exists(), 422, 'Ese teléfono ya pertenece a otro responsable.');
-                if ($documento) {
-                    abort_if(Cliente::query()->where('documento', $documento)->whereKeyNot($cliente->id)->exists(),422,'Ese documento ya pertenece a otro cliente.');
-                    abort_if(filled($cliente->documento) && $cliente->documento !== $documento,422,'El documento indicado no coincide con el cliente registrado para ese teléfono.');
-                }
-                $cliente->update([
-                    'nombre' => trim($data['nombre']),
-                    'telefono' => $data['telefono'],
-                    'correo' => $data['correo'],
-                    'whatsapp' => $cliente->whatsapp ?: ($data['whatsapp'] ?? $data['telefono']),
-                    'documento' => $cliente->documento ?: $documento,
-                    'ci_expedido' => $cliente->ci_expedido ?: ($data['ci_expedido'] ?? null),
-                    'ciudad' => $cliente->ciudad ?: trim($data['ciudad']),
-                    'direccion' => $cliente->direccion ?: ($data['direccion'] ?? null),
-                    'estado' => $cliente->estado ?: 'prospecto',
-                ]);
-            } else {
-                abort_if($documento && Cliente::query()->where('documento', $documento)->exists(),422,'Ese documento ya está registrado con otro número de teléfono.');
-                $cliente = Cliente::create([
-                    'nombre' => trim($data['nombre']),
-                    'telefono' => $data['telefono'],
-                    'correo' => $data['correo'],
-                    'whatsapp' => $data['whatsapp'] ?? $data['telefono'],
-                    'documento' => $documento,
-                    'ci_expedido' => $data['ci_expedido'] ?? null,
-                    'ciudad' => trim($data['ciudad']),
-                    'direccion' => $data['direccion'] ?? null,
-                    'estado' => 'prospecto',
-                    'canal_origen' => 'viti_web',
-                ]);
-            }
-
-            $empresaNombre = trim($data['empresa_nombre']);
-            $empresa = Empresa::query()->where('cliente_id', $cliente->id)->where('nombre_comercial', $empresaNombre)->first();
-            if ($empresa) {
-                $empresa->update([
-                    'actividad' => $empresa->actividad ?: ($data['empresa_actividad'] ?? null),
-                    'telefono' => $empresa->telefono ?: ($data['empresa_telefono'] ?? $data['telefono']),
-                    'whatsapp' => $empresa->whatsapp ?: ($data['empresa_whatsapp'] ?? ($data['whatsapp'] ?? $data['telefono'])),
-                    'ciudad' => $empresa->ciudad ?: ($data['empresa_ciudad'] ?? $data['ciudad']),
-                    'direccion' => $empresa->direccion ?: ($data['empresa_direccion'] ?? $data['direccion'] ?? null),
-                ]);
-            } else {
-                $empresa = Empresa::create([
-                    'cliente_id' => $cliente->id,
-                    'codigo' => Code::next('empresas','EMP'),
-                    'nombre_comercial' => $empresaNombre,
-                    'actividad' => $data['empresa_actividad'] ?? null,
-                    'telefono' => $data['empresa_telefono'] ?? $data['telefono'],
-                    'whatsapp' => $data['empresa_whatsapp'] ?? ($data['whatsapp'] ?? $data['telefono']),
-                    'ciudad' => $data['empresa_ciudad'] ?? $data['ciudad'],
-                    'direccion' => $data['empresa_direccion'] ?? $data['direccion'] ?? null,
-                    'estado' => 'pendiente_revision',
-                ]);
-            }
-
-            $requestTitle = trim($data['titulo_sistema']);
-            $solicitud = SolicitudSistema::query()
-                ->where('cliente_id', $cliente->id)
-                ->where('empresa_id', $empresa->id)
-                ->whereRaw('LOWER(titulo) = ?', [Str::lower($requestTitle)])
-                ->whereIn('estado', ['borrador','en_revision'])
-                ->latest('id')
-                ->first();
-
-            $requestData = [
-                'resumen' => $data['resumen'] ?? null,
-                'plan_viti_id' => $selectedPlan?->id,
-                'frecuencia_suscripcion_preferida' => $selectedPlan ? ($data['modalidad'] ?? null) : null,
-                'acuerdo_comercial_requerido' => true,
-            ];
-
-            if ($solicitud) {
-                $solicitud->update(array_filter($requestData, fn ($value) => $value !== null));
-            } else {
-                $solicitud = SolicitudSistema::create($requestData + [
-                    'empresa_id' => $empresa->id,
-                    'cliente_id' => $cliente->id,
-                    'cuestionario_id' => $questionnaireId,
-                    'codigo' => Code::next('solicitudes_sistema','SOL'),
-                    'public_token' => Str::random(48),
-                    'publico_habilitado' => true,
-                    'titulo' => $requestTitle,
-                    'estado' => 'borrador',
-                    'prioridad' => 'normal',
-                ]);
-            }
-
-            return [$cliente, $empresa, $solicitud];
+        $questionnaireId=Cuestionario::query()->where('activo',true)->value('id');
+        abort_unless($questionnaireId,422,'VITI no tiene un cuestionario activo en este momento.');
+        $selectedPlan=null;
+        if(filled($data['plan_codigo']??null)){$selectedPlan=PlanViti::query()->where('activo',true)->where('codigo',trim((string)$data['plan_codigo']))->first();abort_unless($selectedPlan,422,'El plan seleccionado ya no está disponible.');}
+        [$cliente,$empresa,$solicitud]=DB::transaction(function()use($data,$questionnaireId,$selectedPlan):array{
+            $documento=filled($data['documento']??null)?trim($data['documento']):null;
+            $byPhone=Cliente::query()->where('telefono',$data['telefono'])->first();$byEmail=Cliente::query()->where('correo',$data['correo'])->first();
+            abort_if($byPhone&&$byEmail&&(int)$byPhone->id!==(int)$byEmail->id,422,'El teléfono y el correo pertenecen a registros diferentes. Contacta a AGR Studio para revisar tus datos.');$cliente=$byPhone?:$byEmail;
+            if($cliente){abort_if($cliente->usuario()->exists(),422,'Este correo o teléfono ya tiene una cuenta VITI. Inicia sesión para solicitar una nueva solución desde tu portal.');abort_if(filled($cliente->correo)&&Str::lower((string)$cliente->correo)!==$data['correo'],422,'El correo no coincide con el responsable registrado para ese teléfono.');abort_if($cliente->telefono!==$data['telefono']&&Cliente::query()->where('telefono',$data['telefono'])->whereKeyNot($cliente->id)->exists(),422,'Ese teléfono ya pertenece a otro responsable.');if($documento){abort_if(Cliente::query()->where('documento',$documento)->whereKeyNot($cliente->id)->exists(),422,'Ese documento ya pertenece a otro cliente.');abort_if(filled($cliente->documento)&&$cliente->documento!==$documento,422,'El documento indicado no coincide con el cliente registrado para ese teléfono.');}$cliente->update(['nombre'=>trim($data['nombre']),'telefono'=>$data['telefono'],'correo'=>$data['correo'],'whatsapp'=>$cliente->whatsapp?:($data['whatsapp']??$data['telefono']),'documento'=>$cliente->documento?:$documento,'ci_expedido'=>$cliente->ci_expedido?:($data['ci_expedido']??null),'ciudad'=>$cliente->ciudad?:trim($data['ciudad']),'direccion'=>$cliente->direccion?:($data['direccion']??null),'estado'=>$cliente->estado?:'prospecto']);}
+            else{abort_if($documento&&Cliente::query()->where('documento',$documento)->exists(),422,'Ese documento ya está registrado con otro número de teléfono.');$cliente=Cliente::create(['nombre'=>trim($data['nombre']),'telefono'=>$data['telefono'],'correo'=>$data['correo'],'whatsapp'=>$data['whatsapp']??$data['telefono'],'documento'=>$documento,'ci_expedido'=>$data['ci_expedido']??null,'ciudad'=>trim($data['ciudad']),'direccion'=>$data['direccion']??null,'estado'=>'prospecto','canal_origen'=>'viti_web']);}
+            $empresaNombre=trim($data['empresa_nombre']);$empresa=Empresa::query()->where('cliente_id',$cliente->id)->where('nombre_comercial',$empresaNombre)->first();
+            if($empresa){$empresa->update(['actividad'=>$empresa->actividad?:($data['empresa_actividad']??null),'telefono'=>$empresa->telefono?:($data['empresa_telefono']??$data['telefono']),'whatsapp'=>$empresa->whatsapp?:($data['empresa_whatsapp']??($data['whatsapp']??$data['telefono'])),'ciudad'=>$empresa->ciudad?:($data['empresa_ciudad']??$data['ciudad']),'direccion'=>$empresa->direccion?:($data['empresa_direccion']??$data['direccion']??null)]);}
+            else{$empresa=Empresa::create(['cliente_id'=>$cliente->id,'codigo'=>Code::next('empresas','EMP'),'nombre_comercial'=>$empresaNombre,'actividad'=>$data['empresa_actividad']??null,'telefono'=>$data['empresa_telefono']??$data['telefono'],'whatsapp'=>$data['empresa_whatsapp']??($data['whatsapp']??$data['telefono']),'ciudad'=>$data['empresa_ciudad']??$data['ciudad'],'direccion'=>$data['empresa_direccion']??$data['direccion']??null,'estado'=>'pendiente_revision']);}
+            $requestTitle=trim($data['titulo_sistema']);$solicitud=SolicitudSistema::query()->where('cliente_id',$cliente->id)->where('empresa_id',$empresa->id)->whereRaw('LOWER(titulo) = ?',[Str::lower($requestTitle)])->whereIn('estado',['borrador','en_revision'])->latest('id')->first();$requestData=['resumen'=>$data['resumen']??null,'plan_viti_id'=>$selectedPlan?->id,'frecuencia_suscripcion_preferida'=>$selectedPlan?($data['modalidad']??null):null,'acuerdo_comercial_requerido'=>true];
+            if($solicitud)$solicitud->update(array_filter($requestData,fn($value)=>$value!==null));
+            else{$solicitud=SolicitudSistema::create($requestData+['empresa_id'=>$empresa->id,'cliente_id'=>$cliente->id,'cuestionario_id'=>$questionnaireId,'codigo'=>Code::next('solicitudes_sistema','SOL'),'public_token'=>Str::random(48),'publico_habilitado'=>true,'titulo'=>$requestTitle,'estado'=>'borrador','prioridad'=>'normal']);}
+            return[$cliente,$empresa,$solicitud];
         });
-
-        Audit::log($request, 'solicitud_acceso_publica_creada', $solicitud, 'Se recibió una solicitud pública de acceso a VITI.');
-        $this->notifyAccessRequest($solicitud);
-
-        return response()->json([
-            'message' => 'Recibimos tu solicitud de acceso. AGR Studio revisará la información antes de habilitar una invitación personal.',
-            'data' => [
-                'solicitud_codigo' => $solicitud->codigo,
-                'estado' => 'recibida',
-                'correo' => $cliente->correo,
-            ],
-        ], 201);
+        Audit::log($request,'solicitud_acceso_publica_creada',$solicitud,'Se recibió una solicitud pública de acceso a VITI.');$this->notifyAccessRequest($solicitud);
+        return response()->json(['message'=>'Recibimos tu solicitud de acceso. AGR Studio revisará la información antes de habilitar una invitación personal.','data'=>['solicitud_codigo'=>$solicitud->codigo,'estado'=>'recibida','correo'=>$cliente->correo]],201);
     }
 
     public function show(string $token): JsonResponse
     {
-        $solicitud = $this->resolve($token)->load([
-            'empresa:id,nombre_comercial,actividad,telefono,whatsapp,ciudad,direccion,logo_path',
-            'cliente:id,nombre,telefono,whatsapp,ciudad,direccion',
-            'cuestionario.secciones.preguntas',
-            'respuestas.pregunta',
-            'planViti:id,codigo,nombre,descripcion,precio_proyecto,precio_mensual,precio_anual,dias_prueba,modulos,max_usuarios,max_aplicaciones',
-        ]);
-
-        $data = $solicitud->toArray();
-        $data['planes_disponibles'] = PlanViti::query()
-            ->where('activo', true)
-            ->orderByRaw('precio_proyecto is null')
-            ->orderBy('precio_proyecto')
-            ->orderBy('id')
-            ->get(['id','codigo','nombre','descripcion','precio_proyecto','precio_mensual','precio_anual','dias_prueba','modulos','max_usuarios','max_aplicaciones'])
-            ->values();
-
-        return response()->json(['data'=>$data]);
+        $solicitud=$this->resolve($token)->load(['empresa:id,nombre_comercial,actividad,telefono,whatsapp,ciudad,direccion,logo_path','cliente:id,nombre,telefono,whatsapp,ciudad,direccion','cuestionario.secciones.preguntas','respuestas.pregunta','planViti:id,codigo,nombre,descripcion,precio_proyecto,precio_mensual,precio_anual,dias_prueba,modulos,max_usuarios,max_aplicaciones']);$data=$solicitud->toArray();$data['planes_disponibles']=PlanViti::query()->where('activo',true)->orderByRaw('precio_proyecto is null')->orderBy('precio_proyecto')->orderBy('id')->get(['id','codigo','nombre','descripcion','precio_proyecto','precio_mensual','precio_anual','dias_prueba','modulos','max_usuarios','max_aplicaciones'])->values();return response()->json(['data'=>$data]);
     }
 
-    public function save(Request $request, string $token): JsonResponse
+    public function save(Request $request,string $token):JsonResponse
     {
-        $solicitud = $this->resolve($token)->loadMissing(['cliente','empresa','planViti','cuestionario.secciones.preguntas']);
-        abort_if(in_array($solicitud->estado, ['aprobada','convertida','cerrada'], true), 422, 'Esta solicitud ya no admite cambios.');
-
-        $data = $request->validate([
-            'respuestas'=>['sometimes','array'],
-            'respuestas.*.pregunta_id'=>['required','integer','exists:cuestionario_preguntas,id'],
-            'respuestas.*.valor'=>['nullable'],
-            'declaracion_aceptada'=>['nullable','boolean'],
-            'declaracion_nombre'=>['nullable','string','max:180'],
-            'declaracion_fecha'=>['nullable','date'],
-            'plan_viti_id'=>['nullable','integer','exists:planes_viti,id'],
-            'forma_pago_preferida'=>['nullable',Rule::in(self::PAYMENT_OPTIONS)],
-            'frecuencia_suscripcion_preferida'=>['nullable',Rule::in(['mensual','anual'])],
-            'acuerdo_comercial_aceptado'=>['nullable','boolean'],
-            'acuerdo_comercial_nombre'=>['nullable','string','max:180'],
-            'acuerdo_comercial_fecha'=>['nullable','date'],
-            'registro'=>['sometimes','array'],
-            'registro.cliente_nombre'=>['sometimes','string','min:3','max:180'],
-            'registro.cliente_whatsapp'=>['nullable','regex:/^[0-9]{7,15}$/'],
-            'registro.cliente_ciudad'=>['sometimes','string','max:100'],
-            'registro.cliente_direccion'=>['nullable','string','max:255'],
-            'registro.empresa_nombre'=>['sometimes','string','min:2','max:180'],
-            'registro.empresa_actividad'=>['nullable','string','max:200'],
-            'registro.empresa_telefono'=>['nullable','string','max:30'],
-            'registro.empresa_whatsapp'=>['nullable','string','max:30'],
-            'registro.empresa_ciudad'=>['nullable','string','max:100'],
-            'registro.empresa_direccion'=>['nullable','string','max:255'],
-            'registro.titulo_sistema'=>['sometimes','string','min:3','max:200'],
-            'registro.resumen'=>['nullable','string','max:5000'],
-        ], [
-            'registro.cliente_nombre.min'=>'Escribe el nombre completo de quien solicita.',
-            'registro.cliente_whatsapp.regex'=>'El WhatsApp debe contener entre 7 y 15 dígitos.',
-            'registro.empresa_nombre.min'=>'Escribe el nombre del negocio o proyecto.',
-            'registro.titulo_sistema.min'=>'Describe brevemente el sistema que necesitas.',
-        ]);
-
-        $selectedPlanId = array_key_exists('plan_viti_id', $data) ? $data['plan_viti_id'] : $solicitud->plan_viti_id;
-        $selectedPlan = $selectedPlanId
-            ? PlanViti::query()->whereKey($selectedPlanId)->where('activo', true)->first()
-            : null;
-        abort_if($selectedPlanId && !$selectedPlan, 422, 'El plan seleccionado ya no está disponible.');
-
-        $planChanged = (int)($solicitud->plan_viti_id ?? 0) !== (int)($selectedPlan?->id ?? 0);
-        $paymentExplicit = array_key_exists('forma_pago_preferida', $data);
-        $payment = $paymentExplicit ? ($data['forma_pago_preferida'] ?? null) : $solicitud->forma_pago_preferida;
-        if ($payment && $selectedPlan && !in_array($payment, $this->allowedPayments($selectedPlan), true)) {
-            if ($paymentExplicit) {
-                throw ValidationException::withMessages([
-                    'forma_pago_preferida' => 'La forma de pago seleccionada no corresponde al plan VITI elegido.',
-                ]);
-            }
-            $payment = null;
-        }
-
-        $frequencyExplicit = array_key_exists('frecuencia_suscripcion_preferida', $data);
-        $frequency = $frequencyExplicit ? ($data['frecuencia_suscripcion_preferida'] ?? null) : $solicitud->frecuencia_suscripcion_preferida;
-        if ($selectedPlan && $this->planKey($selectedPlan) === 'custom') {
-            $frequency = null;
-        }
-
-        DB::transaction(function () use ($data, $solicitud, $selectedPlan, $planChanged, $payment, $paymentExplicit, $frequency, $frequencyExplicit): void {
-            $questionMap = $solicitud->cuestionario->secciones
-                ->flatMap(fn($section) => $section->preguntas)
-                ->keyBy('id');
-            $allowedNumbers = $this->allowedOperationNumbers($selectedPlan);
-
-            foreach (($data['respuestas'] ?? []) as $item) {
-                $question = $questionMap->get((int)$item['pregunta_id']);
-                if (!$question) {
-                    throw ValidationException::withMessages(['respuestas' => 'Una respuesta no pertenece al formulario de esta solicitud.']);
-                }
-                if (in_array((int)$question->numero, self::OPERATION_QUESTION_NUMBERS, true)
-                    && !in_array((int)$question->numero, $allowedNumbers, true)) {
-                    throw ValidationException::withMessages(['respuestas' => 'Una respuesta ya no corresponde al plan VITI seleccionado.']);
-                }
-
-                $value = $item['valor'] ?? null;
-                SolicitudRespuesta::updateOrCreate(
-                    ['solicitud_id'=>$solicitud->id,'pregunta_id'=>$item['pregunta_id']],
-                    is_array($value)
-                        ? ['respuesta_json'=>$value,'respuesta_texto'=>null,'origen'=>'cliente']
-                        : ['respuesta_texto'=>$value===null?null:(string)$value,'respuesta_json'=>null,'origen'=>'cliente']
-                );
-            }
-
-            if ($selectedPlan) {
-                $obsoleteIds = $questionMap
-                    ->filter(fn($question) => in_array((int)$question->numero, self::OPERATION_QUESTION_NUMBERS, true)
-                        && !in_array((int)$question->numero, $allowedNumbers, true))
-                    ->keys()
-                    ->all();
-                if ($obsoleteIds) {
-                    $solicitud->respuestas()->whereIn('pregunta_id', $obsoleteIds)->delete();
-                }
-            }
-
-            $updates = [];
-            if (array_key_exists('declaracion_aceptada', $data)) $updates['declaracion_aceptada'] = (bool)$data['declaracion_aceptada'];
-            if (array_key_exists('declaracion_nombre', $data)) $updates['declaracion_nombre'] = $data['declaracion_nombre'];
-            if (array_key_exists('declaracion_fecha', $data)) $updates['declaracion_fecha'] = $data['declaracion_fecha'];
-            if (array_key_exists('plan_viti_id', $data)) {
-                $updates['plan_viti_id'] = $selectedPlan?->id;
-                $updates['presupuesto_estimado'] = $selectedPlan?->precio_proyecto;
-            }
-            if ($paymentExplicit || $planChanged) $updates['forma_pago_preferida'] = $payment;
-            if ($frequencyExplicit || $planChanged) $updates['frecuencia_suscripcion_preferida'] = $frequency;
-            if (array_key_exists('acuerdo_comercial_aceptado', $data)) $updates['acuerdo_comercial_aceptado'] = (bool)$data['acuerdo_comercial_aceptado'];
-            if (array_key_exists('acuerdo_comercial_nombre', $data)) $updates['acuerdo_comercial_nombre'] = $data['acuerdo_comercial_nombre'];
-            if (array_key_exists('acuerdo_comercial_fecha', $data)) $updates['acuerdo_comercial_fecha'] = $data['acuerdo_comercial_fecha'];
-            if ($updates) $solicitud->update($updates);
-
-            $this->updateRegistration($solicitud, $data['registro'] ?? null);
-        });
-
-        if (!$solicitud->empresa_id) {
-            ClientPortalController::syncCompany($solicitud->fresh(), $solicitud->cliente);
-        }
-        $solicitud->cliente?->update(['estado'=>'formulario_en_proceso']);
-        return response()->json(['message'=>'Tus cambios fueron guardados.']);
+        $solicitud=$this->resolve($token)->loadMissing(['cliente','empresa','planViti','cuestionario.secciones.preguntas']);abort_if(in_array($solicitud->estado,['aprobada','convertida','cerrada'],true),422,'Esta solicitud ya no admite cambios.');
+        $data=$request->validate(['respuestas'=>['sometimes','array'],'respuestas.*.pregunta_id'=>['required','integer','exists:cuestionario_preguntas,id'],'respuestas.*.valor'=>['nullable'],'declaracion_aceptada'=>['nullable','boolean'],'declaracion_nombre'=>['nullable','string','max:180'],'declaracion_fecha'=>['nullable','date'],'plan_viti_id'=>['nullable','integer','exists:planes_viti,id'],'forma_pago_preferida'=>['nullable',Rule::in(self::PAYMENT_OPTIONS)],'frecuencia_suscripcion_preferida'=>['nullable',Rule::in(['mensual','anual'])],'acuerdo_comercial_aceptado'=>['nullable','boolean'],'acuerdo_comercial_nombre'=>['nullable','string','max:180'],'acuerdo_comercial_fecha'=>['nullable','date'],'registro'=>['sometimes','array'],'registro.cliente_nombre'=>['sometimes','string','min:3','max:180'],'registro.cliente_whatsapp'=>['nullable','regex:/^[0-9]{7,15}$/'],'registro.cliente_ciudad'=>['sometimes','string','max:100'],'registro.cliente_direccion'=>['nullable','string','max:255'],'registro.empresa_nombre'=>['sometimes','string','min:2','max:180'],'registro.empresa_actividad'=>['nullable','string','max:200'],'registro.empresa_telefono'=>['nullable','string','max:30'],'registro.empresa_whatsapp'=>['nullable','string','max:30'],'registro.empresa_ciudad'=>['nullable','string','max:100'],'registro.empresa_direccion'=>['nullable','string','max:255'],'registro.titulo_sistema'=>['sometimes','string','min:3','max:200'],'registro.resumen'=>['nullable','string','max:5000']],['registro.cliente_nombre.min'=>'Escribe el nombre completo de quien solicita.','registro.cliente_whatsapp.regex'=>'El WhatsApp debe contener entre 7 y 15 dígitos.','registro.empresa_nombre.min'=>'Escribe el nombre del negocio o proyecto.','registro.titulo_sistema.min'=>'Describe brevemente el sistema que necesitas.']);
+        $selectedPlanId=array_key_exists('plan_viti_id',$data)?$data['plan_viti_id']:$solicitud->plan_viti_id;$selectedPlan=$selectedPlanId?PlanViti::query()->whereKey($selectedPlanId)->where('activo',true)->first():null;abort_if($selectedPlanId&&!$selectedPlan,422,'El plan seleccionado ya no está disponible.');$planChanged=(int)($solicitud->plan_viti_id??0)!==(int)($selectedPlan?->id??0);$paymentExplicit=array_key_exists('forma_pago_preferida',$data);$payment=$paymentExplicit?($data['forma_pago_preferida']??null):$solicitud->forma_pago_preferida;if($payment&&$selectedPlan&&!in_array($payment,$this->allowedPayments($selectedPlan),true)){if($paymentExplicit)throw ValidationException::withMessages(['forma_pago_preferida'=>'La forma de pago seleccionada no corresponde al plan VITI elegido.']);$payment=null;}$frequencyExplicit=array_key_exists('frecuencia_suscripcion_preferida',$data);$frequency=$frequencyExplicit?($data['frecuencia_suscripcion_preferida']??null):$solicitud->frecuencia_suscripcion_preferida;if($selectedPlan&&$this->planKey($selectedPlan)==='custom')$frequency=null;
+        DB::transaction(function()use($data,$solicitud,$selectedPlan,$planChanged,$payment,$paymentExplicit,$frequency,$frequencyExplicit):void{ $questionMap=$solicitud->cuestionario->secciones->flatMap(fn($section)=>$section->preguntas)->keyBy('id');$allowedNumbers=$this->allowedOperationNumbers($selectedPlan);foreach(($data['respuestas']??[]) as $item){$question=$questionMap->get((int)$item['pregunta_id']);if(!$question)throw ValidationException::withMessages(['respuestas'=>'Una respuesta no pertenece al formulario de esta solicitud.']);if(in_array((int)$question->numero,self::OPERATION_QUESTION_NUMBERS,true)&&!in_array((int)$question->numero,$allowedNumbers,true))throw ValidationException::withMessages(['respuestas'=>'Una respuesta ya no corresponde al plan VITI seleccionado.']);$value=$item['valor']??null;SolicitudRespuesta::updateOrCreate(['solicitud_id'=>$solicitud->id,'pregunta_id'=>$item['pregunta_id']],is_array($value)?['respuesta_json'=>$value,'respuesta_texto'=>null,'origen'=>'cliente']:['respuesta_texto'=>$value===null?null:(string)$value,'respuesta_json'=>null,'origen'=>'cliente']);}if($selectedPlan){$obsoleteIds=$questionMap->filter(fn($question)=>in_array((int)$question->numero,self::OPERATION_QUESTION_NUMBERS,true)&&!in_array((int)$question->numero,$allowedNumbers,true))->keys()->all();if($obsoleteIds)$solicitud->respuestas()->whereIn('pregunta_id',$obsoleteIds)->delete();}$updates=[];if(array_key_exists('declaracion_aceptada',$data))$updates['declaracion_aceptada']=(bool)$data['declaracion_aceptada'];if(array_key_exists('declaracion_nombre',$data))$updates['declaracion_nombre']=$data['declaracion_nombre'];if(array_key_exists('declaracion_fecha',$data))$updates['declaracion_fecha']=$data['declaracion_fecha'];if(array_key_exists('plan_viti_id',$data)){$updates['plan_viti_id']=$selectedPlan?->id;$updates['presupuesto_estimado']=$selectedPlan?->precio_proyecto;}if($paymentExplicit||$planChanged)$updates['forma_pago_preferida']=$payment;if($frequencyExplicit||$planChanged)$updates['frecuencia_suscripcion_preferida']=$frequency;if(array_key_exists('acuerdo_comercial_aceptado',$data))$updates['acuerdo_comercial_aceptado']=(bool)$data['acuerdo_comercial_aceptado'];if(array_key_exists('acuerdo_comercial_nombre',$data))$updates['acuerdo_comercial_nombre']=$data['acuerdo_comercial_nombre'];if(array_key_exists('acuerdo_comercial_fecha',$data))$updates['acuerdo_comercial_fecha']=$data['acuerdo_comercial_fecha'];if($updates)$solicitud->update($updates);$this->updateRegistration($solicitud,$data['registro']??null);});
+        if(!$solicitud->empresa_id)ClientPortalController::syncCompany($solicitud->fresh(),$solicitud->cliente);$solicitud->cliente?->update(['estado'=>'formulario_en_proceso']);return response()->json(['message'=>'Tus cambios fueron guardados.']);
     }
 
-    public function submit(Request $request, string $token): JsonResponse
+    public function submit(Request $request,string $token):JsonResponse
     {
-        $solicitud = $this->resolve($token)->load('planViti');
-
-        // El registro ya contiene la información principal. La configuración operativa
-        // es deliberadamente opcional y puede completarse durante la revisión con AGR Studio.
-        abort_unless($solicitud->declaracion_aceptada && filled($solicitud->declaracion_nombre) && $solicitud->declaracion_fecha,422,'Debes confirmar que los datos de tu solicitud son correctos.');
-
-        if ($solicitud->acuerdo_comercial_requerido) {
-            abort_unless($solicitud->plan_viti_id,422,'Selecciona el plan que prefieres para tu proyecto.');
-            abort_unless(filled($solicitud->forma_pago_preferida),422,'Selecciona una forma de pago preferida.');
-            abort_unless(
-                in_array($solicitud->forma_pago_preferida, $this->allowedPayments($solicitud->planViti), true),
-                422,
-                'La forma de pago seleccionada no corresponde al plan VITI elegido.'
-            );
-            if ($solicitud->planViti && ($solicitud->planViti->precio_mensual !== null || $solicitud->planViti->precio_anual !== null)) {
-                abort_unless(filled($solicitud->frecuencia_suscripcion_preferida),422,'Selecciona si prefieres la suscripción mensual o anual.');
-            }
-            abort_unless($solicitud->acuerdo_comercial_aceptado && filled($solicitud->acuerdo_comercial_nombre) && $solicitud->acuerdo_comercial_fecha,422,'Debes aceptar el acuerdo comercial inicial para enviar la solicitud.');
-        }
-
-        if (!$solicitud->empresa_id) {
-            ClientPortalController::syncCompany($solicitud->fresh(), $solicitud->cliente);
-        }
-        abort_unless($solicitud->fresh()->empresa_id, 422, 'La solicitud debe estar asociada a un negocio antes de enviarse.');
-
-        $solicitud->update(['estado'=>'en_revision','enviado_at'=>now()]);
-        $solicitud->cliente?->update(['estado'=>'informacion_recibida']);
-        Conversacion::firstOrCreate(
-            ['cliente_id'=>$solicitud->cliente_id,'solicitud_id'=>$solicitud->id],
-            ['asunto'=>'Revisión de '.$solicitud->codigo,'estado'=>'abierta','ultimo_mensaje_at'=>now()]
-        );
-        return response()->json(['message'=>'Solicitud enviada. El equipo de VITI revisará la información y podrá responderte desde tu buzón.']);
+        $solicitud=$this->resolve($token)->load('planViti');abort_unless($solicitud->declaracion_aceptada&&filled($solicitud->declaracion_nombre)&&$solicitud->declaracion_fecha,422,'Debes confirmar que los datos de tu solicitud son correctos.');if($solicitud->acuerdo_comercial_requerido){abort_unless($solicitud->plan_viti_id,422,'Selecciona el plan que prefieres para tu proyecto.');abort_unless(filled($solicitud->forma_pago_preferida),422,'Selecciona una forma de pago preferida.');abort_unless(in_array($solicitud->forma_pago_preferida,$this->allowedPayments($solicitud->planViti),true),422,'La forma de pago seleccionada no corresponde al plan VITI elegido.');if($solicitud->planViti&&($solicitud->planViti->precio_mensual!==null||$solicitud->planViti->precio_anual!==null))abort_unless(filled($solicitud->frecuencia_suscripcion_preferida),422,'Selecciona si prefieres la suscripción mensual o anual.');abort_unless($solicitud->acuerdo_comercial_aceptado&&filled($solicitud->acuerdo_comercial_nombre)&&$solicitud->acuerdo_comercial_fecha,422,'Debes aceptar el acuerdo comercial inicial para enviar la solicitud.');}if(!$solicitud->empresa_id)ClientPortalController::syncCompany($solicitud->fresh(),$solicitud->cliente);abort_unless($solicitud->fresh()->empresa_id,422,'La solicitud debe estar asociada a un negocio antes de enviarse.');$solicitud->update(['estado'=>'en_revision','enviado_at'=>now()]);$solicitud->cliente?->update(['estado'=>'informacion_recibida']);Conversacion::firstOrCreate(['cliente_id'=>$solicitud->cliente_id,'solicitud_id'=>$solicitud->id],['asunto'=>'Revisión de '.$solicitud->codigo,'estado'=>'abierta','ultimo_mensaje_at'=>now()]);return response()->json(['message'=>'Solicitud enviada. El equipo de VITI revisará la información y podrá responderte desde tu buzón.']);
     }
 
-    private function updateRegistration(SolicitudSistema $solicitud, ?array $registration): void
+    private function updateRegistration(SolicitudSistema $solicitud,?array $registration):void
     {
-        if (!$registration) return;
-
-        $cliente = $solicitud->cliente;
-        if ($cliente) {
-            $clientUpdates = [];
-            if (array_key_exists('cliente_nombre', $registration)) $clientUpdates['nombre'] = trim($registration['cliente_nombre']);
-            if (array_key_exists('cliente_whatsapp', $registration)) $clientUpdates['whatsapp'] = $registration['cliente_whatsapp'] ?: null;
-            if (array_key_exists('cliente_ciudad', $registration)) $clientUpdates['ciudad'] = trim((string)$registration['cliente_ciudad']);
-            if (array_key_exists('cliente_direccion', $registration)) $clientUpdates['direccion'] = $registration['cliente_direccion'] ?: null;
-            if ($clientUpdates) {
-                $cliente->update($clientUpdates);
-                if (isset($clientUpdates['nombre'])) {
-                    Usuario::query()->where('cliente_id', $cliente->id)->update(['nombre'=>$clientUpdates['nombre']]);
-                }
-            }
-        }
-
-        $empresa = $solicitud->empresa;
-        if ($empresa) {
-            if (array_key_exists('empresa_nombre', $registration)) {
-                $name = trim($registration['empresa_nombre']);
-                $duplicate = Empresa::query()
-                    ->where('cliente_id', $solicitud->cliente_id)
-                    ->where('id', '!=', $empresa->id)
-                    ->whereRaw('LOWER(nombre_comercial) = ?', [Str::lower($name)])
-                    ->exists();
-                if ($duplicate) {
-                    throw ValidationException::withMessages(['registro.empresa_nombre'=>'Ya tienes otro negocio registrado con ese nombre.']);
-                }
-            }
-
-            $companyUpdates = [];
-            $map = [
-                'empresa_nombre'=>'nombre_comercial',
-                'empresa_actividad'=>'actividad',
-                'empresa_telefono'=>'telefono',
-                'empresa_whatsapp'=>'whatsapp',
-                'empresa_ciudad'=>'ciudad',
-                'empresa_direccion'=>'direccion',
-            ];
-            foreach ($map as $source => $target) {
-                if (array_key_exists($source, $registration)) {
-                    $value = is_string($registration[$source]) ? trim($registration[$source]) : $registration[$source];
-                    $companyUpdates[$target] = $value === '' ? null : $value;
-                }
-            }
-            if ($companyUpdates) $empresa->update($companyUpdates);
-        }
-
-        $requestUpdates = [];
-        if (array_key_exists('titulo_sistema', $registration)) $requestUpdates['titulo'] = trim($registration['titulo_sistema']);
-        if (array_key_exists('resumen', $registration)) $requestUpdates['resumen'] = $registration['resumen'] ?: null;
-        if ($requestUpdates) $solicitud->update($requestUpdates);
+        if(!$registration)return;$cliente=$solicitud->cliente;if($cliente){$clientUpdates=[];if(array_key_exists('cliente_nombre',$registration))$clientUpdates['nombre']=trim($registration['cliente_nombre']);if(array_key_exists('cliente_whatsapp',$registration))$clientUpdates['whatsapp']=$registration['cliente_whatsapp']?:null;if(array_key_exists('cliente_ciudad',$registration))$clientUpdates['ciudad']=trim((string)$registration['cliente_ciudad']);if(array_key_exists('cliente_direccion',$registration))$clientUpdates['direccion']=$registration['cliente_direccion']?:null;if($clientUpdates){$cliente->update($clientUpdates);if(isset($clientUpdates['nombre']))Usuario::query()->where('cliente_id',$cliente->id)->update(['nombre'=>$clientUpdates['nombre']]);}}$empresa=$solicitud->empresa;if($empresa){if(array_key_exists('empresa_nombre',$registration)){$name=trim($registration['empresa_nombre']);$duplicate=Empresa::query()->where('cliente_id',$solicitud->cliente_id)->where('id','!=',$empresa->id)->whereRaw('LOWER(nombre_comercial) = ?',[Str::lower($name)])->exists();if($duplicate)throw ValidationException::withMessages(['registro.empresa_nombre'=>'Ya tienes otro negocio registrado con ese nombre.']);}$companyUpdates=[];$map=['empresa_nombre'=>'nombre_comercial','empresa_actividad'=>'actividad','empresa_telefono'=>'telefono','empresa_whatsapp'=>'whatsapp','empresa_ciudad'=>'ciudad','empresa_direccion'=>'direccion'];foreach($map as $source=>$target)if(array_key_exists($source,$registration)){$value=is_string($registration[$source])?trim($registration[$source]):$registration[$source];$companyUpdates[$target]=$value===''?null:$value;}if($companyUpdates)$empresa->update($companyUpdates);}$requestUpdates=[];if(array_key_exists('titulo_sistema',$registration))$requestUpdates['titulo']=trim($registration['titulo_sistema']);if(array_key_exists('resumen',$registration))$requestUpdates['resumen']=$registration['resumen']?:null;if($requestUpdates)$solicitud->update($requestUpdates);
     }
 
-    private function allowedPayments(?PlanViti $plan): array
+    private function allowedPayments(?PlanViti $plan):array{return match($this->planKey($plan)){'custom'=>['por_definir'],'professional','enterprise'=>['tres_partes','contado','por_definir'],default=>['50_50','contado','por_definir']};}
+    private function allowedOperationNumbers(?PlanViti $plan):array{$numbers=[12,13,17,18,19];return match($this->planKey($plan)){'professional'=>[...$numbers,32,35],'enterprise'=>[...$numbers,27,32,35],'custom'=>[...$numbers,70],default=>$numbers};}
+    private function planKey(?PlanViti $plan):string{$code=Str::lower((string)($plan?->codigo??''));if(Str::contains($code,'personalizado'))return'custom';if(Str::contains($code,'empresa'))return'enterprise';if(Str::contains($code,'profesional'))return'professional';return'initial';}
+    private function notifyAccessRequest(SolicitudSistema $solicitud):void{$solicitud->loadMissing(['cliente:id,nombre','empresa:id,nombre_comercial']);$admins=Usuario::query()->where('estado','activo')->whereIn('rol',['superadmin','administrador'])->get(['id']);if($admins->isEmpty())return;$business=$solicitud->empresa?->nombre_comercial?:'Empresa sin nombre';$client=$solicitud->cliente?->nombre?:'Cliente';$message=$solicitud->codigo.' · '.$business.' · '.$client;$path='/solicitudes/'.$solicitud->id;foreach($admins as $admin)AlertaSaas::firstOrCreate(['usuario_id'=>$admin->id,'clave'=>'solicitud_acceso_'.$solicitud->id],['empresa_id'=>$solicitud->empresa_id,'tipo'=>'solicitud','titulo'=>'Nueva solicitud de acceso','mensaje'=>$message,'ruta'=>$path]);FirebasePush::sendToUsers($admins->pluck('id')->all(),'Nueva solicitud de acceso',$message,['type'=>'solicitud','solicitud_id'=>$solicitud->id,'path'=>$path]);}
+
+    private function resolve(string $token):SolicitudSistema
     {
-        return match ($this->planKey($plan)) {
-            'custom' => ['por_definir'],
-            'professional', 'enterprise' => ['tres_partes','contado','por_definir'],
-            default => ['50_50','contado','por_definir'],
-        };
-    }
-
-    private function allowedOperationNumbers(?PlanViti $plan): array
-    {
-        $numbers = [12,13,17,18,19];
-        return match ($this->planKey($plan)) {
-            'professional' => [...$numbers,32,35],
-            'enterprise' => [...$numbers,27,32,35],
-            'custom' => [...$numbers,70],
-            default => $numbers,
-        };
-    }
-
-    private function planKey(?PlanViti $plan): string
-    {
-        $code = Str::lower((string)($plan?->codigo ?? ''));
-        if (Str::contains($code, 'personalizado')) return 'custom';
-        if (Str::contains($code, 'empresa')) return 'enterprise';
-        if (Str::contains($code, 'profesional')) return 'professional';
-        return 'initial';
-    }
-
-    private function notifyAccessRequest(SolicitudSistema $solicitud): void
-    {
-        $solicitud->loadMissing(['cliente:id,nombre','empresa:id,nombre_comercial']);
-        $admins = Usuario::query()
-            ->where('estado', 'activo')
-            ->whereIn('rol', ['superadmin','administrador'])
-            ->get(['id']);
-
-        if ($admins->isEmpty()) return;
-
-        $business = $solicitud->empresa?->nombre_comercial ?: 'Empresa sin nombre';
-        $client = $solicitud->cliente?->nombre ?: 'Cliente';
-        $message = $solicitud->codigo.' · '.$business.' · '.$client;
-        $path = '/solicitudes/'.$solicitud->id;
-
-        foreach ($admins as $admin) {
-            AlertaSaas::firstOrCreate(
-                ['usuario_id'=>$admin->id,'clave'=>'solicitud_acceso_'.$solicitud->id],
-                [
-                    'empresa_id'=>$solicitud->empresa_id,
-                    'tipo'=>'solicitud',
-                    'titulo'=>'Nueva solicitud de acceso',
-                    'mensaje'=>$message,
-                    'ruta'=>$path,
-                ]
-            );
-        }
-
-        FirebasePush::sendToUsers($admins->pluck('id')->all(), 'Nueva solicitud de acceso', $message, [
-            'type'=>'solicitud',
-            'solicitud_id'=>$solicitud->id,
-            'path'=>$path,
-        ]);
-    }
-
-    private function resolve(string $token): SolicitudSistema
-    {
-        return SolicitudSistema::query()->where('public_token',$token)->where('publico_habilitado',true)->firstOrFail();
+        $solicitud=SolicitudSistema::query()->where('public_token',$token)->where('publico_habilitado',true)->first();
+        abort_unless($solicitud,410,'Este enlace de solicitud ya no está disponible.');
+        return $solicitud;
     }
 }
