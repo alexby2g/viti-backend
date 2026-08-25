@@ -25,13 +25,22 @@ class RejectLegacyVitiFlows
         }
 
         $path = trim($request->path(), '/');
-        $isPublicDraftPut = $request->isMethod('PUT')
+        $isPublicRequestRead = $request->isMethod('GET')
+            && str_starts_with($path, 'api/v1/publico/solicitudes/');
+        $isPublicRequestPut = $request->isMethod('PUT')
+            && str_starts_with($path, 'api/v1/publico/solicitudes/');
+        $isPublicRequestSubmit = $request->isMethod('POST')
+            && str_ends_with($path, '/enviar')
             && str_starts_with($path, 'api/v1/publico/solicitudes/');
 
-        if ($isPublicDraftPut) {
+        if ($isPublicRequestRead || $isPublicRequestPut || $isPublicRequestSubmit) {
+            $segments = array_values(array_filter(explode('/', $path), static fn ($segment) => $segment !== ''));
             $token = trim((string) $request->route('token'));
+
             if ($token === '') {
-                $token = trim((string) basename($path));
+                $token = $isPublicRequestSubmit
+                    ? (string) ($segments[count($segments) - 2] ?? '')
+                    : (string) ($segments[count($segments) - 1] ?? '');
             }
 
             $tokenExists = $token !== '' && SolicitudSistema::query()
@@ -40,7 +49,7 @@ class RejectLegacyVitiFlows
 
             if (!$tokenExists) {
                 return response()->json([
-                    'message' => 'Este endpoint público legado fue retirado. Utiliza el formulario oficial de solicitud VITI.',
+                    'message' => 'Este enlace público de solicitud ya no está disponible. Inicia una nueva solicitud VITI.',
                 ], 410);
             }
         }
