@@ -101,8 +101,8 @@ Route::prefix('v1')->group(function (): void {
                 Route::delete('equipos/{id}', [ClientElectrofrioController::class, 'eliminarEquipo']);
                 Route::get('tecnicos', [ClientElectrofrioController::class, 'tecnicos']);
                 Route::get('usuarios-negocio', [ClientElectrofrioController::class, 'usuariosNegocio']);
-                Route::post('tecnicos', [ClientElectrofrioController::class, 'guardarTecnico']);
-                Route::put('tecnicos/{id}', [ClientElectrofrioController::class, 'actualizarTecnico']);
+                Route::post('tecnicos', [ClientElectrofrioController::class,'guardarTecnico']);
+                Route::put('tecnicos/{id}', [ClientElectrofrioController::class,'actualizarTecnico']);
                 Route::delete('tecnicos/{id}', [ClientElectrofrioController::class,'eliminarTecnico']);
                 Route::post('clientes/{id}/acceso', [ClientElectrofrioController::class,'guardarAccesoCliente']);
                 Route::delete('clientes/{id}/acceso', [ClientElectrofrioController::class,'revocarAccesoCliente']);
@@ -155,6 +155,14 @@ Route::prefix('v1')->group(function (): void {
             Route::put('clientes/{cliente}/verificar-foto', [ClienteController::class,'verifyPhoto']);
             Route::apiResource('usuarios', UsuarioController::class)->parameters(['usuarios'=>'usuario'])->except('show')->middleware('superadmin');
             Route::apiResource('empresas', EmpresaController::class)->parameters(['empresas'=>'empresa']);
+            Route::post('empresas/{empresa}/usuarios', [EmpresaController::class,'assignUser'])->middleware('superadmin');
+            Route::delete('empresas/{empresa}/usuarios/{usuario}', [EmpresaController::class,'unassignUser'])->middleware('superadmin');
+            Route::post('empresas/{empresa}/propietario', [EmpresaController::class,'assignUser'])->defaults('rol_negocio','propietario')->middleware('superadmin');
+            Route::delete('empresas/{empresa}/propietario', function (\Illuminate\Http\Request $request, EmpresaController $controller, \App\Models\Empresa $empresa): \Illuminate\Http\JsonResponse {
+                $owner = $empresa->usuarios()->wherePivot('rol_negocio','propietario')->first();
+                if ($owner) return $controller->unassignUser($request, $empresa, $owner);
+                return response()->json(['data'=>$empresa->fresh()->load('usuarios')]);
+            })->middleware('superadmin');
             Route::post('empresas/{empresa}/logo', [EmpresaController::class,'uploadLogo']);
             Route::get('cuestionarios', [CuestionarioController::class,'index']);
             Route::get('cuestionarios/{cuestionario}', [CuestionarioController::class,'show']);
