@@ -37,8 +37,10 @@ class EmpresaOwnershipTest extends TestCase
             'estado' => 'activo',
         ]);
 
+        // Un Cliente puede tener una sola cuenta de usuario. El empleado
+        // pertenece al negocio mediante empresa_usuario, no mediante cliente_id.
         $employee = Usuario::create([
-            'cliente_id' => $cliente->id,
+            'cliente_id' => null,
             'nombre' => 'Empleado',
             'usuario' => 'ef_empleado',
             'documento' => '700000003',
