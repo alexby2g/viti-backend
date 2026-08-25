@@ -16,6 +16,16 @@ class RejectLegacyVitiFlows
             ], 410);
         }
 
+        // The old plural public endpoint accepted a very small legacy payload.
+        // Keep that exact signature retired while allowing the current plural
+        // draft flow, which requires the complete requester and project data.
+        if ($request->isMethod('POST') && $request->is('api/v1/publico/solicitudes')
+            && (!$request->filled('ciudad') || !$request->filled('titulo_sistema'))) {
+            return response()->json([
+                'message' => 'Este formulario público legado fue retirado. Utiliza el formulario oficial de solicitud VITI.',
+            ], 410);
+        }
+
         return $next($request);
     }
 }
