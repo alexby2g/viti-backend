@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{Empresa,PlanViti};
+use App\Models\{Empresa,PlanViti,Usuario};
 use App\Support\{Audit,Code};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -24,7 +24,7 @@ class EmpresaController extends Controller
         $planId=PlanViti::where('codigo','personalizado')->value('id');
         $empresa=Empresa::create($data+['codigo'=>Code::next('empresas','EMP'),'plan_viti_id'=>$planId]);
         Audit::log($request,'empresa_creada',$empresa,'Se registró una empresa cliente.');
-        return response()->json(['data'=>$empresa->load(['cliente','planViti'])],201);
+        return response()->json(['data'=>$empresa->load(['cliente','planViti','usuarios'])],201);
     }
 
     public function show(Empresa $empresa): JsonResponse
@@ -36,7 +36,45 @@ class EmpresaController extends Controller
     {
         $empresa->update($this->validateData($request,$empresa));
         Audit::log($request,'empresa_actualizada',$empresa,'Se actualizaron los datos de la empresa.');
-        return response()->json(['data'=>$empresa->fresh()->load(['cliente','planViti'])]);
+        return response()->json(['data'=>$empresa->fresh()->load(['cliente','planViti','usuarios'])]);
+    }
+
+    public function assignUser(Request $request, Empresa $empresa): JsonResponse
+    {
+        $data=$request->validate([
+            'usuario_id'=>['required','integer','exists:usuarios,id'],
+            'rol_negocio'=>['required',Rule::in(['propietario','administrador','soporte','empleado'])],
+            'activo'=>['nullable','boolean'],
+            'permisos'=>['nullable','array'],
+        ]);
+
+        $usuario=Usuario::findOrFail($data['usuario_id']);
+        abort_if($usuario->isSuperAdmin(),422,'El superadministrador no se asigna como usuario de un negocio.');
+        abort_if($usuario->estado !== 'activo',422,'Solo se puede asignar un usuario activo.');
+
+        if($data['rol_negocio']==='propietario'){
+            $empresa->usuarios()->wherePivot('rol_negocio','propietario')->get()->each(function(Usuario $actual) use ($empresa): void {
+                $empresa->usuarios()->updateExistingPivot($actual->id,['activo'=>false]);
+            });
+        }
+
+        $empresa->usuarios()->syncWithoutDetaching([
+            $usuario->id=>[
+                'rol_negocio'=>$data['rol_negocio'],
+                'permisos'=>isset($data['permisos']) ? json_encode($data['permisos']) : null,
+                'activo'=>$data['activo'] ?? true,
+            ],
+        ]);
+
+        Audit::log($request,'usuario_asignado_empresa',$empresa,'Se asignó el usuario '.$usuario->usuario.' a la empresa como '.$data['rol_negocio'].'.',['usuario_id'=>$usuario->id,'rol_negocio'=>$data['rol_negocio']]);
+        return response()->json(['data'=>$empresa->fresh()->load(['cliente','planViti','usuarios'])]);
+    }
+
+    public function unassignUser(Request $request, Empresa $empresa, Usuario $usuario): JsonResponse
+    {
+        $empresa->usuarios()->detach($usuario->id);
+        Audit::log($request,'usuario_desasignado_empresa',$empresa,'Se retiró un usuario de la empresa.',['usuario_id'=>$usuario->id]);
+        return response()->json(['data'=>$empresa->fresh()->load(['usuarios'])]);
     }
 
     public function destroy(Request $request, Empresa $empresa): JsonResponse
