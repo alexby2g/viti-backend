@@ -34,7 +34,18 @@ class EmpresaController extends Controller
 
     public function update(Request $request, Empresa $empresa): JsonResponse
     {
-        $empresa->update($this->validateData($request,$empresa));
+        $data=$this->validateData($request,$empresa);
+        $empresa->update($data);
+
+        if ($request->has('usuario_id')) {
+            $usuarioId=$request->input('usuario_id');
+            if ($usuarioId === null || $usuarioId === '') {
+                $empresa->usuarios()->detach();
+            } else {
+                $this->assignUserToEmpresa($request,$empresa,(int)$usuarioId,(string)$request->input('rol_negocio','propietario'),$request->input('activo',true),$request->input('permisos'));
+            }
+        }
+
         Audit::log($request,'empresa_actualizada',$empresa,'Se actualizaron los datos de la empresa.');
         return response()->json(['data'=>$empresa->fresh()->load(['cliente','planViti','usuarios'])]);
     }
@@ -48,25 +59,7 @@ class EmpresaController extends Controller
             'permisos'=>['nullable','array'],
         ]);
 
-        $usuario=Usuario::findOrFail($data['usuario_id']);
-        abort_if($usuario->isSuperAdmin(),422,'El superadministrador no se asigna como usuario de un negocio.');
-        abort_if($usuario->estado !== 'activo',422,'Solo se puede asignar un usuario activo.');
-
-        if($data['rol_negocio']==='propietario'){
-            $empresa->usuarios()->wherePivot('rol_negocio','propietario')->get()->each(function(Usuario $actual) use ($empresa): void {
-                $empresa->usuarios()->updateExistingPivot($actual->id,['activo'=>false]);
-            });
-        }
-
-        $empresa->usuarios()->syncWithoutDetaching([
-            $usuario->id=>[
-                'rol_negocio'=>$data['rol_negocio'],
-                'permisos'=>isset($data['permisos']) ? json_encode($data['permisos']) : null,
-                'activo'=>$data['activo'] ?? true,
-            ],
-        ]);
-
-        Audit::log($request,'usuario_asignado_empresa',$empresa,'Se asignó el usuario '.$usuario->usuario.' a la empresa como '.$data['rol_negocio'].'.',['usuario_id'=>$usuario->id,'rol_negocio'=>$data['rol_negocio']]);
+        $this->assignUserToEmpresa($request,$empresa,(int)$data['usuario_id'],$data['rol_negocio'],$data['activo'] ?? true,$data['permisos'] ?? null);
         return response()->json(['data'=>$empresa->fresh()->load(['cliente','planViti','usuarios'])]);
     }
 
@@ -75,6 +68,30 @@ class EmpresaController extends Controller
         $empresa->usuarios()->detach($usuario->id);
         Audit::log($request,'usuario_desasignado_empresa',$empresa,'Se retiró un usuario de la empresa.',['usuario_id'=>$usuario->id]);
         return response()->json(['data'=>$empresa->fresh()->load(['usuarios'])]);
+    }
+
+    private function assignUserToEmpresa(Request $request, Empresa $empresa, int $usuarioId, string $rolNegocio, bool $activo=true, ?array $permisos=null): void
+    {
+        $usuario=Usuario::findOrFail($usuarioId);
+        abort_if($usuario->isSuperAdmin(),422,'El superadministrador no se asigna como usuario de un negocio.');
+        abort_if($usuario->estado !== 'activo',422,'Solo se puede asignar un usuario activo.');
+        abort_unless(in_array($rolNegocio,['propietario','administrador','soporte','empleado'],true),422,'El rol del negocio no es válido.');
+
+        if($rolNegocio==='propietario'){
+            $empresa->usuarios()->wherePivot('rol_negocio','propietario')->get()->each(function(Usuario $actual) use ($empresa): void {
+                $empresa->usuarios()->updateExistingPivot($actual->id,['activo'=>false]);
+            });
+        }
+
+        $empresa->usuarios()->syncWithoutDetaching([
+            $usuario->id=>[
+                'rol_negocio'=>$rolNegocio,
+                'permisos'=>$permisos !== null ? json_encode($permisos) : null,
+                'activo'=>$activo,
+            ],
+        ]);
+
+        Audit::log($request,'usuario_asignado_empresa',$empresa,'Se asignó el usuario '.$usuario->usuario.' a la empresa como '.$rolNegocio.'.',['usuario_id'=>$usuario->id,'rol_negocio'=>$rolNegocio]);
     }
 
     public function destroy(Request $request, Empresa $empresa): JsonResponse
