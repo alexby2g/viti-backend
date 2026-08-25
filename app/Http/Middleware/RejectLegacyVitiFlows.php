@@ -27,18 +27,20 @@ class RejectLegacyVitiFlows
             ], 410);
         }
 
-        // PUT is still part of the current public draft editor. Only reject
-        // the old token endpoint when the token does not resolve to an active
-        // editable draft; real draft requests continue through the controller.
+        // The token editor is part of the current public flow. Only reject a
+        // token that does not exist at all; state, expiry and stale-write rules
+        // are enforced by the controller and ProtectPublicDraftRevision.
         if ($request->isMethod('PUT') && $request->is('api/v1/publico/solicitudes/*')) {
-            $token = (string) $request->route('token');
-            $draftExists = $token !== '' && SolicitudSistema::query()
+            $token = trim((string) $request->route('token'));
+            if ($token === '') {
+                $token = trim((string) basename(parse_url($request->path(), PHP_URL_PATH) ?: ''));
+            }
+
+            $tokenExists = $token !== '' && SolicitudSistema::query()
                 ->where('public_token', $token)
-                ->where('publico_habilitado', true)
-                ->whereIn('estado', ['borrador', 'en_revision'])
                 ->exists();
 
-            if (!$draftExists) {
+            if (!$tokenExists) {
                 return response()->json([
                     'message' => 'Este endpoint público legado fue retirado. Utiliza el formulario oficial de solicitud VITI.',
                 ], 410);
