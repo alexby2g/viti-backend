@@ -2,10 +2,10 @@
 
 namespace Tests\Feature;
 
-use App\Models\Empresa;
-use App\Models\Usuario;
+use App\Models\{Cliente,Empresa,Usuario};
 use Database\Seeders\VitiPlatformSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class VitiPlatformSeederTest extends TestCase
@@ -14,7 +14,7 @@ class VitiPlatformSeederTest extends TestCase
 
     public function test_electrofrio_seeder_preserves_existing_owner_and_client_assignment(): void
     {
-        $cliente = \App\Models\Cliente::create([
+        $cliente = Cliente::create([
             'nombre' => 'Cliente Electro Frío',
             'telefono' => '77770001',
             'correo' => 'electro@example.com',
@@ -22,13 +22,10 @@ class VitiPlatformSeederTest extends TestCase
             'estado' => 'activo',
         ]);
 
-        $empresa = Empresa::create([
-            'cliente_id' => $cliente->id,
-            'codigo' => 'EMP-EF-TEST',
-            'nombre_comercial' => 'Electro Frío',
-            'actividad' => 'Servicios técnicos',
-            'estado' => 'activo',
-        ]);
+        // The migration suite may already provision Electro Frío. Reuse it and
+        // explicitly prepare the desired real assignment before rerunning the seeder.
+        $empresa = Empresa::query()->where('nombre_comercial', 'Electro Frío')->firstOrFail();
+        $empresa->update(['cliente_id' => $cliente->id, 'estado' => 'activo']);
 
         $owner = Usuario::create([
             'cliente_id' => $cliente->id,
@@ -42,9 +39,12 @@ class VitiPlatformSeederTest extends TestCase
             'estado' => 'activo',
         ]);
 
-        $empresa->usuarios()->attach($owner->id, [
-            'rol_negocio' => 'propietario',
-            'activo' => true,
+        DB::table('empresa_usuario')->where('empresa_id', $empresa->id)->delete();
+        $empresa->usuarios()->syncWithoutDetaching([
+            $owner->id => [
+                'rol_negocio' => 'propietario',
+                'activo' => true,
+            ],
         ]);
 
         $this->seed(VitiPlatformSeeder::class);
