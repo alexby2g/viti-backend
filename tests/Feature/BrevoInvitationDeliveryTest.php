@@ -63,9 +63,15 @@ class BrevoInvitationDeliveryTest extends TestCase
             ->where('codigo', $requestResponse->json('data.solicitud_codigo'))
             ->firstOrFail();
 
-        DB::table('solicitudes_sistema')
-            ->whereKey($solicitud->id)
-            ->update(['estado' => 'aprobada']);
+        // Model the real workflow without bypassing its state rules:
+        // borrador -> en_revision -> aprobada.
+        DB::table('solicitudes_sistema')->whereKey($solicitud->id)->update([
+            'estado' => 'en_revision',
+        ]);
+        DB::table('solicitudes_sistema')->whereKey($solicitud->id)->update([
+            'estado' => 'aprobada',
+            'aprobado_at' => now(),
+        ]);
         $solicitud->refresh();
 
         $response = $this->actingAs($this->admin())
