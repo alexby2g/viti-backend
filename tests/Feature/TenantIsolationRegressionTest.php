@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Models\{Archivo,Conversacion,Proyecto};
+use App\Models\{Archivo,Cliente,Conversacion,Proyecto};
 use App\Services\ChatChannelService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
@@ -11,6 +11,19 @@ use Tests\{CreatesVitiTenants,TestCase};
 class TenantIsolationRegressionTest extends TestCase
 {
     use CreatesVitiTenants, RefreshDatabase;
+
+    private function attachClient(array $tenant, string $suffix): Cliente
+    {
+        $cliente = Cliente::create([
+            'nombre' => 'Cliente '.$suffix,
+            'telefono' => '7'.substr(str_pad((string) abs(crc32('cliente-phone-'.$suffix)), 8, '0', STR_PAD_LEFT), 0, 8),
+            'estado' => 'activo',
+        ]);
+
+        $tenant['user']->update(['cliente_id' => $cliente->id]);
+
+        return $cliente;
+    }
 
     public function test_user_cannot_switch_active_company_to_an_unrelated_tenant(): void
     {
@@ -57,10 +70,11 @@ class TenantIsolationRegressionTest extends TestCase
     {
         $tenantA = $this->createTenant('PROJECT-A');
         $tenantB = $this->createTenant('PROJECT-B');
+        $clienteB = $this->attachClient($tenantB, 'PROJECT-B');
 
         Proyecto::create([
             'empresa_id' => $tenantB['company']->id,
-            'cliente_id' => null,
+            'cliente_id' => $clienteB->id,
             'codigo' => 'PRO-B-CROSS-TENANT',
             'nombre' => 'Proyecto ajeno',
             'fase' => 'levantamiento',
@@ -79,9 +93,11 @@ class TenantIsolationRegressionTest extends TestCase
     {
         $tenantA = $this->createTenant('CHAT-A');
         $tenantB = $this->createTenant('CHAT-B');
+        $this->attachClient($tenantA, 'CHAT-A');
+        $clienteB = $this->attachClient($tenantB, 'CHAT-B');
 
         $conversation = Conversacion::create([
-            'cliente_id' => $tenantB['user']->cliente_id,
+            'cliente_id' => $clienteB->id,
             'responsable_usuario_id' => null,
             'asunto' => 'Conversación privada B',
             'estado' => 'abierta',
@@ -100,12 +116,14 @@ class TenantIsolationRegressionTest extends TestCase
 
         $tenantA = $this->createTenant('FILE-A');
         $tenantB = $this->createTenant('FILE-B');
+        $this->attachClient($tenantA, 'FILE-A');
+        $clienteB = $this->attachClient($tenantB, 'FILE-B');
         $path = 'archivos/test/private-b.txt';
         Storage::disk('private_uploads')->put($path, 'private tenant B');
 
         $archivo = Archivo::create([
-            'adjuntable_type' => \App\Models\Cliente::class,
-            'adjuntable_id' => $tenantB['user']->cliente_id,
+            'adjuntable_type' => Cliente::class,
+            'adjuntable_id' => $clienteB->id,
             'subido_por' => $tenantB['user']->id,
             'categoria' => 'general',
             'nombre_original' => 'private-b.txt',
