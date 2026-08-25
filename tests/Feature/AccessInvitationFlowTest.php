@@ -38,7 +38,11 @@ class AccessInvitationFlowTest extends TestCase
             ->assertOk()
             ->json('data');
 
-        $plan = collect($catalog['planes'])->first();
+        // Keep the integration test on a standard plan so it never depends on
+        // database insertion order placing the custom quotation first.
+        $plan = collect($catalog['planes'])->firstWhere('codigo', 'basico-1800')
+            ?? collect($catalog['planes'])->first();
+
         $questionnaire = Cuestionario::query()
             ->where('activo', true)
             ->with(['secciones.preguntas'])
@@ -67,7 +71,7 @@ class AccessInvitationFlowTest extends TestCase
             'titulo_sistema' => 'Clientes y pagos',
             'resumen' => 'Solicitud de prueba del flujo oficial.',
             'plan_codigo' => $plan['codigo'],
-            'forma_pago_preferida' => in_array($plan['codigo'], ['custom'], true) ? 'por_definir' : 'contado',
+            'forma_pago_preferida' => in_array($plan['codigo'], ['personalizado'], true) ? 'por_definir' : 'contado',
             'frecuencia_suscripcion_preferida' => ($plan['precio_mensual'] !== null && $plan['precio_anual'] !== null) ? 'mensual' : null,
             'declaracion_aceptada' => true,
             'declaracion_nombre' => 'Roberto Pérez',
