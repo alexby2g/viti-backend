@@ -17,9 +17,6 @@ class RejectLegacyVitiFlows
             ], 410);
         }
 
-        // The old plural public endpoint accepted a very small legacy payload.
-        // Keep that exact signature retired while allowing the current plural
-        // draft flow, which requires the complete requester and project data.
         if ($request->isMethod('POST') && $request->is('api/v1/publico/solicitudes')
             && (!$request->filled('ciudad') || !$request->filled('titulo_sistema'))) {
             return response()->json([
@@ -27,13 +24,14 @@ class RejectLegacyVitiFlows
             ], 410);
         }
 
-        // The token editor is part of the current public flow. Only reject a
-        // token that does not exist at all; state, expiry and stale-write rules
-        // are enforced by the controller and ProtectPublicDraftRevision.
-        if ($request->isMethod('PUT') && $request->is('api/v1/publico/solicitudes/*')) {
+        $path = trim($request->path(), '/');
+        $isPublicDraftPut = $request->isMethod('PUT')
+            && str_starts_with($path, 'api/v1/publico/solicitudes/');
+
+        if ($isPublicDraftPut) {
             $token = trim((string) $request->route('token'));
             if ($token === '') {
-                $token = trim((string) basename(parse_url($request->path(), PHP_URL_PATH) ?: ''));
+                $token = trim((string) basename($path));
             }
 
             $tokenExists = $token !== '' && SolicitudSistema::query()
