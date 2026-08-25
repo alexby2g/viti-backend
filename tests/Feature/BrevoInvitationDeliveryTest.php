@@ -6,7 +6,6 @@ use App\Models\{InvitacionCliente,SolicitudSistema,Usuario};
 use Database\Seeders\CuestionarioSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -63,15 +62,12 @@ class BrevoInvitationDeliveryTest extends TestCase
             ->where('codigo', $requestResponse->json('data.solicitud_codigo'))
             ->firstOrFail();
 
-        // Model the real workflow without bypassing its state rules:
-        // borrador -> en_revision -> aprobada.
-        DB::table('solicitudes_sistema')->whereKey($solicitud->id)->update([
-            'estado' => 'en_revision',
-        ]);
-        DB::table('solicitudes_sistema')->whereKey($solicitud->id)->update([
-            'estado' => 'aprobada',
-            'aprobado_at' => now(),
-        ]);
+        // Respect the real request state machine: borrador -> en_revision -> aprobada.
+        $solicitud->estado = 'en_revision';
+        $solicitud->save();
+        $solicitud->estado = 'aprobada';
+        $solicitud->aprobado_at = now();
+        $solicitud->save();
         $solicitud->refresh();
 
         $response = $this->actingAs($this->admin())
