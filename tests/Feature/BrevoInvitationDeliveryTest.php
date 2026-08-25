@@ -62,6 +62,10 @@ class BrevoInvitationDeliveryTest extends TestCase
             ->where('codigo', $requestResponse->json('data.solicitud_codigo'))
             ->firstOrFail();
 
+        // Invitation delivery is intentionally gated behind approval in the
+        // real workflow; this test must model that business state explicitly.
+        $solicitud->update(['estado' => 'aprobada']);
+
         $this->actingAs($this->admin())
             ->postJson('/api/v1/solicitudes/'.$solicitud->id.'/invitacion', ['dias_vigencia' => 7])
             ->assertCreated()

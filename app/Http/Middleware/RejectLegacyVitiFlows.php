@@ -26,6 +26,14 @@ class RejectLegacyVitiFlows
             ], 410);
         }
 
+        // The legacy token editor is retired as a whole. The official flow
+        // writes directly through /publico/solicitud/enviar instead.
+        if ($request->isMethod('PUT') && $request->is('api/v1/publico/solicitudes/*')) {
+            return response()->json([
+                'message' => 'Este endpoint público legado fue retirado. Utiliza el formulario oficial de solicitud VITI.',
+            ], 410);
+        }
+
         return $next($request);
     }
 }
