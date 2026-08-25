@@ -16,6 +16,12 @@ class EnsurePeluqueriaTenant
             return $next($request);
         }
 
+        // El selector de negocios es un endpoint de plataforma; no necesita
+        // contexto de empresa activo porque precisamente sirve para elegirlo.
+        if ($request->is('api/v1/apps/peluqueria/empresas')) {
+            return $next($request);
+        }
+
         $tenants = app(TenantContext::class);
         $empresa = $tenants->resolve($request);
 
@@ -25,7 +31,7 @@ class EnsurePeluqueriaTenant
             ->whereHas('catalogo', fn ($q) => $q->where('clave', 'peluqueria')->where('activo', true))
             ->exists();
 
-        abort_unless($allowed, 403, 'Este negocio no tiene Peluquería VITI habilitada.');
+        abort_unless($allowed, 422, 'La empresa seleccionada no tiene Peluquería VITI habilitada.');
 
         $action = (string) ($request->route()?->getActionMethod() ?? '');
         $module = match ($action) {
