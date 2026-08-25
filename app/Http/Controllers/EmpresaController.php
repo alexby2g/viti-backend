@@ -13,7 +13,7 @@ class EmpresaController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query=Empresa::with(['cliente:id,nombre,telefono','planViti','usuarios:id,nombre,apellido,usuario,estado'])
+        $query=Empresa::with(['cliente:id,nombre,telefono','planViti','usuarios:id,nombre,apellido,usuario,rol,estado'])
             ->withCount(['solicitudes','proyectos','aplicaciones'])->latest('id');
         if($request->filled('buscar')){$term='%'.$request->string('buscar').'%';$query->where(fn($q)=>$q->where('nombre_comercial','like',$term)->orWhere('telefono','like',$term)->orWhere('actividad','like',$term));}
         return response()->json($query->paginate(min(max((int)$request->input('per_page',20),1),100)));
@@ -41,9 +41,9 @@ class EmpresaController extends Controller
         if ($request->has('usuario_id')) {
             $usuarioId=$request->input('usuario_id');
             if ($usuarioId === null || $usuarioId === '') {
-                $empresa->usuarios()->detach();
+                $this->removeOwner($request,$empresa);
             } else {
-                $this->assignUserToEmpresa($request,$empresa,(int)$usuarioId,(string)$request->input('rol_negocio','propietario'),$request->input('activo',true),$request->input('permisos'));
+                $this->assignUserToEmpresa($request,$empresa,(int)$usuarioId,'propietario',$request->input('activo',true),$request->input('permisos'));
             }
         }
 
@@ -78,7 +78,17 @@ class EmpresaController extends Controller
         abort_if($usuario->estado !== 'activo',422,'Solo se puede asignar un usuario activo.');
         abort_unless(in_array($rolNegocio,['propietario','administrador','soporte','empleado'],true),422,'El rol del negocio no es válido.');
 
-        if($rolNegocio==='propietario'){
+        if ($rolNegocio === 'propietario') {
+            abort_unless($usuario->rol === 'cliente' && $usuario->cliente_id,422,'El propietario del negocio debe ser una cuenta de cliente VITI.');
+
+            if ($empresa->cliente_id && (int)$empresa->cliente_id !== (int)$usuario->cliente_id) {
+                abort(422,'El propietario seleccionado pertenece a otro cliente VITI.');
+            }
+
+            if (!$empresa->cliente_id) {
+                $empresa->update(['cliente_id' => $usuario->cliente_id]);
+            }
+
             $empresa->usuarios()->wherePivot('rol_negocio','propietario')->get()->each(function(Usuario $actual) use ($empresa): void {
                 $empresa->usuarios()->updateExistingPivot($actual->id,['activo'=>false]);
             });
@@ -93,6 +103,15 @@ class EmpresaController extends Controller
         ]);
 
         Audit::log($request,'usuario_asignado_empresa',$empresa,'Se asignó el usuario '.$usuario->usuario.' a la empresa como '.$rolNegocio.'.',['usuario_id'=>$usuario->id,'rol_negocio'=>$rolNegocio]);
+    }
+
+    private function removeOwner(Request $request, Empresa $empresa): void
+    {
+        $owner = $empresa->usuarios()->wherePivot('rol_negocio','propietario')->get();
+        foreach ($owner as $usuario) {
+            $empresa->usuarios()->detach($usuario->id);
+            Audit::log($request,'propietario_desasignado_empresa',$empresa,'Se retiró el propietario de la empresa sin afectar a los demás usuarios.',['usuario_id'=>$usuario->id]);
+        }
     }
 
     public function destroy(Request $request, Empresa $empresa): JsonResponse
