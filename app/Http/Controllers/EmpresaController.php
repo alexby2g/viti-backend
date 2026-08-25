@@ -13,7 +13,8 @@ class EmpresaController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query=Empresa::with(['cliente:id,nombre,telefono','planViti'])->withCount(['solicitudes','proyectos','aplicaciones'])->latest('id');
+        $query=Empresa::with(['cliente:id,nombre,telefono','planViti','usuarios:id,nombre,apellido,usuario,estado'])
+            ->withCount(['solicitudes','proyectos','aplicaciones'])->latest('id');
         if($request->filled('buscar')){$term='%'.$request->string('buscar').'%';$query->where(fn($q)=>$q->where('nombre_comercial','like',$term)->orWhere('telefono','like',$term)->orWhere('actividad','like',$term));}
         return response()->json($query->paginate(min(max((int)$request->input('per_page',20),1),100)));
     }
