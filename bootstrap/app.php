@@ -32,11 +32,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->trustProxies(at: '*');
         $middleware->statefulApi();
         $middleware->append(SecurityHeaders::class);
+        // Retire unavailable public request links before draft protection can
+        // resolve a missing token and turn the request into a 404.
+        $middleware->append(RejectLegacyVitiFlows::class);
         $middleware->append(ProtectPublicDraftRevision::class);
         $middleware->append(UseActiveCompanyForNewRequest::class);
         $middleware->append(EnsurePeluqueriaTenant::class);
         $middleware->append(EnsurePrivateVitiCommunication::class);
-        $middleware->append(RejectLegacyVitiFlows::class);
         $middleware->alias([
             'superadmin'=>EnsureSuperAdmin::class,
             'platform_admin'=>EnsurePlatformAdmin::class,
