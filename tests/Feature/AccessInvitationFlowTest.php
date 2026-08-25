@@ -20,14 +20,9 @@ class AccessInvitationFlowTest extends TestCase
             'empresa_nombre' => 'Trinicenter',
         ])->assertStatus(410);
 
-        $this->getJson('/api/v1/publico/solicitudes/demo-token')
-            ->assertStatus(410);
-
-        $this->putJson('/api/v1/publico/solicitudes/demo-token', [])
-            ->assertStatus(410);
-
-        $this->postJson('/api/v1/publico/solicitudes/demo-token/enviar', [])
-            ->assertStatus(410);
+        $this->getJson('/api/v1/publico/solicitudes/demo-token')->assertStatus(410);
+        $this->putJson('/api/v1/publico/solicitudes/demo-token', [])->assertStatus(410);
+        $this->postJson('/api/v1/publico/solicitudes/demo-token/enviar', [])->assertStatus(410);
     }
 
     public function test_official_viti_application_flow_creates_a_reviewable_request_without_account_access(): void
@@ -38,7 +33,9 @@ class AccessInvitationFlowTest extends TestCase
             ->assertOk()
             ->json('data');
 
-        $plan = collect($catalog['planes'])->first();
+        $plan = collect($catalog['planes'])->firstWhere('codigo', 'basico-1800');
+        $this->assertNotNull($plan, 'The active basic plan must be present in the public catalog.');
+
         $questionnaire = Cuestionario::query()
             ->where('activo', true)
             ->with(['secciones.preguntas'])
@@ -67,7 +64,7 @@ class AccessInvitationFlowTest extends TestCase
             'titulo_sistema' => 'Clientes y pagos',
             'resumen' => 'Solicitud de prueba del flujo oficial.',
             'plan_codigo' => $plan['codigo'],
-            'forma_pago_preferida' => in_array($plan['codigo'], ['custom'], true) ? 'por_definir' : 'contado',
+            'forma_pago_preferida' => '50_50',
             'frecuencia_suscripcion_preferida' => ($plan['precio_mensual'] !== null && $plan['precio_anual'] !== null) ? 'mensual' : null,
             'declaracion_aceptada' => true,
             'declaracion_nombre' => 'Roberto Pérez',
@@ -78,9 +75,9 @@ class AccessInvitationFlowTest extends TestCase
             'respuestas' => $answers,
         ];
 
-        $response = $this->postJson('/api/v1/publico/solicitud/enviar', $payload)
-            ->assertCreated()
-            ->assertJsonPath('data.estado', 'en_revision');
+        $response = $this->postJson('/api/v1/publico/solicitud/enviar', $payload);
+        $this->assertSame(201, $response->status(), $response->getContent());
+        $response->assertJsonPath('data.estado', 'en_revision');
 
         $this->assertDatabaseHas('solicitudes_sistema', [
             'codigo' => $response->json('data.codigo'),
