@@ -20,6 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
         then: function (): void {
             Route::middleware('api')->prefix('api/v1')->group(base_path('routes/commercial.php'));
             Route::middleware('api')->prefix('api/v1')->group(base_path('routes/public-commercial.php'));
+            Route::middleware('api')->prefix('api/v1')->group(base_path('routes/access.php'));
             Route::middleware('api')->prefix('api/v1')->group(base_path('routes/peluqueria-admin.php'));
             Route::middleware('api')->prefix('api/v1')->group(base_path('routes/servicio-tecnico.php'));
             Route::middleware('api')->prefix('api/v1')->group(base_path('routes/electrofrio-extras.php'));
