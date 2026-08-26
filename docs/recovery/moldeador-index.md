@@ -1,0 +1,1 @@
+Moldeador: implementación recuperada sobre feature/platform-hardening; pendiente de validación de CI antes de merge.
