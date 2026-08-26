@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{PeluqueriaAtencion,PeluqueriaProducto,PeluqueriaProductoMovimiento,PeluqueriaServicio};
+use App\Services\TenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -10,10 +11,21 @@ use Illuminate\Validation\Rule;
 
 class PeluqueriaExtrasController extends Controller
 {
-    private function empresaId(Request $request): int
+    private function empresaId(Request $request, string $module): int
     {
-        $data = $request->validate(['empresa_id'=>['required','integer','exists:empresas,id']]);
-        return (int) $data['empresa_id'];
+        $tenants = app(TenantContext::class);
+        $empresa = $tenants->resolve($request);
+        $tenants->assertModule($empresa, $module);
+        $tenants->assertCanUse($request->user(), $empresa, $module);
+        $request->attributes->set('viti_peluqueria_modules', $tenants->effectiveModules($request->user(), $empresa));
+
+        return (int) $empresa->id;
+    }
+
+    private function hasModule(Request $request, string $module): bool
+    {
+        $modules = $request->attributes->get('viti_peluqueria_modules');
+        return $modules === null || in_array($module, $modules, true);
     }
 
     private function producto(int $empresaId, int $id): PeluqueriaProducto
@@ -28,7 +40,7 @@ class PeluqueriaExtrasController extends Controller
 
     public function combos(Request $request): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'ordenes');
         return response()->json(['data'=>PeluqueriaServicio::query()
             ->where('empresa_id',$empresaId)->where('tipo','combo')
             ->with('componentes:id,nombre,precio,duracion_minutos')
@@ -37,7 +49,7 @@ class PeluqueriaExtrasController extends Controller
 
     public function guardarCombo(Request $request): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'ordenes');
         $data = $this->validarCombo($request,$empresaId);
         $componentes = $data['servicio_ids'] ?? [];
         unset($data['servicio_ids']);
@@ -53,7 +65,7 @@ class PeluqueriaExtrasController extends Controller
 
     public function actualizarCombo(Request $request, int $id): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'ordenes');
         $combo = $this->combo($empresaId,$id);
         $data = $this->validarCombo($request,$empresaId);
         $componentes = $data['servicio_ids'] ?? [];
@@ -69,7 +81,7 @@ class PeluqueriaExtrasController extends Controller
 
     public function eliminarCombo(Request $request, int $id): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'ordenes');
         $combo = $this->combo($empresaId,$id);
         abort_if($combo->citas()->exists() || $combo->atenciones()->exists(),422,'Este combo ya tiene historial. Puedes desactivarlo en lugar de eliminarlo.');
         $combo->delete();
@@ -99,7 +111,7 @@ class PeluqueriaExtrasController extends Controller
 
     public function productos(Request $request): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'inventario');
         $query = PeluqueriaProducto::query()->where('empresa_id',$empresaId)->orderBy('nombre');
         if ($request->filled('buscar')) {
             $term = '%'.$request->string('buscar').'%';
@@ -110,14 +122,14 @@ class PeluqueriaExtrasController extends Controller
 
     public function guardarProducto(Request $request): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'inventario');
         $data = $this->validarProducto($request);
         return response()->json(['data'=>PeluqueriaProducto::create($data+['empresa_id'=>$empresaId])],201);
     }
 
     public function actualizarProducto(Request $request, int $id): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'inventario');
         $producto = $this->producto($empresaId,$id);
         $producto->update($this->validarProducto($request));
         return response()->json(['data'=>$producto->fresh()]);
@@ -125,7 +137,7 @@ class PeluqueriaExtrasController extends Controller
 
     public function eliminarProducto(Request $request, int $id): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'inventario');
         $producto = $this->producto($empresaId,$id);
         abort_if($producto->movimientos()->exists(),422,'El producto tiene movimientos y no puede eliminarse. Puedes desactivarlo.');
         $producto->delete();
@@ -150,7 +162,7 @@ class PeluqueriaExtrasController extends Controller
 
     public function movimientos(Request $request): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'inventario');
         return response()->json(['data'=>PeluqueriaProductoMovimiento::query()
             ->where('empresa_id',$empresaId)->with('producto:id,nombre,unidad')
             ->latest('registrado_at')->limit(200)->get()]);
@@ -158,7 +170,7 @@ class PeluqueriaExtrasController extends Controller
 
     public function registrarMovimiento(Request $request): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'inventario');
         $data = $request->validate([
             'producto_id'=>['required','integer'],
             'atencion_id'=>['nullable','integer'],
@@ -206,53 +218,59 @@ class PeluqueriaExtrasController extends Controller
 
     public function reportes(Request $request): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'historial');
         $data = $request->validate(['desde'=>['nullable','date'],'hasta'=>['nullable','date','after_or_equal:desde']]);
         $desde = isset($data['desde']) ? now()->parse($data['desde'])->startOfDay() : now()->startOfMonth();
         $hasta = isset($data['hasta']) ? now()->parse($data['hasta'])->endOfDay() : now()->endOfMonth();
 
-        $ingresos = (float) DB::table('peluqueria_pagos')->where('empresa_id',$empresaId)->whereBetween('pagado_at',[$desde,$hasta])->sum('monto');
-        $atenciones = DB::table('peluqueria_atenciones')->where('empresa_id',$empresaId)->where('estado','finalizada')->whereBetween('finalizada_at',[$desde,$hasta])->count();
-        $clientesNuevos = DB::table('peluqueria_clientes')->where('empresa_id',$empresaId)->whereBetween('created_at',[$desde,$hasta])->count();
-        $clientesAtendidos = DB::table('peluqueria_atenciones')->where('empresa_id',$empresaId)->where('estado','finalizada')->whereBetween('finalizada_at',[$desde,$hasta])->distinct('cliente_id')->count('cliente_id');
-        $recurrentes = DB::table('peluqueria_atenciones')->where('empresa_id',$empresaId)->where('estado','finalizada')->whereBetween('finalizada_at',[$desde,$hasta])->select('cliente_id')->groupBy('cliente_id')->havingRaw('COUNT(*) > 1')->get()->count();
+        $canPagos = $this->hasModule($request, 'pagos');
+        $canOrdenes = $this->hasModule($request, 'ordenes');
+        $canClientes = $this->hasModule($request, 'clientes');
+        $canInventario = $this->hasModule($request, 'inventario');
+        $canTecnicos = $this->hasModule($request, 'tecnicos');
 
-        $topServicios = DB::table('peluqueria_atenciones as a')
+        $ingresos = $canPagos ? (float) DB::table('peluqueria_pagos')->where('empresa_id',$empresaId)->whereBetween('pagado_at',[$desde,$hasta])->sum('monto') : null;
+        $atenciones = $canOrdenes ? DB::table('peluqueria_atenciones')->where('empresa_id',$empresaId)->where('estado','finalizada')->whereBetween('finalizada_at',[$desde,$hasta])->count() : null;
+        $clientesNuevos = $canClientes ? DB::table('peluqueria_clientes')->where('empresa_id',$empresaId)->whereBetween('created_at',[$desde,$hasta])->count() : null;
+        $clientesAtendidos = $canClientes ? DB::table('peluqueria_atenciones')->where('empresa_id',$empresaId)->where('estado','finalizada')->whereBetween('finalizada_at',[$desde,$hasta])->distinct('cliente_id')->count('cliente_id') : null;
+        $recurrentes = $canClientes ? DB::table('peluqueria_atenciones')->where('empresa_id',$empresaId)->where('estado','finalizada')->whereBetween('finalizada_at',[$desde,$hasta])->select('cliente_id')->groupBy('cliente_id')->havingRaw('COUNT(*) > 1')->get()->count() : null;
+
+        $topServicios = $canOrdenes ? DB::table('peluqueria_atenciones as a')
             ->join('peluqueria_servicios as s','s.id','=','a.servicio_id')
             ->where('a.empresa_id',$empresaId)->where('a.estado','finalizada')->whereBetween('a.finalizada_at',[$desde,$hasta])->where('s.tipo','servicio')
             ->groupBy('s.id','s.nombre')->selectRaw('s.id, s.nombre, COUNT(*) as cantidad, COALESCE(SUM(a.total),0) as total')
-            ->orderByDesc('cantidad')->limit(5)->get();
+            ->orderByDesc('cantidad')->limit(5)->get() : collect();
 
-        $topCombos = DB::table('peluqueria_atenciones as a')
+        $topCombos = $canOrdenes ? DB::table('peluqueria_atenciones as a')
             ->join('peluqueria_servicios as s','s.id','=','a.servicio_id')
             ->where('a.empresa_id',$empresaId)->where('a.estado','finalizada')->whereBetween('a.finalizada_at',[$desde,$hasta])->where('s.tipo','combo')
             ->groupBy('s.id','s.nombre')->selectRaw('s.id, s.nombre, COUNT(*) as cantidad, COALESCE(SUM(a.total),0) as total')
-            ->orderByDesc('cantidad')->limit(5)->get();
+            ->orderByDesc('cantidad')->limit(5)->get() : collect();
 
-        $topProductos = DB::table('peluqueria_producto_movimientos as m')
+        $topProductos = $canInventario ? DB::table('peluqueria_producto_movimientos as m')
             ->join('peluqueria_productos as p','p.id','=','m.producto_id')
             ->where('m.empresa_id',$empresaId)->where('m.tipo','venta')->whereBetween('m.registrado_at',[$desde,$hasta])
             ->groupBy('p.id','p.nombre')->selectRaw('p.id, p.nombre, SUM(m.cantidad) as cantidad, COALESCE(SUM(m.cantidad * COALESCE(m.precio_unitario,0)),0) as total')
-            ->orderByDesc('cantidad')->limit(5)->get();
+            ->orderByDesc('cantidad')->limit(5)->get() : collect();
 
-        $topPersonal = DB::table('peluqueria_atenciones as a')
+        $topPersonal = $canTecnicos ? DB::table('peluqueria_atenciones as a')
             ->join('peluqueria_personal as p','p.id','=','a.personal_id')
             ->where('a.empresa_id',$empresaId)->where('a.estado','finalizada')->whereBetween('a.finalizada_at',[$desde,$hasta])
             ->groupBy('p.id','p.nombre')->selectRaw('p.id, p.nombre, COUNT(*) as atenciones, COALESCE(SUM(a.total),0) as total')
-            ->orderByDesc('total')->limit(5)->get();
+            ->orderByDesc('total')->limit(5)->get() : collect();
 
-        $stockBajo = PeluqueriaProducto::query()->where('empresa_id',$empresaId)->where('activo',true)->whereColumn('stock','<=','stock_minimo')->count();
+        $stockBajo = $canInventario ? PeluqueriaProducto::query()->where('empresa_id',$empresaId)->where('activo',true)->whereColumn('stock','<=','stock_minimo')->count() : null;
 
         return response()->json(['data'=>[
             'periodo'=>['desde'=>$desde->toDateString(),'hasta'=>$hasta->toDateString()],
             'resumen'=>[
                 'ingresos'=>$ingresos,
                 'atenciones'=>$atenciones,
-                'ticket_promedio'=>$atenciones > 0 ? round($ingresos/$atenciones,2) : 0,
+                'ticket_promedio'=>$canPagos && $canOrdenes && $atenciones > 0 ? round($ingresos/$atenciones,2) : null,
                 'clientes_nuevos'=>$clientesNuevos,
                 'clientes_atendidos'=>$clientesAtendidos,
                 'clientes_recurrentes'=>$recurrentes,
-                'porcentaje_recurrentes'=>$clientesAtendidos > 0 ? round(($recurrentes/$clientesAtendidos)*100,1) : 0,
+                'porcentaje_recurrentes'=>$canClientes && $clientesAtendidos > 0 ? round(($recurrentes/$clientesAtendidos)*100,1) : null,
                 'stock_bajo'=>$stockBajo,
             ],
             'top_servicios'=>$topServicios,

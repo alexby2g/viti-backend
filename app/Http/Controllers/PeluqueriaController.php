@@ -9,6 +9,7 @@ use App\Models\PeluqueriaCliente;
 use App\Models\PeluqueriaPago;
 use App\Models\PeluqueriaPersonal;
 use App\Models\PeluqueriaServicio;
+use App\Services\TenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -17,10 +18,25 @@ use Illuminate\Validation\Rule;
 
 class PeluqueriaController extends Controller
 {
-    private function empresaId(Request $request): int
+    private function empresaId(Request $request, string $module): int
     {
-        $data = $request->validate(['empresa_id' => ['required','integer','exists:empresas,id']]);
-        return (int) $data['empresa_id'];
+        $tenants = app(TenantContext::class);
+        $empresa = $tenants->resolve($request);
+
+        // Peluquería reutiliza las claves canónicas existentes de VITI.
+        // No se crean aquí claves nuevas: el plan permite, la empresa habilita
+        // y finalmente el usuario debe tener permiso para la capacidad.
+        $tenants->assertModule($empresa, $module);
+        $tenants->assertCanUse($request->user(), $empresa, $module);
+        $request->attributes->set('viti_peluqueria_modules', $tenants->effectiveModules($request->user(), $empresa));
+
+        return (int) $empresa->id;
+    }
+
+    private function hasModule(Request $request, string $module): bool
+    {
+        $modules = $request->attributes->get('viti_peluqueria_modules');
+        return $modules === null || in_array($module, $modules, true);
     }
 
     private function scoped(string $model, int $empresaId, int $id)
@@ -30,32 +46,38 @@ class PeluqueriaController extends Controller
 
     public function resumen(Request $request): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'inicio');
         $hoy = now()->toDateString();
+        $canAgenda = $this->hasModule($request, 'agenda');
+        $canClientes = $this->hasModule($request, 'clientes');
+        $canOrdenes = $this->hasModule($request, 'ordenes');
+        $canPagos = $this->hasModule($request, 'pagos');
 
-        $citasHoy = PeluqueriaCita::with(['cliente:id,nombre','servicio:id,nombre','personal:id,nombre'])
-            ->where('empresa_id', $empresaId)
-            ->whereDate('fecha', $hoy)
-            ->orderBy('hora_inicio')
-            ->get();
+        $citasHoy = $canAgenda
+            ? PeluqueriaCita::with(['cliente:id,nombre','servicio:id,nombre','personal:id,nombre'])
+                ->where('empresa_id', $empresaId)
+                ->whereDate('fecha', $hoy)
+                ->orderBy('hora_inicio')
+                ->get()
+            : collect();
 
-        $ingresosHoy = PeluqueriaPago::where('empresa_id', $empresaId)
-            ->whereDate('pagado_at', $hoy)
-            ->sum('monto');
+        $ingresosHoy = $canPagos
+            ? PeluqueriaPago::where('empresa_id', $empresaId)->whereDate('pagado_at', $hoy)->sum('monto')
+            : null;
 
         return response()->json(['data' => [
-            'clientes' => PeluqueriaCliente::where('empresa_id', $empresaId)->where('activo', true)->count(),
-            'citas_hoy' => $citasHoy->count(),
-            'en_atencion' => PeluqueriaAtencion::where('empresa_id', $empresaId)->where('estado', 'en_atencion')->count(),
-            'atenciones_hoy' => PeluqueriaAtencion::where('empresa_id', $empresaId)->whereDate('finalizada_at', $hoy)->count(),
-            'ingresos_hoy' => (float) $ingresosHoy,
-            'agenda_hoy' => $citasHoy,
+            'clientes' => $canClientes ? PeluqueriaCliente::where('empresa_id', $empresaId)->where('activo', true)->count() : null,
+            'citas_hoy' => $canAgenda ? $citasHoy->count() : null,
+            'en_atencion' => $canOrdenes ? PeluqueriaAtencion::where('empresa_id', $empresaId)->where('estado', 'en_atencion')->count() : null,
+            'atenciones_hoy' => $canOrdenes ? PeluqueriaAtencion::where('empresa_id', $empresaId)->whereDate('finalizada_at', $hoy)->count() : null,
+            'ingresos_hoy' => $canPagos ? (float) $ingresosHoy : null,
+            'agenda_hoy' => $canAgenda ? $citasHoy : [],
         ]]);
     }
 
     public function clientes(Request $request): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'clientes');
         $q = PeluqueriaCliente::where('empresa_id', $empresaId)->latest();
         if ($request->filled('buscar')) {
             $term = '%'.$request->string('buscar').'%';
@@ -66,7 +88,7 @@ class PeluqueriaController extends Controller
 
     public function guardarCliente(Request $request): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'clientes');
         $data = $request->validate([
             'nombre' => ['required','string','max:180'],
             'telefono' => ['nullable','string','max:30'],
@@ -83,7 +105,7 @@ class PeluqueriaController extends Controller
 
     public function actualizarCliente(Request $request, int $id): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'clientes');
         $item = $this->scoped(PeluqueriaCliente::class, $empresaId, $id);
         $data = $request->validate([
             'nombre' => ['required','string','max:180'],
@@ -101,7 +123,7 @@ class PeluqueriaController extends Controller
 
     public function eliminarCliente(Request $request, int $id): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'clientes');
         $item = $this->scoped(PeluqueriaCliente::class, $empresaId, $id);
         abort_if($item->citas()->exists() || $item->atenciones()->exists(), 422, 'El cliente tiene historial y no puede eliminarse. Puedes desactivarlo.');
         $item->delete();
@@ -110,13 +132,13 @@ class PeluqueriaController extends Controller
 
     public function servicios(Request $request): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'ordenes');
         return response()->json(['data' => PeluqueriaServicio::where('empresa_id',$empresaId)->orderBy('categoria')->orderBy('nombre')->get()]);
     }
 
     public function guardarServicio(Request $request): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'ordenes');
         $data = $request->validate([
             'nombre' => ['required','string','max:160'],
             'categoria' => ['nullable','string','max:100'],
@@ -130,7 +152,7 @@ class PeluqueriaController extends Controller
 
     public function actualizarServicio(Request $request, int $id): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'ordenes');
         $item = $this->scoped(PeluqueriaServicio::class, $empresaId, $id);
         $data = $request->validate([
             'nombre' => ['required','string','max:160'],
@@ -146,7 +168,7 @@ class PeluqueriaController extends Controller
 
     public function eliminarServicio(Request $request, int $id): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'ordenes');
         $item = $this->scoped(PeluqueriaServicio::class, $empresaId, $id);
         abort_if($item->citas()->exists() || $item->atenciones()->exists(), 422, 'El servicio ya tiene historial y no puede eliminarse. Puedes desactivarlo.');
         $item->delete();
@@ -155,13 +177,13 @@ class PeluqueriaController extends Controller
 
     public function personal(Request $request): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'tecnicos');
         return response()->json(['data' => PeluqueriaPersonal::where('empresa_id',$empresaId)->orderBy('nombre')->get()]);
     }
 
     public function guardarPersonal(Request $request): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'tecnicos');
         $data = $request->validate([
             'nombre' => ['required','string','max:180'],
             'telefono' => ['nullable','string','max:30'],
@@ -176,7 +198,7 @@ class PeluqueriaController extends Controller
 
     public function actualizarPersonal(Request $request, int $id): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'tecnicos');
         $item = $this->scoped(PeluqueriaPersonal::class,$empresaId,$id);
         $data = $request->validate([
             'nombre' => ['required','string','max:180'],
@@ -193,7 +215,7 @@ class PeluqueriaController extends Controller
 
     public function eliminarPersonal(Request $request, int $id): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'tecnicos');
         $item = $this->scoped(PeluqueriaPersonal::class,$empresaId,$id);
         abort_if($item->citas()->exists() || $item->atenciones()->exists(),422,'Este trabajador tiene historial. Puedes desactivarlo.');
         $item->delete();
@@ -202,7 +224,7 @@ class PeluqueriaController extends Controller
 
     public function citas(Request $request): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'agenda');
         $q = PeluqueriaCita::with(['cliente:id,nombre,telefono','servicio:id,nombre,precio,duracion_minutos','personal:id,nombre'])
             ->where('empresa_id',$empresaId)
             ->orderBy('fecha')->orderBy('hora_inicio');
@@ -213,7 +235,7 @@ class PeluqueriaController extends Controller
 
     public function guardarCita(Request $request): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'agenda');
         $data = $this->datosCita($request,$empresaId);
         $this->validarCruceCita($empresaId,$data);
         $item = PeluqueriaCita::create($data + ['empresa_id'=>$empresaId]);
@@ -222,7 +244,7 @@ class PeluqueriaController extends Controller
 
     public function actualizarCita(Request $request, int $id): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'agenda');
         $item = $this->scoped(PeluqueriaCita::class,$empresaId,$id);
         $data = $this->datosCita($request,$empresaId);
         $this->validarCruceCita($empresaId,$data,$id);
@@ -232,7 +254,7 @@ class PeluqueriaController extends Controller
 
     public function eliminarCita(Request $request, int $id): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'agenda');
         $item = $this->scoped(PeluqueriaCita::class,$empresaId,$id);
         abort_if($item->atencion()->exists(),422,'La cita ya tiene una atención asociada.');
         $item->delete();
@@ -278,16 +300,17 @@ class PeluqueriaController extends Controller
 
     public function atenciones(Request $request): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
-        $q = PeluqueriaAtencion::with(['cliente:id,nombre,telefono','servicio:id,nombre','personal:id,nombre','pagos'])
-            ->where('empresa_id',$empresaId)->latest('id');
+        $empresaId = $this->empresaId($request, 'ordenes');
+        $relations = ['cliente:id,nombre,telefono','servicio:id,nombre','personal:id,nombre'];
+        if ($this->hasModule($request, 'pagos')) $relations[] = 'pagos';
+        $q = PeluqueriaAtencion::with($relations)->where('empresa_id',$empresaId)->latest('id');
         if ($request->filled('estado')) $q->where('estado',$request->string('estado'));
         return response()->json(['data'=>$q->limit(300)->get()]);
     }
 
     public function iniciarAtencion(Request $request): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'ordenes');
         $data = $request->validate([
             'cita_id' => ['nullable','integer'],
             'cliente_id' => ['required','integer'],
@@ -324,12 +347,14 @@ class PeluqueriaController extends Controller
             ]);
         });
 
-        return response()->json(['data'=>$item->load(['cliente','servicio','personal','pagos'])],201);
+        $relations = ['cliente','servicio','personal'];
+        if ($this->hasModule($request, 'pagos')) $relations[] = 'pagos';
+        return response()->json(['data'=>$item->load($relations)],201);
     }
 
     public function finalizarAtencion(Request $request, int $id): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'ordenes');
         $item = $this->scoped(PeluqueriaAtencion::class,$empresaId,$id);
         $data = $request->validate([
             'observaciones' => ['nullable','string','max:3000'],
@@ -347,12 +372,14 @@ class PeluqueriaController extends Controller
             ]);
             if ($item->cita_id) PeluqueriaCita::whereKey($item->cita_id)->update(['estado'=>'finalizada']);
         });
-        return response()->json(['data'=>$item->fresh()->load(['cliente','servicio','personal','pagos'])]);
+        $relations = ['cliente','servicio','personal'];
+        if ($this->hasModule($request, 'pagos')) $relations[] = 'pagos';
+        return response()->json(['data'=>$item->fresh()->load($relations)]);
     }
 
     public function registrarPago(Request $request, int $id): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
+        $empresaId = $this->empresaId($request, 'pagos');
         $atencion = $this->scoped(PeluqueriaAtencion::class,$empresaId,$id);
         $data = $request->validate([
             'metodo' => ['required',Rule::in(['efectivo','qr','transferencia','tarjeta','otro'])],
@@ -367,9 +394,10 @@ class PeluqueriaController extends Controller
 
     public function historial(Request $request): JsonResponse
     {
-        $empresaId = $this->empresaId($request);
-        $q = PeluqueriaAtencion::with(['cliente:id,nombre,telefono','servicio:id,nombre','personal:id,nombre','pagos'])
-            ->where('empresa_id',$empresaId)->where('estado','finalizada')->latest('finalizada_at');
+        $empresaId = $this->empresaId($request, 'historial');
+        $relations = ['cliente:id,nombre,telefono','servicio:id,nombre','personal:id,nombre'];
+        if ($this->hasModule($request, 'pagos')) $relations[] = 'pagos';
+        $q = PeluqueriaAtencion::with($relations)->where('empresa_id',$empresaId)->where('estado','finalizada')->latest('finalizada_at');
         if ($request->filled('cliente_id')) $q->where('cliente_id',$request->integer('cliente_id'));
         return response()->json(['data'=>$q->limit(500)->get()]);
     }
