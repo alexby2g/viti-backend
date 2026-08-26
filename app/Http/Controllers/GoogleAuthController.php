@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Usuario;
+use App\Models\{Cliente, Empresa, Usuario};
 use App\Support\Audit;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -91,20 +93,54 @@ class GoogleAuthController extends Controller
             $usuario = Usuario::query()->where('google_sub', $sub)->first()
                 ?? Usuario::query()->whereRaw('LOWER(correo) = ?', [$email])->first();
 
-            if (!$usuario || $usuario->estado !== 'activo') {
+            $created = false;
+            if ($usuario && $usuario->estado !== 'activo') {
                 return $this->frontendRedirect('login', ['google' => 'needs_access']);
             }
 
-            if (!$usuario->google_sub) {
+            if (!$usuario) {
+                $displayName = trim((string) ($profile['name'] ?? Str::before($email, '@')));
+                $parts = preg_split('/\s+/', $displayName, 2);
+                $nombre = trim((string) ($parts[0] ?? 'Cliente')) ?: 'Cliente';
+                $apellido = trim((string) ($parts[1] ?? '')) ?: null;
+                $baseUsername = Str::slug(Str::before($email, '@'), '_') ?: 'cliente';
+                $username = $baseUsername;
+                $suffix = 1;
+                while (Usuario::query()->where('usuario', $username)->exists()) {
+                    $username = $baseUsername.'_'.(++$suffix);
+                }
+
+                $usuario = DB::transaction(function () use ($email, $sub, $nombre, $apellido, $username): Usuario {
+                    return Usuario::create([
+                        'nombre' => $nombre,
+                        'apellido' => $apellido,
+                        'usuario' => $username,
+                        'correo' => $email,
+                        'google_sub' => $sub,
+                        'password' => Hash::make(Str::random(64)),
+                        'rol' => 'cliente',
+                        'estado' => 'activo',
+                    ]);
+                });
+                $created = true;
+                Audit::log($request, 'cuenta_cliente_google_creada', $usuario, 'Se creó una cuenta de cliente desde Google; pendiente de completar el onboarding.');
+            } elseif (!$usuario->google_sub) {
                 $usuario->forceFill(['google_sub' => $sub])->save();
             }
 
             auth()->login($usuario, false);
-            $request->session()->regenerate();
+            if ($request->hasSession()) $request->session()->regenerate();
             $usuario->forceFill(['ultimo_acceso' => now()])->save();
-            Audit::log($request, 'inicio_sesion_google', $usuario, 'Inicio de sesión correcto mediante Google.');
+            Audit::log($request, 'inicio_sesion_google', $usuario, $created ? 'Cuenta de cliente creada y sesión iniciada mediante Google.' : 'Inicio de sesión correcto mediante Google.');
 
-            return $this->frontendRedirect('login', ['google' => 'success']);
+            if ($created && !$usuario->cliente_id) {
+                $token = Str::random(64);
+                Cache::put('viti:google:onboarding:'.$token, $usuario->id, now()->addMinutes(20));
+                return $this->frontendRedirect('onboarding/cliente', ['google' => 'created', 'token' => $token]);
+            }
+
+            $target = $usuario->rol === 'cliente' ? 'mi-cuenta' : 'login';
+            return $this->frontendRedirect($target, ['google' => 'success']);
         } catch (\Throwable $e) {
             report($e);
             return $this->frontendRedirect('login', ['google' => 'unexpected_error']);
