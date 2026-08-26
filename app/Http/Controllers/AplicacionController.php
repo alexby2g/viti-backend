@@ -211,16 +211,24 @@ class AplicacionController extends Controller
 
         if(!$data['heredar_modulos_plan']){
             abort_unless($planModules===null || count(array_diff($selected,$planModules))===0,422,'No puedes habilitar módulos que no pertenecen al plan VITI de la empresa.');
+        } else {
+            $selected=$planModules ?? $features->modulesForApp($application) ?? FeatureGateService::MODULES;
         }
 
         $current=(array)($application->configuracion??[]);
         $branding=array_merge((array)($current['branding']??[]),(array)($data['branding']??[]));
+        $branding=array_filter($branding,fn($value)=>$value!==null&&$value!=='');
         $application->update([
+            'modulos'=>$selected,
+            'icono'=>$branding['icono'] ?? $application->icono,
+            'color_primario'=>$branding['color_principal'] ?? $application->color_primario,
+            'color_secundario'=>$branding['color_secundario'] ?? $application->color_secundario,
+            'nombre'=>$branding['nombre'] ?? $application->nombre,
             'configuracion'=>[
                 ...$current,
                 'heredar_modulos_plan'=>(bool)$data['heredar_modulos_plan'],
                 'modulos'=>$selected,
-                'branding'=>array_filter($branding,fn($value)=>$value!==null&&$value!==''),
+                'branding'=>$branding,
                 'configurado_at'=>now()->toIso8601String(),
             ],
         ]);
