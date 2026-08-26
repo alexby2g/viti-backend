@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{AgrActionController,AgrVoiceController,AplicacionController,ArchivoController,AtencionSesionController,AuditoriaController,AuthController,BuzonController,ClientAppsController,ClientAuthController,ClientElectrofrioController,ClientPortalController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,ElectrofrioController,ElectrofrioCustomerAuthController,ElectrofrioCustomerPortalController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,OnboardingController,PeluqueriaController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,StorageController,PublicSolicitudController,UsuarioController};
+use App\Http\Controllers\{AgrActionController,AgrVoiceController,AplicacionController,ArchivoController,AtencionSesionController,AuditoriaController,AuthController,BuzonController,ClientAppsController,ClientAuthController,ClientElectrofrioController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,ElectrofrioController,ElectrofrioCustomerAuthController,ElectrofrioCustomerPortalController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,OnboardingController,PeluqueriaController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,SolicitudDecisionController,StorageController,PublicSolicitudController,UsuarioController};
 use Illuminate\Support\Facades\Route;
 
 Route::get('health', fn () => ['status'=>'ok','service'=>'VITI Core API','time'=>now()->toIso8601String()]);
@@ -93,14 +93,14 @@ Route::prefix('v1')->group(function (): void {
                 Route::get('resumen', [ClientElectrofrioController::class, 'resumen']);
                 Route::get('clientes', [ClientElectrofrioController::class, 'clientes']);
                 Route::post('clientes', [ClientElectrofrioController::class, 'guardarCliente']);
-                Route::put('clientes/{id}', [ClientElectrofrioController::class, 'actualizarCliente']);
-                Route::delete('clientes/{id}', [ClientElectrofrioController::class, 'eliminarCliente']);
-                Route::get('equipos', [ClientElectrofrioController::class, 'equipos']);
-                Route::post('equipos', [ClientElectrofrioController::class, 'guardarEquipo']);
-                Route::put('equipos/{id}', [ClientElectrofrioController::class, 'actualizarEquipo']);
-                Route::delete('equipos/{id}', [ClientElectrofrioController::class, 'eliminarEquipo']);
-                Route::get('tecnicos', [ClientElectrofrioController::class, 'tecnicos']);
-                Route::get('usuarios-negocio', [ClientElectrofrioController::class, 'usuariosNegocio']);
+                Route::put('clientes/{id}', [ClientElectrofrioController::class,'actualizarCliente']);
+                Route::delete('clientes/{id}', [ClientElectrofrioController::class,'eliminarCliente']);
+                Route::get('equipos', [ClientElectrofrioController::class,'equipos']);
+                Route::post('equipos', [ClientElectrofrioController::class,'guardarEquipo']);
+                Route::put('equipos/{id}', [ClientElectrofrioController::class,'actualizarEquipo']);
+                Route::delete('equipos/{id}', [ClientElectrofrioController::class,'eliminarEquipo']);
+                Route::get('tecnicos', [ClientElectrofrioController::class,'tecnicos']);
+                Route::get('usuarios-negocio', [ClientElectrofrioController::class,'usuariosNegocio']);
                 Route::post('tecnicos', [ClientElectrofrioController::class,'guardarTecnico']);
                 Route::put('tecnicos/{id}', [ClientElectrofrioController::class,'actualizarTecnico']);
                 Route::delete('tecnicos/{id}', [ClientElectrofrioController::class,'eliminarTecnico']);
@@ -167,6 +167,7 @@ Route::prefix('v1')->group(function (): void {
             Route::get('cuestionarios', [CuestionarioController::class,'index']);
             Route::get('cuestionarios/{cuestionario}', [CuestionarioController::class,'show']);
             Route::apiResource('solicitudes', SolicitudController::class)->parameters(['solicitudes'=>'solicitud']);
+            Route::post('solicitudes/{solicitud}/aprobar', [SolicitudDecisionController::class,'approve']);
             Route::put('solicitudes/{solicitud}/respuestas', [SolicitudController::class,'saveAnswers']);
             Route::post('solicitudes/{solicitud}/enviar', [SolicitudController::class,'submit']);
             Route::post('solicitudes/{solicitud}/rechazar', [SolicitudController::class,'reject']);
@@ -232,19 +233,19 @@ Route::prefix('v1')->group(function (): void {
                 Route::get('pagos', [ElectrofrioController::class,'pagos']);
                 Route::get('garantias', [ElectrofrioController::class,'garantias']);
                 Route::get('historial', [ElectrofrioController::class,'historial']);
-                Route::get('buzon', [BuzonController::class,'businessIndex'])->defaults('chat_context','electrofrio');
-                Route::get('buzon/{conversacion}', [BuzonController::class,'businessShow'])->defaults('chat_context','electrofrio');
-                Route::post('buzon/{conversacion}/mensajes', [BuzonController::class,'businessSend'])->defaults('chat_context','electrofrio');
-                Route::put('buzon/{conversacion}/mensajes/{mensaje}', [BuzonController::class,'editMessage'])->defaults('chat_context','electrofrio');
-                Route::delete('buzon/{conversacion}/mensajes/{mensaje}', [BuzonController::class,'deleteMessage'])->defaults('chat_context','electrofrio');
-                Route::post('buzon/{conversacion}/presencia', [BuzonController::class,'presence'])->defaults('chat_context','electrofrio');
-                Route::put('buzon/{conversacion}/estado', [BuzonController::class,'businessState'])->defaults('chat_context','electrofrio');
-                Route::delete('buzon/{conversacion}', [BuzonController::class,'businessDeleteConversation'])->defaults('chat_context','electrofrio');
-                Route::get('atencion/sesiones', [AtencionSesionController::class,'adminIndex'])->defaults('chat_context','electrofrio');
-                Route::post('atencion/sesiones', [AtencionSesionController::class,'adminCreate'])->defaults('chat_context','electrofrio');
-                Route::post('atencion/sesiones/{sesion}/aprobar', [AtencionSesionController::class,'approve'])->defaults('chat_context','electrofrio');
-                Route::post('atencion/sesiones/{sesion}/rechazar', [AtencionSesionController::class,'reject'])->defaults('chat_context','electrofrio');
-                Route::post('atencion/sesiones/{sesion}/finalizar', [AtencionSesionController::class,'finish'])->defaults('chat_context','electrofrio');
+                Route::get('buzon', [BuzonController::class,'adminIndex']);
+                Route::get('buzon/{conversacion}', [BuzonController::class,'adminShow']);
+                Route::post('buzon/{conversacion}/mensajes', [BuzonController::class,'adminSend']);
+                Route::put('buzon/{conversacion}/mensajes/{mensaje}', [BuzonController::class,'editMessage']);
+                Route::delete('buzon/{conversacion}/mensajes/{mensaje}', [BuzonController::class,'deleteMessage']);
+                Route::post('buzon/{conversacion}/presencia', [BuzonController::class,'presence']);
+                Route::put('buzon/{conversacion}/estado',[BuzonController::class,'adminState']);
+                Route::delete('buzon/{conversacion}',[BuzonController::class,'adminDeleteConversation']);
+                Route::get('atencion/sesiones',[AtencionSesionController::class,'adminIndex']);
+                Route::post('atencion/sesiones',[AtencionSesionController::class,'adminCreate']);
+                Route::post('atencion/sesiones/{sesion}/aprobar',[AtencionSesionController::class,'approve']);
+                Route::post('atencion/sesiones/{sesion}/rechazar',[AtencionSesionController::class,'reject']);
+                Route::post('atencion/sesiones/{sesion}/finalizar',[AtencionSesionController::class,'finish']);
             });
             Route::get('archivos', [ArchivoController::class,'index']);
             Route::post('archivos', [ArchivoController::class,'store']);
