@@ -63,6 +63,11 @@ class ApplicationMoldEditorTest extends TestCase
             ->assertJsonPath('data.configuracion.branding.nombre', 'Electrofrío Pro');
 
         $saved = $app->fresh();
+        $this->assertSame(['clientes', 'equipos'], $saved->modulos);
+        $this->assertSame('Electrofrío Pro', $saved->nombre);
+        $this->assertSame('ac_unit', $saved->icono);
+        $this->assertSame('#123456', $saved->color_primario);
+        $this->assertSame('#654321', $saved->color_secundario);
         $this->assertSame('Electrofrío Pro', $saved->configuracion['branding']['nombre']);
         $this->assertFalse($saved->acceso_cliente);
         $this->assertDatabaseHas('auditoria', [
