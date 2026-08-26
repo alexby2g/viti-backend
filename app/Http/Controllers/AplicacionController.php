@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{AlertaSaas,Aplicacion,Empresa,Proyecto,Usuario};
-use App\Services\FeatureGateService;
+use App\Services\{FeatureGateService,TenantContext};
 use App\Support\Audit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -30,19 +30,22 @@ class AplicacionController extends Controller
         return response()->json($q->paginate(20));
     }
 
-    public function store(Request $r, FeatureGateService $features): JsonResponse
+    public function store(Request $r, FeatureGateService $features, TenantContext $tenants): JsonResponse
     {
         $d=$this->data($r);
         $cloneFromId=$r->integer('clone_from_id');
         $base=Str::slug($d['nombre']);
         $slug=$base.'-'.Str::lower(Str::random(5));
 
-        $a=DB::transaction(function() use($d,$slug,$cloneFromId,$features): Aplicacion {
+        $a=DB::transaction(function() use($d,$slug,$cloneFromId,$features,$r,$tenants): Aplicacion {
             $empresa=Empresa::query()->with('planViti')->lockForUpdate()->findOrFail($d['empresa_id']);
+            $tenants->assertCanManage($r->user(),$empresa);
             $features->assertAppLimit($empresa);
 
             if($cloneFromId){
                 $source=Aplicacion::query()->findOrFail($cloneFromId);
+                $sourceEmpresa=$source->empresa;
+                abort_unless($sourceEmpresa && (int)$sourceEmpresa->id === (int)$empresa->id,403,'No puedes clonar una aplicación de otra empresa.');
                 $row=$source->only([
                     'catalogo_aplicacion_id','descripcion','icono','color_primario','color_secundario','modulos','configuracion',
                     'version','tipo','tecnologias','proveedor_hosting','notas','repositorio_url','url_administracion'
@@ -74,16 +77,21 @@ class AplicacionController extends Controller
         return response()->json(['data'=>$a->fresh()->load(['empresa','catalogo','origen'])],201);
     }
 
-    public function show(Aplicacion $aplicacion): JsonResponse
+    public function show(Aplicacion $aplicacion, TenantContext $tenants, Request $r): JsonResponse
     {
+        $tenants->assertCanManage($r->user(),$aplicacion->empresa);
         return response()->json(['data'=>$aplicacion->load([
             'empresa','proyecto','catalogo','suscripcion','mantenimientos','archivos','origen',
             'usuarios:id,nombre,apellido,usuario,correo'
         ])]);
     }
 
-    public function update(Request $r,Aplicacion $aplicacion): JsonResponse
+    public function update(Request $r,Aplicacion $aplicacion,TenantContext $tenants): JsonResponse
     {
+        $empresa=$aplicacion->empresa;
+        abort_unless($empresa,404,'La empresa de la aplicación no existe.');
+        $tenants->assertCanManage($r->user(),$empresa);
+
         if($r->boolean('integrar_usuario')){
             $data=$r->validate([
                 'user_id'=>['required','integer','exists:usuarios,id'],
@@ -118,8 +126,9 @@ class AplicacionController extends Controller
         return response()->json(['data'=>$aplicacion->fresh()->load(['empresa','catalogo','origen'])]);
     }
 
-    public function actualizarCiclo(Request $r,Aplicacion $aplicacion): JsonResponse
+    public function actualizarCiclo(Request $r,Aplicacion $aplicacion,TenantContext $tenants): JsonResponse
     {
+        $tenants->assertCanManage($r->user(),$aplicacion->empresa);
         $data=$r->validate([
             'entorno'=>['required',Rule::in(['desarrollo','beta','produccion'])],
             'estado'=>['required',Rule::in(['en_pruebas','activo','pausado','retirado'])],
@@ -141,8 +150,9 @@ class AplicacionController extends Controller
         return response()->json(['message'=>'Estado de la aplicación actualizado.','data'=>$aplicacion->fresh()->load(['empresa','suscripcion'])]);
     }
 
-    public function entregar(Request $r,Aplicacion $aplicacion): JsonResponse
+    public function entregar(Request $r,Aplicacion $aplicacion,TenantContext $tenants): JsonResponse
     {
+        $tenants->assertCanManage($r->user(),$aplicacion->empresa);
         if($aplicacion->acceso_cliente && $aplicacion->entregado_at){
             return response()->json(['message'=>'La aplicación ya estaba entregada.','data'=>$aplicacion->load('empresa')]);
         }
@@ -165,8 +175,9 @@ class AplicacionController extends Controller
         return response()->json(['message'=>'Aplicación entregada correctamente.','data'=>$aplicacion->fresh()->load('empresa')]);
     }
 
-    public function revocar(Request $r,Aplicacion $aplicacion): JsonResponse
+    public function revocar(Request $r,Aplicacion $aplicacion,TenantContext $tenants): JsonResponse
     {
+        $tenants->assertCanManage($r->user(),$aplicacion->empresa);
         if(!$aplicacion->acceso_cliente){
             return response()->json(['message'=>'El acceso de esta aplicación ya estaba revocado.','data'=>$aplicacion->load('empresa')]);
         }
@@ -175,8 +186,9 @@ class AplicacionController extends Controller
         return response()->json(['message'=>'Acceso revocado correctamente.','data'=>$aplicacion->fresh()->load('empresa')]);
     }
 
-    public function destroy(Request $r,Aplicacion $aplicacion): JsonResponse
+    public function destroy(Request $r,Aplicacion $aplicacion,TenantContext $tenants): JsonResponse
     {
+        $tenants->assertCanManage($r->user(),$aplicacion->empresa);
         abort_if($aplicacion->mantenimientos()->whereNotIn('estado',['resuelto','cerrado'])->exists(),422,'La aplicación tiene mantenimientos abiertos.');
         $aplicacion->delete();Audit::log($r,'aplicacion_eliminada',$aplicacion);return response()->json(status:204);
     }
