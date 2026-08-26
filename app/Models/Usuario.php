@@ -16,7 +16,7 @@ class Usuario extends Authenticatable
     protected $appends = ['foto_url'];
 
     protected $fillable = [
-        'cliente_id', 'electrofrio_cliente_id', 'nombre', 'apellido', 'usuario', 'documento', 'telefono', 'correo', 'foto_path', 'password', 'rol', 'estado', 'ultimo_acceso',
+        'cliente_id', 'electrofrio_cliente_id', 'nombre', 'apellido', 'usuario', 'documento', 'telefono', 'correo', 'google_sub', 'foto_path', 'password', 'rol', 'estado', 'ultimo_acceso',
     ];
 
     protected $hidden = ['password', 'remember_token'];

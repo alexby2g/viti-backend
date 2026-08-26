@@ -20,4 +20,11 @@ return [
         'model_id' => env('ELEVENLABS_MODEL_ID', 'eleven_multilingual_v2'),
         'output_format' => env('ELEVENLABS_OUTPUT_FORMAT', 'mp3_44100_128'),
     ],
+
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect' => env('GOOGLE_REDIRECT_URI'),
+        'frontend_url' => env('VITI_FRONTEND_URL'),
+    ],
 ];
