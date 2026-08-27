@@ -19,8 +19,6 @@ class SubscriptionAccessService
         $trialEnd = $subscription->prueba_hasta?->copy()->startOfDay();
         $firstChargeComplete = $this->firstChargeComplete($subscription);
 
-        // El primer cobro pendiente bloquea el acceso aunque la fecha general
-        // de vencimiento de la suscripción todavía no haya llegado.
         if ($subscription->primer_cobro_monto !== null && !$firstChargeComplete) {
             if ($subscription->estado !== 'suspendida') {
                 $subscription->update(['estado' => 'suspendida']);
@@ -78,9 +76,6 @@ class SubscriptionAccessService
             : false;
         $firstChargePaid = (bool)$subscription->primer_cobro_pagado || $firstChargeComplete;
 
-        // Un primer cobro pendiente tiene prioridad sobre el periodo de prueba:
-        // refresh() ya suspende la suscripción y statusFor() no debe volver a
-        // conceder acceso solo porque prueba_hasta todavía no haya vencido.
         $inTrial = $trialEnd
             && $today->lte($trialEnd)
             && ($firstChargeAmount === null || $firstChargeComplete);
@@ -88,6 +83,9 @@ class SubscriptionAccessService
         $daysToDue = $due && $today->lte($due) ? (int)$today->diffInDays($due) : null;
         $daysLate = $due && $today->gt($due) ? (int)$due->diffInDays($today) : 0;
         $stage = $this->stage($subscription,$inTrial,$daysToDue);
+        $subscriptionMayUse = $inTrial || in_array($subscription->estado,['activa','gracia'],true);
+        $manualBlock = (bool)$app->acceso_bloqueado_manual;
+        $canUse = $subscriptionMayUse && !$manualBlock && $app->estado !== 'retirado';
 
         return [
             'id'=>$subscription->id,
@@ -112,18 +110,51 @@ class SubscriptionAccessService
             'dias_mora'=>$daysLate,
             'estado'=>$subscription->estado,
             'etapa_cobro'=>$stage,
+            'bloqueado_manual'=>$manualBlock,
+            'motivo_bloqueo_manual'=>$app->bloqueo_manual_motivo,
+            'bloqueado_manual_at'=>$app->bloqueado_manualmente_at?->toISOString(),
             'requiere_pago'=>!$inTrial && $subscription->estado !== 'cancelada',
-            'puede_usar'=>$inTrial || in_array($subscription->estado,['activa','gracia'],true),
+            'puede_usar'=>$canUse,
             'mensaje_cobro'=>$this->message($stage,$daysToDue,$daysLate,$graceEnd?->format('Y-m-d')),
         ];
     }
 
     public function assertCanUse(Aplicacion $app): void
     {
+        if ($app->acceso_bloqueado_manual) {
+            abort(403, 'El acceso a esta aplicación fue bloqueado manualmente por el administrador.');
+        }
+
+        if ($app->estado === 'retirado') {
+            abort(410, 'Esta aplicación ya no está disponible.');
+        }
+
         $status = $this->statusFor($app);
         if (!$status) return;
 
         abort_unless($status['puede_usar'], 402, 'Tu suscripción VITI está suspendida. Regulariza el pago para volver a utilizar la aplicación.');
+    }
+
+    public function blockManually(Aplicacion $app, int $userId, string $reason): Aplicacion
+    {
+        $app->update([
+            'acceso_bloqueado_manual' => true,
+            'bloqueo_manual_motivo' => trim($reason),
+            'bloqueado_manualmente_at' => now(),
+            'bloqueado_manualmente_por' => $userId,
+        ]);
+        return $app->refresh();
+    }
+
+    public function unblockManually(Aplicacion $app): Aplicacion
+    {
+        $app->update([
+            'acceso_bloqueado_manual' => false,
+            'bloqueo_manual_motivo' => null,
+            'bloqueado_manualmente_at' => null,
+            'bloqueado_manualmente_por' => null,
+        ]);
+        return $app->refresh();
     }
 
     private function firstChargeConfirmedAmount(Suscripcion $subscription, ?float $amount): float
