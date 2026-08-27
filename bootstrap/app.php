@@ -11,6 +11,13 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Support\Facades\Route;
 
+// Compatibilidad temporal para rutas legacy que todavía referencian estos
+// controladores con nombres no importados en routes/api.php. Evita romper el
+// arranque del router mientras se consolida ese archivo de rutas.
+class_alias(\App\Http\Controllers\ClientPortalController::class, 'ClientPortalController');
+class_alias(\App\Http\Controllers\ClientProjectController::class, 'ClientProjectController');
+class_alias(\App\Http\Controllers\ClientAppsController::class, 'ClientAppsController');
+
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
