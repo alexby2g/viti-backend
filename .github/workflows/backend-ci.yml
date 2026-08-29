@@ -129,7 +129,8 @@ jobs:
           docker exec viti-pg pg_restore --list /tmp/viti-ci.dump > restore-archive.list
           test -s restore-archive.list
           grep -q "backup_recovery_marker" restore-archive.list
-          grep -q "system_backups" restore-archive.list
+          grep -q "archivos" restore-archive.list
+          grep -q "auditoria" restore-archive.list
 
       - name: Restore into a clean database
         run: |
@@ -141,10 +142,12 @@ jobs:
         run: |
           marker="$(docker exec viti-pg psql -U postgres -d viti_restore -tAc "SELECT value FROM backup_recovery_marker WHERE id = 1")"
           migrations="$(docker exec viti-pg psql -U postgres -d viti_restore -tAc "SELECT count(*) FROM migrations")"
-          backups_table="$(docker exec viti-pg psql -U postgres -d viti_restore -tAc "SELECT to_regclass('public.system_backups') IS NOT NULL")"
+          archivos_table="$(docker exec viti-pg psql -U postgres -d viti_restore -tAc "SELECT to_regclass('public.archivos') IS NOT NULL")"
+          auditoria_table="$(docker exec viti-pg psql -U postgres -d viti_restore -tAc "SELECT to_regclass('public.auditoria') IS NOT NULL")"
           test "$marker" = "viti-recovery-ok"
           test "$migrations" -gt 0
-          test "$backups_table" = "t"
+          test "$archivos_table" = "t"
+          test "$auditoria_table" = "t"
 
       - name: Recovery drill summary
         run: |
