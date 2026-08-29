@@ -26,14 +26,13 @@ return Application::configure(basePath: dirname(__DIR__))
             Route::middleware('api')->prefix('api/v1')->group(base_path('routes/chat-privacy.php'));
             Route::middleware('api')->prefix('api/v1')->group(base_path('routes/support.php'));
             Route::middleware('api')->prefix('api/v1')->group(base_path('routes/native-security.php'));
+            Route::middleware('api')->prefix('api/v1')->group(base_path('routes/fitfamily.php'));
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustProxies(at: '*');
         $middleware->statefulApi();
         $middleware->append(SecurityHeaders::class);
-        // Retire unavailable public request links before draft protection can
-        // resolve a missing token and turn the request into a 404.
         $middleware->append(RejectLegacyVitiFlows::class);
         $middleware->append(ProtectPublicDraftRevision::class);
         $middleware->append(UseActiveCompanyForNewRequest::class);
