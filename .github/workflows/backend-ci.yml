@@ -6,6 +6,10 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   laravel-check:
     runs-on: ubuntu-latest
@@ -31,29 +35,68 @@ jobs:
           coverage: none
 
       - name: Install dependencies
-        run: composer install --no-interaction --prefer-dist --no-progress
-
-      - name: Validate PHP syntax
-        run: find app bootstrap config database routes -name '*.php' -print0 | xargs -0 -n1 php -l
-
-      - name: Validate database migrations
-        run: php artisan migrate:fresh --force
-
-      - name: Boot Laravel routes
-        run: php artisan route:list --except-vendor
-
-      - name: Run feature tests
+        id: composer
         shell: bash
         run: |
           set -o pipefail
-          php artisan test 2>&1 | tee ci-test-output.log
+          composer install --no-interaction --prefer-dist --no-progress 2>&1 | tee ci-full.log
+
+      - name: Validate PHP syntax
+        id: syntax
+        shell: bash
+        run: |
+          set -o pipefail
+          find app bootstrap config database routes -name '*.php' -print0 | xargs -0 -n1 php -l 2>&1 | tee -a ci-full.log
+
+      - name: Validate database migrations
+        id: migrations
+        shell: bash
+        run: |
+          set -o pipefail
+          php artisan migrate:fresh --force 2>&1 | tee -a ci-full.log
+
+      - name: Boot Laravel routes
+        id: routes
+        shell: bash
+        run: |
+          set -o pipefail
+          php artisan route:list --except-vendor 2>&1 | tee -a ci-full.log
+
+      - name: Run feature tests
+        id: tests
+        shell: bash
+        run: |
+          set -o pipefail
+          php artisan test 2>&1 | tee -a ci-full.log
+
+      - name: Publish laravel-check diagnostic
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "## Backend CI diagnostic"
+            echo ""
+            echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "- Commit: $GITHUB_SHA"
+            echo "- Job: laravel-check"
+            echo ""
+            echo '```text'
+            tail -n 250 ci-full.log 2>/dev/null || echo 'No diagnostic log was produced.'
+            echo '```'
+          } > ci-issue.md
+          existing="$(gh issue list --state open --search "CI diagnostic $GITHUB_RUN_ID" --json number --jq '.[0].number' 2>/dev/null || true)"
+          if [ -z "$existing" ]; then
+            gh issue create --title "CI diagnostic $GITHUB_RUN_ID — laravel-check" --body-file ci-issue.md
+          fi
 
       - name: Upload failing test diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: backend-test-diagnostics
-          path: ci-test-output.log
+          name: backend-test-diagnostics-${{ github.run_id }}
+          path: ci-full.log
           if-no-files-found: warn
           retention-days: 7
 
@@ -86,15 +129,21 @@ jobs:
           coverage: none
 
       - name: Install dependencies
-        run: composer install --no-interaction --prefer-dist --no-progress
-
-      - name: Start isolated PostgreSQL 18
+        id: composer
         shell: bash
         run: |
+          set -o pipefail
+          composer install --no-interaction --prefer-dist --no-progress 2>&1 | tee recovery-full.log
+
+      - name: Start isolated PostgreSQL 18
+        id: postgres
+        shell: bash
+        run: |
+          set -o pipefail
           docker run -d --name viti-pg \
             -e POSTGRES_PASSWORD=postgres \
             -e POSTGRES_DB=viti_ci \
-            -p 5432:5432 postgres:18
+            -p 5432:5432 postgres:18 | tee -a recovery-full.log
 
           stable=0
           for i in $(seq 1 45); do
@@ -102,7 +151,7 @@ jobs:
               && [ "$(docker exec viti-pg psql -U postgres -d viti_ci -tAc 'SELECT 1' 2>/dev/null)" = "1" ]; then
               stable=$((stable + 1))
               if [ "$stable" -ge 3 ]; then
-                echo "PostgreSQL estable durante 3 comprobaciones consecutivas."
+                echo "PostgreSQL estable durante 3 comprobaciones consecutivas." | tee -a recovery-full.log
                 exit 0
               fi
             else
@@ -111,51 +160,92 @@ jobs:
             sleep 1
           done
 
-          echo "PostgreSQL no alcanzó un estado estable."
-          docker ps -a --filter name=viti-pg
-          docker logs viti-pg
+          echo "PostgreSQL no alcanzó un estado estable." | tee -a recovery-full.log
+          docker ps -a --filter name=viti-pg | tee -a recovery-full.log
+          docker logs viti-pg 2>&1 | tee -a recovery-full.log
           exit 1
 
       - name: Build VITI schema and recovery marker
+        id: schema
+        shell: bash
         run: |
           set -o pipefail
-          php artisan migrate:fresh --force 2>&1 | tee migration-pg-output.log
+          php artisan migrate:fresh --force 2>&1 | tee -a recovery-full.log
           docker exec viti-pg psql -U postgres -d viti_ci -v ON_ERROR_STOP=1 -c \
-            "CREATE TABLE backup_recovery_marker (id integer PRIMARY KEY, value text NOT NULL); INSERT INTO backup_recovery_marker (id, value) VALUES (1, 'viti-recovery-ok');"
+            "CREATE TABLE backup_recovery_marker (id integer PRIMARY KEY, value text NOT NULL); INSERT INTO backup_recovery_marker (id, value) VALUES (1, 'viti-recovery-ok');" 2>&1 | tee -a recovery-full.log
 
       - name: Create and inspect PostgreSQL archive
+        id: archive
+        shell: bash
         run: |
+          set -o pipefail
           docker exec viti-pg pg_dump -U postgres -d viti_ci \
-            --format=custom --no-owner --no-privileges --file=/tmp/viti-ci.dump
-          docker exec viti-pg pg_restore --list /tmp/viti-ci.dump > restore-archive.list
+            --format=custom --no-owner --no-privileges --file=/tmp/viti-ci.dump 2>&1 | tee -a recovery-full.log
+          docker exec viti-pg pg_restore --list /tmp/viti-ci.dump 2>&1 | tee restore-archive.list
+          cp restore-archive.list restore-archive-copy.list
+          cat restore-archive.list >> recovery-full.log
           test -s restore-archive.list
           grep -q "backup_recovery_marker" restore-archive.list
           grep -q "archivos" restore-archive.list
           grep -q "auditoria" restore-archive.list
 
       - name: Restore into a clean database
+        id: restore
+        shell: bash
         run: |
-          docker exec viti-pg createdb -U postgres viti_restore
+          set -o pipefail
+          docker exec viti-pg createdb -U postgres viti_restore 2>&1 | tee -a recovery-full.log
           docker exec viti-pg pg_restore -U postgres -d viti_restore \
-            --no-owner --no-privileges /tmp/viti-ci.dump
+            --no-owner --no-privileges /tmp/viti-ci.dump 2>&1 | tee -a recovery-full.log
 
       - name: Verify restored schema and data
+        id: verify
+        shell: bash
         run: |
-          marker="$(docker exec viti-pg psql -U postgres -d viti_restore -tAc "SELECT value FROM backup_recovery_marker WHERE id = 1")"
-          migrations="$(docker exec viti-pg psql -U postgres -d viti_restore -tAc "SELECT count(*) FROM migrations")"
-          archivos_table="$(docker exec viti-pg psql -U postgres -d viti_restore -tAc "SELECT to_regclass('public.archivos') IS NOT NULL")"
-          auditoria_table="$(docker exec viti-pg psql -U postgres -d viti_restore -tAc "SELECT to_regclass('public.auditoria') IS NOT NULL")"
+          set -o pipefail
+          marker="$(docker exec viti-pg psql -U postgres -d viti_restore -tAc "SELECT value FROM backup_recovery_marker WHERE id = 1" 2>&1 | tee -a recovery-full.log)"
+          migrations="$(docker exec viti-pg psql -U postgres -d viti_restore -tAc "SELECT count(*) FROM migrations" 2>&1 | tee -a recovery-full.log)"
+          archivos_table="$(docker exec viti-pg psql -U postgres -d viti_restore -tAc "SELECT to_regclass('public.archivos') IS NOT NULL" 2>&1 | tee -a recovery-full.log)"
+          auditoria_table="$(docker exec viti-pg psql -U postgres -d viti_restore -tAc "SELECT to_regclass('public.auditoria') IS NOT NULL" 2>&1 | tee -a recovery-full.log)"
+          echo "marker=$marker" | tee -a recovery-full.log
+          echo "migrations=$migrations" | tee -a recovery-full.log
+          echo "archivos_table=$archivos_table" | tee -a recovery-full.log
+          echo "auditoria_table=$auditoria_table" | tee -a recovery-full.log
           test "$marker" = "viti-recovery-ok"
           test "$migrations" -gt 0
           test "$archivos_table" = "t"
           test "$auditoria_table" = "t"
 
+      - name: Publish backup-recovery diagnostic
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "## Backend CI diagnostic"
+            echo ""
+            echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "- Commit: $GITHUB_SHA"
+            echo "- Job: backup-restore-drill"
+            echo ""
+            echo '```text'
+            tail -n 300 recovery-full.log 2>/dev/null || echo 'No diagnostic log was produced.'
+            echo '```'
+          } > recovery-issue.md
+          existing="$(gh issue list --state open --search "CI diagnostic $GITHUB_RUN_ID" --json number --jq '.[0].number' 2>/dev/null || true)"
+          if [ -z "$existing" ]; then
+            gh issue create --title "CI diagnostic $GITHUB_RUN_ID — backup-restore-drill" --body-file recovery-issue.md
+          fi
+
       - name: Upload recovery diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: backend-recovery-diagnostics
-          path: migration-pg-output.log
+          name: backend-recovery-diagnostics-${{ github.run_id }}
+          path: |
+            recovery-full.log
+            restore-archive.list
           if-no-files-found: warn
           retention-days: 7
 
