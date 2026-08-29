@@ -1,0 +1,26 @@
+name: Hosted Runner Probe
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  standard:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Probe standard runner
+        run: |
+          echo "standard-runner-ok"
+          uname -a
+          date -u
+
+  slim:
+    runs-on: ubuntu-slim
+    steps:
+      - name: Probe slim runner
+        run: |
+          echo "slim-runner-ok"
+          uname -a
+          date -u
