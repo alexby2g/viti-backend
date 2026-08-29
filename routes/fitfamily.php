@@ -10,22 +10,22 @@ Route::prefix('fitfamily')->group(function (): void {
         'time' => now()->toIso8601String(),
     ]);
 
+    // Store público: no requiere cuenta para explorar ni comprar.
     Route::get('/catalogo', [FitFamilyController::class, 'catalog']);
     Route::get('/catalogo/{slug}', [FitFamilyController::class, 'category']);
     Route::get('/pedidos/{numero}', [FitFamilyOrderController::class, 'track']);
+    Route::get('/carrito', [FitFamilyController::class, 'cartIndex']);
+    Route::post('/carrito/items', [FitFamilyController::class, 'addToCart']);
+    Route::patch('/carrito/items/{item}', [FitFamilyController::class, 'updateCart']);
+    Route::delete('/carrito/items/{item}', [FitFamilyController::class, 'deleteCart']);
+    Route::post('/carrito/checkout', [FitFamilyController::class, 'checkout']);
 
     Route::post('/auth/login', [FitFamilyAuthController::class, 'login'])->middleware('throttle:login');
 
     Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('/auth/me', [FitFamilyAuthController::class, 'me']);
         Route::post('/auth/logout', [FitFamilyAuthController::class, 'logout']);
-
-        Route::get('/carrito', [FitFamilyController::class, 'cartIndex']);
         Route::get('/mis-pedidos', [FitFamilyController::class, 'history']);
-        Route::post('/carrito/items', [FitFamilyController::class, 'addToCart']);
-        Route::patch('/carrito/items/{item}', [FitFamilyController::class, 'updateCart']);
-        Route::delete('/carrito/items/{item}', [FitFamilyController::class, 'deleteCart']);
-        Route::post('/carrito/checkout', [FitFamilyController::class, 'checkout']);
 
         Route::prefix('admin')->group(function (): void {
             Route::get('/dashboard', [FitFamilyController::class, 'dashboard']);
