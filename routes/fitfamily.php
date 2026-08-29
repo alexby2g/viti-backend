@@ -1,14 +1,10 @@
 <?php
 
-use App\Http\Controllers\{FitFamilyAuthController, FitFamilyController, FitFamilyGuestController, FitFamilyOrderController, FitFamilyPagoController};
+use App\Http\Controllers\{FitFamilyAuthController, FitFamilyController, FitFamilyGuestController, FitFamilyHealthController, FitFamilyOrderController, FitFamilyPagoController};
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('fitfamily')->group(function (): void {
-    Route::get('/health', fn () => [
-        'status' => 'ok',
-        'service' => 'VITI FitFamily',
-        'time' => now()->toIso8601String(),
-    ]);
+    Route::get('/health', FitFamilyHealthController::class);
 
     // Store público: no requiere cuenta para explorar ni comprar.
     Route::get('/catalogo', [FitFamilyController::class, 'catalog']);
