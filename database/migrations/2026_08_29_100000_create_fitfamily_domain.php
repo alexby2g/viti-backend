@@ -21,10 +21,12 @@ return new class extends Migration {
             ]
         );
 
+        // During the migration window the application relation may be filled
+        // by the provisioning step. Company isolation remains mandatory.
         Schema::create('fitfamily_categorias', function (Blueprint $t): void {
             $t->id();
             $t->foreignId('empresa_id')->constrained('empresas')->cascadeOnDelete();
-            $t->foreignId('aplicacion_id')->constrained('aplicaciones')->cascadeOnDelete();
+            $t->foreignId('aplicacion_id')->nullable()->constrained('aplicaciones')->nullOnDelete();
             $t->string('nombre', 120);
             $t->string('slug', 140);
             $t->text('descripcion')->nullable();
@@ -33,13 +35,13 @@ return new class extends Migration {
             $t->integer('orden')->default(0);
             $t->timestamps();
             $t->unique(['empresa_id', 'aplicacion_id', 'slug']);
-            $t->index(['empresa_id', 'aplicacion_id', 'activo']);
+            $t->index(['empresa_id', 'activo']);
         });
 
         Schema::create('fitfamily_productos', function (Blueprint $t): void {
             $t->id();
             $t->foreignId('empresa_id')->constrained('empresas')->cascadeOnDelete();
-            $t->foreignId('aplicacion_id')->constrained('aplicaciones')->cascadeOnDelete();
+            $t->foreignId('aplicacion_id')->nullable()->constrained('aplicaciones')->nullOnDelete();
             $t->foreignId('categoria_id')->constrained('fitfamily_categorias')->restrictOnDelete();
             $t->string('nombre', 180);
             $t->string('slug', 200);
@@ -52,13 +54,13 @@ return new class extends Migration {
             $t->boolean('visible')->default(true);
             $t->timestamps();
             $t->unique(['empresa_id', 'aplicacion_id', 'slug']);
-            $t->index(['empresa_id', 'aplicacion_id', 'visible', 'disponible']);
+            $t->index(['empresa_id', 'visible', 'disponible']);
         });
 
         Schema::create('fitfamily_carritos', function (Blueprint $t): void {
             $t->id();
             $t->foreignId('empresa_id')->constrained('empresas')->cascadeOnDelete();
-            $t->foreignId('aplicacion_id')->constrained('aplicaciones')->cascadeOnDelete();
+            $t->foreignId('aplicacion_id')->nullable()->constrained('aplicaciones')->nullOnDelete();
             $t->foreignId('usuario_id')->nullable()->constrained('usuarios')->nullOnDelete();
             $t->string('session_token', 100)->nullable();
             $t->string('estado', 20)->default('activo');
@@ -79,7 +81,7 @@ return new class extends Migration {
         Schema::create('fitfamily_pedidos', function (Blueprint $t): void {
             $t->id();
             $t->foreignId('empresa_id')->constrained('empresas')->cascadeOnDelete();
-            $t->foreignId('aplicacion_id')->constrained('aplicaciones')->cascadeOnDelete();
+            $t->foreignId('aplicacion_id')->nullable()->constrained('aplicaciones')->nullOnDelete();
             $t->foreignId('cliente_id')->constrained('clientes')->restrictOnDelete();
             $t->string('numero', 40)->unique();
             $t->string('estado', 30)->default('pendiente');
@@ -114,7 +116,7 @@ return new class extends Migration {
         Schema::create('fitfamily_configuracion', function (Blueprint $t): void {
             $t->id();
             $t->foreignId('empresa_id')->constrained('empresas')->cascadeOnDelete();
-            $t->foreignId('aplicacion_id')->constrained('aplicaciones')->cascadeOnDelete();
+            $t->foreignId('aplicacion_id')->nullable()->constrained('aplicaciones')->nullOnDelete();
             $t->string('clave', 120);
             $t->text('valor')->nullable();
             $t->timestamps();
