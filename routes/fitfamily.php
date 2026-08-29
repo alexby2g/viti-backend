@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{FitFamilyAuthController, FitFamilyController, FitFamilyOrderController, FitFamilyPagoController};
+use App\Http\Controllers\{FitFamilyAuthController, FitFamilyController, FitFamilyGuestController, FitFamilyOrderController, FitFamilyPagoController};
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('fitfamily')->group(function (): void {
@@ -14,11 +14,11 @@ Route::prefix('fitfamily')->group(function (): void {
     Route::get('/catalogo', [FitFamilyController::class, 'catalog']);
     Route::get('/catalogo/{slug}', [FitFamilyController::class, 'category']);
     Route::get('/pedidos/{numero}', [FitFamilyOrderController::class, 'track']);
-    Route::get('/carrito', [FitFamilyController::class, 'cartIndex']);
-    Route::post('/carrito/items', [FitFamilyController::class, 'addToCart']);
-    Route::patch('/carrito/items/{item}', [FitFamilyController::class, 'updateCart']);
-    Route::delete('/carrito/items/{item}', [FitFamilyController::class, 'deleteCart']);
-    Route::post('/carrito/checkout', [FitFamilyController::class, 'checkout']);
+    Route::get('/carrito', [FitFamilyGuestController::class, 'index']);
+    Route::post('/carrito/items', [FitFamilyGuestController::class, 'add']);
+    Route::patch('/carrito/items/{item}', [FitFamilyGuestController::class, 'update']);
+    Route::delete('/carrito/items/{item}', [FitFamilyGuestController::class, 'delete']);
+    Route::post('/carrito/checkout', [FitFamilyGuestController::class, 'checkout']);
 
     Route::post('/auth/login', [FitFamilyAuthController::class, 'login'])->middleware('throttle:login');
 
