@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   laravel-check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       APP_ENV: testing
@@ -86,10 +86,7 @@ jobs:
             tail -n 250 ci-full.log 2>/dev/null || echo 'No diagnostic log was produced.'
             echo '```'
           } > ci-issue.md
-          existing="$(gh issue list --state open --search "CI diagnostic $GITHUB_RUN_ID" --json number --jq '.[0].number' 2>/dev/null || true)"
-          if [ -z "$existing" ]; then
-            gh issue create --title "CI diagnostic $GITHUB_RUN_ID — laravel-check" --body-file ci-issue.md
-          fi
+          gh issue create --title "CI diagnostic $GITHUB_RUN_ID — laravel-check" --body-file ci-issue.md || true
 
       - name: Upload failing test diagnostics
         if: failure()
@@ -101,7 +98,7 @@ jobs:
           retention-days: 7
 
   backup-restore-drill:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 12
     env:
       APP_ENV: testing
@@ -233,10 +230,7 @@ jobs:
             tail -n 300 recovery-full.log 2>/dev/null || echo 'No diagnostic log was produced.'
             echo '```'
           } > recovery-issue.md
-          existing="$(gh issue list --state open --search "CI diagnostic $GITHUB_RUN_ID" --json number --jq '.[0].number' 2>/dev/null || true)"
-          if [ -z "$existing" ]; then
-            gh issue create --title "CI diagnostic $GITHUB_RUN_ID — backup-restore-drill" --body-file recovery-issue.md
-          fi
+          gh issue create --title "CI diagnostic $GITHUB_RUN_ID — backup-restore-drill" --body-file recovery-issue.md || true
 
       - name: Upload recovery diagnostics
         if: failure()
