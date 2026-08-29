@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Aplicacion;
 use App\Models\Empresa;
 use Illuminate\Http\Request;
 
@@ -21,6 +22,16 @@ class FitFamilyContext
             } elseif ($user->negocios()->whereKey($requestedId)->wherePivot('activo', true)->exists()) {
                 $configuredId = $requestedId;
             }
+        }
+
+        // Production can omit FITFAMILY_EMPRESA_ID. The platform seeder
+        // provisions a canonical FitFamily application and its tenant.
+        if (!$configuredId) {
+            $application = Aplicacion::query()
+                ->where('slug', config('fitfamily.application_slug', 'fitfamily'))
+                ->whereHas('catalogo', fn ($query) => $query->where('clave', config('fitfamily.catalog_key')))
+                ->first();
+            $configuredId = $application?->empresa_id;
         }
 
         abort_unless($configuredId, 503, 'FitFamily todavía no tiene una empresa configurada.');
