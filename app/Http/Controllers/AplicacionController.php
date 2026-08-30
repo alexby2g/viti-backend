@@ -93,15 +93,21 @@ class AplicacionController extends Controller
             ]);
 
             $user=Usuario::findOrFail($data['user_id']);
-            abort_unless(
-                $aplicacion->empresa->usuarios()->whereKey($user->id)->wherePivot('activo',true)->exists(),
-                422,
-                'El usuario debe pertenecer primero a la empresa de esta aplicación.'
-            );
+            $isSuperAdmin=$r->user()?->isSuperAdmin();
+
+            // A superadmin is a platform-level operator and does not need
+            // to be attached to the tenant before integrating an application user.
+            if (!$isSuperAdmin) {
+                abort_unless(
+                    $aplicacion->empresa->usuarios()->whereKey($user->id)->wherePivot('activo',true)->exists(),
+                    422,
+                    'El usuario debe pertenecer primero a la empresa de esta aplicación.'
+                );
+            }
 
             $aplicacion->usuarios()->syncWithoutDetaching([
                 $user->id=>[
-                    'rol'=>$data['role'] ?? 'consulta',
+                    'rol'=>$data['role'] ?? ($user->isSuperAdmin() ? 'administrador' : 'consulta'),
                     'permisos'=>isset($data['permisos']) ? json_encode($data['permisos']) : null,
                     'activo'=>$data['activo'] ?? true,
                 ]
