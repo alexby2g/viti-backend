@@ -124,7 +124,7 @@ class SolicitudController extends Controller
             $request,
             'solicitud_rechazada',
             $solicitud,
-            'La solicitud fue rechazada por AGR Studio.',
+            'La solicitud fue rechazada en VITI.',
             ['motivo' => trim($data['motivo'])]
         );
 

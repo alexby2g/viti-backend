@@ -28,7 +28,7 @@ class AuthController extends Controller
             'password' => ['required','string'],
             'codigo_secreto' => ['nullable','string','max:120'],
         ], [
-            'acceso.required'=>'Ingresa tu usuario, teléfono o número de CI.',
+            'acceso.required'=>'Ingresa tu usuario, celular, correo o número de CI.',
             'password.required'=>'Ingresa tu contraseña.',
         ]);
 
@@ -42,7 +42,8 @@ class AuthController extends Controller
         $usuario = Usuario::query()
             ->where('estado','activo')
             ->where(function ($query) use ($username, $numericAccess): void {
-                $query->whereRaw('LOWER(usuario) = ?', [$username]);
+                $query->whereRaw('LOWER(usuario) = ?', [$username])
+                    ->orWhereRaw('LOWER(correo) = ?', [$username]);
                 if ($numericAccess !== null) {
                     $query->orWhere('telefono', $numericAccess)
                         ->orWhere('documento', $numericAccess)
@@ -53,15 +54,24 @@ class AuthController extends Controller
 
         if (!$usuario || !Hash::check($data['password'], $usuario->password)) {
             $this->auditFailedLogin($request, $usuario, 'credenciales_invalidas', $access);
-            return response()->json(['message'=>'El usuario, teléfono, CI o contraseña no son correctos.'], 422);
+            return response()->json(['message'=>'El usuario, celular, correo, CI o contraseña no son correctos.'], 422);
         }
 
         if ($usuario->isSuperAdmin()) {
             $expected = (string) config('app.admin_secret');
             if ($expected === '') return response()->json(['message'=>'El servidor no tiene configurado el código secreto administrativo.'],500);
-            if (!hash_equals($expected, (string)($data['codigo_secreto'] ?? ''))) {
+            if (blank($data['codigo_secreto'] ?? null)) {
+                return response()->json([
+                    'message'=>'Confirma el código de seguridad para continuar.',
+                    'requires_admin_secret'=>true,
+                ], 428);
+            }
+            if (!hash_equals($expected, (string)$data['codigo_secreto'])) {
                 $this->auditFailedLogin($request, $usuario, 'codigo_administrativo_incorrecto', $access);
-                return response()->json(['message'=>'El código secreto administrativo es incorrecto.'], 422);
+                return response()->json([
+                    'message'=>'El código de seguridad no es correcto.',
+                    'requires_admin_secret'=>true,
+                ], 422);
             }
         }
 

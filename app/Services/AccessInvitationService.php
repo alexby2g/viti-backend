@@ -33,6 +33,14 @@ class AccessInvitationService
                 ]);
             }
 
+            if (Usuario::query()->where('correo', $email)->where(function ($query) use ($cliente): void {
+                $query->whereNull('cliente_id')->orWhere('cliente_id', '!=', $cliente->id);
+            })->exists()) {
+                throw ValidationException::withMessages([
+                    'correo' => 'Ese correo ya pertenece a otra cuenta VITI. Corrige el responsable antes de aprobar.',
+                ]);
+            }
+
             $active = InvitacionCliente::query()
                 ->where('solicitud_id', $solicitud->id)
                 ->whereIn('estado', ['pendiente','enviada'])

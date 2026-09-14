@@ -36,7 +36,7 @@ class SetupController extends Controller
             'usuario.alpha_dash' => 'El usuario solo puede contener letras, números, guiones y guiones bajos.',
             'usuario.min' => 'El usuario debe tener al menos 4 caracteres.',
             'usuario.unique' => 'Ese nombre de usuario ya está registrado.',
-            'telefono.required' => 'El teléfono es obligatorio.',
+            'telefono.required' => 'El celular es obligatorio.',
             'telefono.regex' => 'El teléfono debe contener entre 7 y 15 dígitos.',
             'telefono.unique' => 'Ese número ya se encuentra registrado.',
             'password.required' => 'La contraseña es obligatoria.',

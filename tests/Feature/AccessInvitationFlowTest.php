@@ -95,4 +95,69 @@ class AccessInvitationFlowTest extends TestCase
             'correo' => $payload['correo'],
         ]);
     }
+
+    public function test_request_first_then_account_reuses_the_same_client_and_links_the_request(): void
+    {
+        $this->seed(CuestionarioSeeder::class);
+        $catalog = $this->getJson('/api/v1/publico/solicitud/catalogo')->assertOk()->json('data');
+        $plan = collect($catalog['planes'])->firstWhere('codigo', 'basico-1800') ?? collect($catalog['planes'])->first();
+        $email = 'request-first-'.uniqid().'@example.com';
+        $phone = '7777791';
+
+        $requestResponse = $this->postJson('/api/v1/publico/solicitud/enviar', [
+            'nombre'=>'Carlos Cliente','correo'=>$email,'telefono'=>$phone,'whatsapp'=>$phone,
+            'empresa_nombre'=>'Negocio Request First','titulo_sistema'=>'Sistema de pedidos',
+            'resumen'=>'Quiero ordenar pedidos y entregas desde un solo lugar.',
+            'plan_codigo'=>$plan['codigo'],'forma_pago_preferida'=>'por_definir',
+            'frecuencia_suscripcion_preferida'=>($plan['precio_mensual']!==null&&$plan['precio_anual']!==null)?'mensual':null,
+            'declaracion_aceptada'=>true,'declaracion_nombre'=>'Carlos Cliente','declaracion_fecha'=>now()->toDateString(),
+            'acuerdo_comercial_aceptado'=>true,'acuerdo_comercial_nombre'=>'Carlos Cliente','acuerdo_comercial_fecha'=>now()->toDateString(),
+            'terminos_aceptados'=>true,'respuestas'=>[],
+        ])->assertCreated();
+
+        $codigo = $requestResponse->json('data.codigo');
+        $solicitud = \App\Models\SolicitudSistema::query()->where('codigo',$codigo)->firstOrFail();
+        $clientIdBefore = $solicitud->cliente_id;
+
+        $accountResponse = $this->postJson('/api/v1/auth/cliente/crear-cuenta', [
+            'nombre'=>'Carlos Cliente','correo'=>$email,'celular'=>$phone,'whatsapp'=>$phone,
+            'password'=>'Clave2026','password_confirmation'=>'Clave2026',
+        ])->assertCreated();
+
+        $this->assertSame($clientIdBefore, (int) $accountResponse->json('usuario.cliente_id'));
+        $this->assertDatabaseCount('clientes', 1);
+        $this->assertDatabaseHas('usuarios', ['correo'=>$email,'cliente_id'=>$clientIdBefore,'rol'=>'cliente']);
+        $this->assertDatabaseHas('solicitudes_sistema', ['codigo'=>$codigo,'cliente_id'=>$clientIdBefore]);
+    }
+
+    public function test_account_first_then_public_request_uses_the_existing_client_account(): void
+    {
+        $this->seed(CuestionarioSeeder::class);
+        $catalog = $this->getJson('/api/v1/publico/solicitud/catalogo')->assertOk()->json('data');
+        $plan = collect($catalog['planes'])->firstWhere('codigo', 'basico-1800') ?? collect($catalog['planes'])->first();
+        $email = 'account-first-'.uniqid().'@example.com';
+        $phone = '7777792';
+
+        $account = $this->postJson('/api/v1/auth/cliente/crear-cuenta', [
+            'nombre'=>'Ana Cliente','correo'=>$email,'celular'=>$phone,'whatsapp'=>$phone,
+            'password'=>'Clave2026','password_confirmation'=>'Clave2026',
+        ])->assertCreated();
+        $clientId = (int) $account->json('usuario.cliente_id');
+
+        $response = $this->postJson('/api/v1/publico/solicitud/enviar', [
+            'nombre'=>'Ana Cliente','correo'=>$email,'telefono'=>$phone,'whatsapp'=>$phone,
+            'empresa_nombre'=>'Negocio Account First','titulo_sistema'=>'Sistema de reservas',
+            'resumen'=>'Quiero recibir reservas y controlar horarios de atención.',
+            'plan_codigo'=>$plan['codigo'],'forma_pago_preferida'=>'por_definir',
+            'frecuencia_suscripcion_preferida'=>($plan['precio_mensual']!==null&&$plan['precio_anual']!==null)?'mensual':null,
+            'declaracion_aceptada'=>true,'declaracion_nombre'=>'Ana Cliente','declaracion_fecha'=>now()->toDateString(),
+            'acuerdo_comercial_aceptado'=>true,'acuerdo_comercial_nombre'=>'Ana Cliente','acuerdo_comercial_fecha'=>now()->toDateString(),
+            'terminos_aceptados'=>true,'respuestas'=>[],
+        ])->assertCreated()->assertJsonPath('data.cuenta_existente', true);
+
+        $this->assertDatabaseCount('clientes', 1);
+        $this->assertDatabaseHas('solicitudes_sistema', ['codigo'=>$response->json('data.codigo'),'cliente_id'=>$clientId]);
+        $this->assertDatabaseHas('empresas', ['cliente_id'=>$clientId,'nombre_comercial'=>'Negocio Account First']);
+    }
+
 }

@@ -15,7 +15,7 @@ class BrevoTransactionalEmailService
 
         $apiKey = trim((string) config('services.brevo.api_key'));
         $fromEmail = trim((string) config('services.brevo.from_email'));
-        $fromName = trim((string) config('services.brevo.from_name', 'AGR Studio · VITI'));
+        $fromName = trim((string) config('services.brevo.from_name', 'VITI'));
         $apiUrl = rtrim((string) config('services.brevo.api_url', 'https://api.brevo.com/v3'), '/');
 
         if ($apiKey === '') {

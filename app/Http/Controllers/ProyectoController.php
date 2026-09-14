@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{Empresa,Proyecto,ProyectoAvance,ProyectoAmbiente,ProyectoDominio,ProyectoMiembro,ProyectoRepositorio,SolicitudSistema};
+use App\Models\{AlertaSaas,Empresa,Proyecto,ProyectoAvance,ProyectoAmbiente,ProyectoDominio,ProyectoMiembro,ProyectoRepositorio,SolicitudSistema};
 use App\Services\WorkflowStateService;
-use App\Support\{Audit,Code};
+use App\Support\{Audit,Code,FirebasePush};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +23,23 @@ class ProyectoController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        // En el flujo actual todo proyecto nace de una solicitud aprobada.
+        // VITI toma empresa y responsable de esa solicitud para evitar vínculos manuales incorrectos.
+        $gate = $request->validate([
+            'solicitud_id' => ['required','integer','exists:solicitudes_sistema,id',Rule::unique('proyectos','solicitud_id')],
+        ]);
+        $source = SolicitudSistema::with(['cliente.usuario'])->findOrFail($gate['solicitud_id']);
+        abort_unless($source->estado === 'aprobada',422,'La solicitud debe estar aprobada antes de iniciar el proyecto.');
+        abort_unless($source->cliente?->usuario,422,'El responsable debe crear su cuenta VITI desde la invitación antes de iniciar el proyecto.');
+        abort_unless($source->empresa_id && $source->cliente_id,422,'La solicitud aprobada debe tener empresa y responsable asociados.');
+
+        $request->merge([
+            'empresa_id' => $source->empresa_id,
+            'cliente_id' => $source->cliente_id,
+            'nombre' => $request->input('nombre') ?: $source->titulo,
+            'descripcion' => $request->input('descripcion') ?: $source->resumen,
+        ]);
+
         $data=$this->validateData($request);
         $data['fase']=$data['fase']??'levantamiento';
         $data['estado']=$data['estado']??'activo';
@@ -32,9 +49,10 @@ class ProyectoController extends Controller
 
         $proyecto=DB::transaction(function()use($data,$request){
             if(!empty($data['solicitud_id'])){
-                $solicitud=SolicitudSistema::with('planViti')->lockForUpdate()->findOrFail($data['solicitud_id']);
+                $solicitud=SolicitudSistema::with(['planViti','cliente.usuario'])->lockForUpdate()->findOrFail($data['solicitud_id']);
                 abort_unless((int)$solicitud->empresa_id === (int)$data['empresa_id'] && (int)$solicitud->cliente_id === (int)$data['cliente_id'],422,'La solicitud no corresponde a la empresa o responsable seleccionados.');
                 abort_unless($solicitud->estado === 'aprobada',422,'La solicitud debe estar aprobada antes de convertirse en proyecto.');
+                abort_unless($solicitud->cliente?->usuario,422,'El responsable debe crear su cuenta VITI desde la invitación antes de iniciar el proyecto.');
                 app(WorkflowStateService::class)->assertSolicitudTransition($solicitud->estado,'convertida');
             }
 
@@ -42,7 +60,7 @@ class ProyectoController extends Controller
 
             if(!empty($data['solicitud_id'])){
                 if($solicitud->plan_viti_id){
-                    $solicitud->empresa()->update(['plan_viti_id'=>$solicitud->plan_viti_id]);
+                    $solicitud->empresa()->update(['plan_viti_id'=>$solicitud->plan_viti_id,'estado'=>'levantamiento']);
                 }
                 $solicitud->update(['estado'=>'convertida','aprobado_at'=>$solicitud->aprobado_at ?: now()]);
             }
@@ -51,6 +69,25 @@ class ProyectoController extends Controller
             return $p;
         });
         Audit::log($request,'proyecto_creado',$proyecto,'Se creó un proyecto de desarrollo.');
+        $proyecto->loadMissing(['empresa','cliente.usuario']);
+        if ($proyecto->cliente?->usuario?->id) {
+            $clientUserId = $proyecto->cliente->usuario->id;
+            AlertaSaas::firstOrCreate(
+                ['usuario_id'=>$clientUserId,'clave'=>'proyecto_iniciado_'.$proyecto->id],
+                [
+                    'empresa_id'=>$proyecto->empresa_id,
+                    'tipo'=>'proyecto',
+                    'titulo'=>'Tu proyecto ya inició',
+                    'mensaje'=>$proyecto->nombre.' ya está en seguimiento dentro de VITI.',
+                    'ruta'=>'/mi-proyecto',
+                ]
+            );
+            FirebasePush::sendToUsers([$clientUserId], 'Tu proyecto ya inició', $proyecto->nombre.' ya está en seguimiento dentro de VITI.', [
+                'type'=>'proyecto',
+                'proyecto_id'=>$proyecto->id,
+                'path'=>'/mi-proyecto',
+            ]);
+        }
         return response()->json(['data'=>$this->withWorkflow($proyecto->load(['empresa','cliente']))],201);
     }
 

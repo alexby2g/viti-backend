@@ -15,6 +15,9 @@ class EmpresaController extends Controller
     {
         $query=Empresa::with(['cliente:id,nombre,telefono','planViti','usuarios:id,nombre,apellido,usuario,rol,estado'])
             ->withCount(['solicitudes','proyectos','aplicaciones'])->latest('id');
+        // Una empresa creada por una solicitud pública todavía es un prospecto en revisión.
+        // No ensucia la lista de clientes hasta que VITI complete la revisión.
+        if (!$request->boolean('incluir_pendientes')) $query->where('estado','!=','pendiente_revision');
         if($request->filled('buscar')){$term='%'.$request->string('buscar').'%';$query->where(fn($q)=>$q->where('nombre_comercial','like',$term)->orWhere('telefono','like',$term)->orWhere('actividad','like',$term));}
         return response()->json($query->paginate(min(max((int)$request->input('per_page',20),1),100)));
     }

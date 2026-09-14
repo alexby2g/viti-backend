@@ -8,7 +8,10 @@ class EmpresaObserver
 {
     public function created(Empresa $empresa): void
     {
-        if (!$empresa->plan_viti_id) {
+        $config = is_array($empresa->configuracion) ? $empresa->configuracion : [];
+        $accountWithoutPlan = (bool) ($config['cuenta_sin_plan'] ?? false);
+
+        if (!$empresa->plan_viti_id && !$accountWithoutPlan) {
             $planId = PlanViti::where('codigo','personalizado')->value('id');
             if ($planId) $empresa->forceFill(['plan_viti_id'=>$planId])->saveQuietly();
         }

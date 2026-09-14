@@ -1,7 +1,7 @@
 <!doctype html><html><head><meta charset="utf-8">@include('reports._style')</head><body>
 <?php
 $plan=$solicitud->planViti;
-$paymentLabels=['contado'=>'Pago completo','50_50'=>'50% al iniciar / 50% al entregar','tres_partes'=>'40% al iniciar / 30% en avance / 30% al entregar','por_definir'=>'A definir con AGR Studio'];
+$paymentLabels=['contado'=>'Pago completo','50_50'=>'50% al iniciar / 50% al entregar','tres_partes'=>'40% al iniciar / 30% en avance / 30% al entregar','por_definir'=>'A definir durante la revisión VITI'];
 $frequencyLabels=['mensual'=>'Mensual','anual'=>'Anual'];
 $moduleLabels=['inicio'=>'Inicio','agenda'=>'Agenda','ordenes'=>'Órdenes','clientes'=>'Clientes','equipos'=>'Equipos','tecnicos'=>'Técnicos','inventario'=>'Inventario técnico','pagos'=>'Pagos y saldos','garantias'=>'Garantías','historial'=>'Historial y reportes','buzon'=>'Mensajes'];
 $annualSaving=$plan && $plan->precio_mensual!==null && $plan->precio_anual!==null ? max(0,((float)$plan->precio_mensual*12)-(float)$plan->precio_anual) : null;
@@ -46,7 +46,7 @@ if($plan?->precio_anual!==null)$subscriptionParts[]=number_format((float)$plan->
       <?php foreach($bundle['questions'] as $entry): $question=$entry['question']; $answer=$entry['answer']; ?>
         <div style="margin-bottom:9px">
           <div class="question"><?= e($question->numero) ?>. <?= e($question->pregunta) ?></div>
-          <?php if(($answer?->origen??'cliente')==='tecnico'): ?><div class="muted" style="font-size:10px;margin-bottom:2px">Definición técnica AGR Studio · no reemplaza la respuesta original de la empresa</div><?php endif; ?>
+          <?php if(($answer?->origen??'cliente')==='tecnico'): ?><div class="muted" style="font-size:10px;margin-bottom:2px">Definición técnica VITI · no reemplaza la respuesta original de la empresa</div><?php endif; ?>
           <div class="answer"><?= e($entry['formatted']) ?></div>
         </div>
       <?php endforeach; ?>
@@ -59,7 +59,7 @@ if($plan?->precio_anual!==null)$subscriptionParts[]=number_format((float)$plan->
 <?php if($agreementVisible): ?>
 <div class="section">
   <h2>Acuerdo comercial inicial</h2>
-  <p>Esta selección expresa la preferencia inicial de la empresa. AGR Studio revisa que el plan cubra el alcance antes de aprobar el proyecto. Los desarrollos fuera del plan se cotizan por separado.</p>
+  <p>Esta selección expresa la preferencia inicial de la empresa. VITI revisa que el plan cubra el alcance antes de aprobar el proyecto. Los desarrollos fuera del plan se cotizan por separado.</p>
   <p><strong>Plan preferido:</strong> <?= e($plan?->nombre ?: 'Sin seleccionar') ?></p>
   <?php if($plan?->descripcion): ?><p><?= e($plan->descripcion) ?></p><?php endif; ?>
   <p><strong>Implementación y configuración inicial:</strong> <?= e($plan?->precio_proyecto!==null ? number_format((float)$plan->precio_proyecto,2).' Bs' : 'Cotización personalizada') ?></p>
@@ -78,7 +78,7 @@ if($plan?->precio_anual!==null)$subscriptionParts[]=number_format((float)$plan->
 
 <div class="section">
   <h2>Declaración final</h2>
-  <p>Confirmo que la información proporcionada por la empresa representa de manera general la necesidad inicial del sistema solicitado. Las definiciones técnicas agregadas posteriormente por AGR Studio se identifican expresamente como tales.</p>
+  <p>Confirmo que la información proporcionada por la empresa representa de manera general la necesidad inicial del sistema solicitado. Las definiciones técnicas agregadas posteriormente por VITI se identifican expresamente como tales.</p>
   <p><strong>Nombre:</strong> <?= e($solicitud->declaracion_nombre ?: $solicitud->cliente?->nombre) ?></p>
   <p><strong>Fecha:</strong> <?= e($solicitud->declaracion_fecha?->format('d/m/Y') ?: 'Sin confirmar') ?> &nbsp;&nbsp; <strong>Declaración:</strong> <?= e($solicitud->declaracion_aceptada?'Aceptada':'Pendiente') ?></p>
 </div>
