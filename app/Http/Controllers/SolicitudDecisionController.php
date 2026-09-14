@@ -20,11 +20,16 @@ class SolicitudDecisionController extends Controller
         abort_unless($solicitud->plan_viti_id && $solicitud->planViti, 422, 'La solicitud debe tener un plan VITI seleccionado.');
         abort_unless($solicitud->declaracion_aceptada, 422, 'La solicitud todavía no tiene la declaración confirmada.');
         abort_unless($solicitud->acuerdo_comercial_aceptado, 422, 'La solicitud todavía no tiene aceptado el acuerdo comercial inicial.');
+        abort_unless($solicitud->cliente?->usuario || filled($solicitud->cliente?->correo), 422, 'Registra un correo válido del responsable antes de aprobar; VITI lo necesita para habilitar su acceso.');
 
         $solicitud->update([
             'estado' => 'aprobada',
             'aprobado_at' => now(),
         ]);
+        // Recién al aprobar la solicitud el prospecto pasa a formar parte del trabajo activo.
+        if ($solicitud->empresa && $solicitud->empresa->estado === 'pendiente_revision') {
+            $solicitud->empresa->update(['estado' => 'levantamiento']);
+        }
 
         $conversation = Conversacion::firstOrCreate(
             ['cliente_id' => $solicitud->cliente_id, 'solicitud_id' => $solicitud->id],
@@ -35,7 +40,7 @@ class SolicitudDecisionController extends Controller
             ]
         );
 
-        $messageText = 'Tu solicitud '.$solicitud->codigo.' fue aprobada. AGR Studio continuará contigo por este buzón para orientarte, coordinar el acceso y preparar el inicio del proyecto.';
+        $messageText = 'Tu solicitud '.$solicitud->codigo.' fue aprobada. VITI continuará contigo por este espacio para orientarte, coordinar el acceso y preparar el inicio del proyecto.';
         $message = Mensaje::create([
             'conversacion_id' => $conversation->id,
             'usuario_id' => $request->user()->id,
@@ -62,13 +67,30 @@ class SolicitudDecisionController extends Controller
             $request,
             'solicitud_aprobada',
             $solicitud,
-            'AGR Studio aprobó la solicitud y envió una orientación inicial por el buzón privado.'
+            'VITI aprobó la solicitud y envió una orientación inicial por el buzón privado.'
         );
 
-        $access = app(AccessInvitationService::class)->snapshotForSolicitud($solicitud->fresh());
+        $accessService = app(AccessInvitationService::class);
+        $freshSolicitud = $solicitud->fresh()->loadMissing(['cliente.usuario','empresa','planViti']);
+        $access = $freshSolicitud->cliente?->usuario
+            ? $accessService->snapshotForSolicitud($freshSolicitud)
+            : $accessService->createAndSend($freshSolicitud, $request->user(), 7);
+
+        Audit::log(
+            $request,
+            'acceso_cliente_habilitado',
+            $solicitud,
+            $access['tiene_cuenta'] ?? false
+                ? 'La solicitud quedó aprobada y el responsable ya tenía una cuenta VITI activa.'
+                : 'La solicitud quedó aprobada y VITI generó automáticamente la invitación de acceso del responsable.'
+        );
 
         return response()->json([
-            'message' => 'Solicitud aprobada y orientación inicial enviada al buzón del cliente.',
+            'message' => ($access['tiene_cuenta'] ?? false)
+                ? 'Solicitud aprobada. El responsable ya tiene acceso a VITI y el proyecto puede iniciarse.'
+                : (($access['email_enviado'] ?? false)
+                    ? 'Solicitud aprobada e invitación enviada al correo del responsable.'
+                    : 'Solicitud aprobada e invitación generada. El correo no pudo enviarse automáticamente; copia el enlace desde la solicitud.'),
             'data' => [
                 'solicitud' => $solicitud->fresh()->load(['empresa','cliente','planViti']),
                 'acceso' => $access,

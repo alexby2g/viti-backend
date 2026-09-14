@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\{AgrActionController,AgrVoiceController,AplicacionController,ArchivoController,AtencionSesionController,AuditoriaController,AuthController,BuzonController,ClientAppsController,ClientAuthController,ClientElectrofrioController,ClientProjectController,ClienteController,CuestionarioController,DashboardController,ElectrofrioController,ElectrofrioCustomerAuthController,ElectrofrioCustomerPortalController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,OnboardingController,PeluqueriaController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,SolicitudDecisionController,StorageController,PublicSolicitudController,UsuarioController};
+use App\Http\Controllers\{AgrActionController,AgrVoiceController,AplicacionController,ArchivoController,AtencionSesionController,AuditoriaController,AuthController,BuzonController,ClientAppsController,ClientAuthController,ClientElectrofrioController,ClientProjectController,ClientPortalController,ClienteController,CuestionarioController,DashboardController,ElectrofrioController,ElectrofrioCustomerAuthController,ElectrofrioCustomerPortalController,EmpresaController,LlamadaController,MantenimientoController,MobileAuthController,OnboardingController,PeluqueriaController,ProyectoController,PushDeviceController,ReporteController,SetupController,SolicitudController,SolicitudDecisionController,StorageController,PublicSolicitudController,UsuarioController};
 use Illuminate\Support\Facades\Route;
 
 Route::get('health', fn () => ['status'=>'ok','service'=>'VITI Core API','time'=>now()->toIso8601String()]);
@@ -13,6 +13,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('status', [AuthController::class,'status']);
         Route::post('login', [AuthController::class,'login'])->middleware('throttle:login');
         Route::post('cliente/registro', [ClientAuthController::class,'register'])->middleware('throttle:login');
+        Route::post('cliente/crear-cuenta', [ClientAuthController::class,'createAccount'])->middleware('throttle:login');
         Route::post('electrofrio/login',[ElectrofrioCustomerAuthController::class,'login'])->middleware('throttle:login');
     });
 
@@ -71,11 +72,13 @@ Route::prefix('v1')->group(function (): void {
             Route::put('perfil', [ClientPortalController::class,'updateProfile']);
             Route::post('perfil/foto', [ClientPortalController::class,'uploadPhoto']);
             Route::get('solicitud', [ClientPortalController::class,'currentRequest']);
+            Route::get('solicitudes', [ClientPortalController::class,'requests']);
             Route::post('solicitud', [ClientPortalController::class,'startRequest']);
             Route::post('solicitudes/{solicitud}/sincronizar', [ClientPortalController::class,'syncFromQuestionnaire']);
             Route::get('proyecto', [ClientProjectController::class,'show']);
             Route::get('aplicaciones', [ClientAppsController::class,'index']);
             Route::get('aplicaciones/peluqueria', [ClientAppsController::class,'peluqueria']);
+            Route::get('aplicaciones/{aplicacion}/licencia', [ClientAppsController::class,'license']);
             Route::get('buzon', [BuzonController::class,'clientIndex']);
             Route::get('buzon/{conversacion}', [BuzonController::class,'clientShow']);
             Route::post('buzon', [BuzonController::class,'clientStart']);
@@ -164,8 +167,20 @@ Route::prefix('v1')->group(function (): void {
                 return response()->json(['data'=>$empresa->fresh()->load('usuarios')]);
             })->middleware('superadmin');
             Route::post('empresas/{empresa}/logo', [EmpresaController::class,'uploadLogo']);
-            Route::get('cuestionarios', [CuestionarioController::class,'index']);
-            Route::get('cuestionarios/{cuestionario}', [CuestionarioController::class,'show']);
+            Route::middleware('superadmin')->group(function (): void {
+                Route::get('cuestionarios', [CuestionarioController::class,'index']);
+                Route::post('cuestionarios', [CuestionarioController::class,'store']);
+                Route::get('cuestionarios/{cuestionario}', [CuestionarioController::class,'show']);
+                Route::put('cuestionarios/{cuestionario}', [CuestionarioController::class,'update']);
+                Route::delete('cuestionarios/{cuestionario}', [CuestionarioController::class,'destroy']);
+                Route::post('cuestionarios/{cuestionario}/secciones', [CuestionarioController::class,'storeSection']);
+                Route::put('cuestionario-secciones/{seccion}', [CuestionarioController::class,'updateSection']);
+                Route::delete('cuestionario-secciones/{seccion}', [CuestionarioController::class,'destroySection']);
+                Route::post('cuestionario-secciones/{seccion}/preguntas', [CuestionarioController::class,'storeQuestion']);
+                Route::put('cuestionario-preguntas/{pregunta}', [CuestionarioController::class,'updateQuestion']);
+                Route::post('cuestionario-preguntas/{pregunta}/duplicar', [CuestionarioController::class,'duplicateQuestion']);
+                Route::delete('cuestionario-preguntas/{pregunta}', [CuestionarioController::class,'destroyQuestion']);
+            });
             Route::apiResource('solicitudes', SolicitudController::class)->parameters(['solicitudes'=>'solicitud']);
             Route::post('solicitudes/{solicitud}/aprobar', [SolicitudDecisionController::class,'approve']);
             Route::put('solicitudes/{solicitud}/respuestas', [SolicitudController::class,'saveAnswers']);

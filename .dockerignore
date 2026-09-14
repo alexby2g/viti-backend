@@ -11,3 +11,5 @@ storage/framework/sessions/*
 storage/framework/views/*
 README*.md
 *.zip
+
+!.env.local.example

@@ -14,7 +14,7 @@ class Cliente extends Model
     protected $casts = ['foto_verificada'=>'boolean','perfil_completo_at'=>'datetime'];
     protected $appends = ['foto_url'];
 
-    protected $fillable = ['nombre','telefono','whatsapp','correo','documento','ci_expedido','ciudad','direccion','foto_path','foto_verificada','perfil_completo_at','observaciones','estado','canal_origen'];
+    protected $fillable = ['nombre','telefono','whatsapp','whatsapp_business','correo','documento','ci_expedido','ciudad','direccion','foto_path','foto_verificada','perfil_completo_at','observaciones','estado','canal_origen'];
 
     public function getFotoUrlAttribute(): ?string
     {

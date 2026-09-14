@@ -77,7 +77,7 @@ class ClientPaymentController extends Controller
         }
 
         return response()->json([
-            'message'=>'Comprobante enviado. El pago quedará aplicado cuando AGR Studio lo confirme.',
+            'message'=>'Comprobante enviado. El pago quedará aplicado cuando sea confirmado en VITI.',
             'data'=>$payment->load('pagador:id,nombre,apellido,usuario'),
         ],201);
     }
@@ -143,7 +143,7 @@ class ClientPaymentController extends Controller
         }
 
         return response()->json([
-            'message'=>'Comprobante de suscripción enviado. Se aplicará cuando AGR Studio lo confirme.',
+            'message'=>'Comprobante de suscripción enviado. Se aplicará cuando sea confirmado en VITI.',
             'data'=>$payment->load('pagador:id,nombre,apellido,usuario'),
         ],201);
     }
