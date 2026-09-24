@@ -3,10 +3,17 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Storage;
 
 class PlatformBranding extends Model
 {
     protected $table = 'configuraciones_plataforma';
+
+    /**
+     * El logotipo se resuelve igual que en Cliente/Empresa/Usuario: cuando el
+     * disco público es R2 (s3), la URL apunta al bucket y no a /storage local.
+     */
+    protected $appends = ['logo_url'];
 
     protected $fillable = [
         'studio_name',
@@ -26,6 +33,24 @@ class PlatformBranding extends Model
     protected $casts = [
         'guide_enabled' => 'boolean',
     ];
+
+    public function getLogoUrlAttribute(): ?string
+    {
+        if (!$this->logo_path) {
+            return null;
+        }
+
+        $base = rtrim((string) config('filesystems.disks.public.url'), '/');
+        if ($base !== '') {
+            return $base.'/'.ltrim($this->logo_path, '/');
+        }
+
+        try {
+            return Storage::disk('public')->url($this->logo_path);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
 
     public static function current(): self
     {

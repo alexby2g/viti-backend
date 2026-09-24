@@ -16,6 +16,21 @@ final class FrontendOriginResolver
     }
 
     /**
+     * Patrones extra para despliegues de preview (por ejemplo los dominios
+     * efímeros de Vercel). Se configuran con FRONTEND_URL_PATTERNS y son
+     * opcionales: si la variable está vacía no cambia nada.
+     *
+     * @return list<string>
+     */
+    public static function patterns(?string $patterns): array
+    {
+        return self::csv($patterns);
+    }
+
+    /**
+     * Dominios "stateful" para Sanctum, incluyendo comodines para los
+     * subdominios de preview cuando están configurados.
+     *
      * @param  list<string>  $frontendOrigins
      * @param  list<string>  $fallbackDomains
      * @return list<string>

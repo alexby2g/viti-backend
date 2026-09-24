@@ -9,7 +9,12 @@ return [
         env('FRONTEND_URLS', 'http://localhost:9000'),
         env('FRONTEND_APP_URL'),
     ),
-    'allowed_origins_patterns' => [],
+    // Los despliegues de preview de Vercel (viti-frontend-xxxx.vercel.app)
+    // cambian en cada rama. Sin este patrón el navegador bloquea el preflight
+    // y la SPA no puede autenticarse. Se activa con FRONTEND_URL_PATTERNS.
+    'allowed_origins_patterns' => FrontendOriginResolver::patterns(
+        env('FRONTEND_URL_PATTERNS'),
+    ),
     'allowed_headers' => ['*'],
     'exposed_headers' => [
         'X-VITI-Request-ID',

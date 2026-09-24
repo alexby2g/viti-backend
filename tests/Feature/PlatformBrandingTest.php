@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\PlatformBranding;
 use App\Models\Usuario;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -68,5 +69,28 @@ class PlatformBrandingTest extends TestCase
             'primary_color' => '#6758D9',
             'guide_position' => 'right-bottom',
         ]);
+    }
+
+    public function test_branding_exposes_logo_url_instead_of_relying_on_local_storage(): void
+    {
+        // Reproduce el disco público remoto (Cloudflare R2) de producción.
+        config()->set('filesystems.disks.public.url', 'https://media.viti.test');
+
+        PlatformBranding::current()->update([
+            'logo_path' => 'plataforma/branding/logo.png',
+        ]);
+
+        $this->getJson('/api/v1/branding')
+            ->assertOk()
+            ->assertJsonPath('data.logo_path', 'plataforma/branding/logo.png')
+            ->assertJsonPath('data.logo_url', 'https://media.viti.test/plataforma/branding/logo.png');
+    }
+
+    public function test_branding_logo_url_is_null_without_logo(): void
+    {
+        $this->getJson('/api/v1/branding')
+            ->assertOk()
+            ->assertJsonPath('data.logo_path', null)
+            ->assertJsonPath('data.logo_url', null);
     }
 }

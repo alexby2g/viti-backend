@@ -86,6 +86,9 @@ class PlatformBrandingController extends Controller
             'product_meaning' => $branding->product_meaning,
             'tagline' => $branding->tagline,
             'logo_path' => $branding->logo_path,
+            // Sin esto el frontend arma la URL con /storage y falla cuando el
+            // disco público es R2 en lugar del disco local.
+            'logo_url' => $branding->logo_url,
             'primary_color' => $branding->primary_color,
             'secondary_color' => $branding->secondary_color,
             'accent_color' => $branding->accent_color,
