@@ -57,12 +57,18 @@ services:
         sync: false
       - key: APP_URL
         sync: false
+      # Dominio de producción más el comodín de los despliegues de preview de
+      # Vercel (viti-frontend-git-rama.vercel.app). Sanctum compara con Str::is,
+      # así que el comodín sí funciona.
       - key: SANCTUM_STATEFUL_DOMAINS
-        value: viti-frontend.vercel.app
+        value: viti-frontend.vercel.app,*.vercel.app
       - key: FRONTEND_URLS
         value: https://viti-frontend.vercel.app
       - key: FRONTEND_APP_URL
         value: https://viti-frontend.vercel.app
+      # Mismo alcance para CORS: solo subdominios del proyecto en Vercel.
+      - key: FRONTEND_URL_PATTERNS
+        value: '^https://viti-frontend(-[A-Za-z0-9-]+)?\.vercel\.app$'
       - key: VITI_SETUP_SECRET
         sync: false
       - key: VITI_ADMIN_SECRET
