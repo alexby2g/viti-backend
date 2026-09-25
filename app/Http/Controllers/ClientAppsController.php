@@ -22,17 +22,12 @@ class ClientAppsController extends Controller
             $license = $this->licenseState($app, $cycle);
             $config = is_array($app->configuracion) ? $app->configuracion : [];
             $delivery = is_array($config['delivery'] ?? null) ? $config['delivery'] : [];
-            $key = $app->catalogo?->clave;
-            $internalRoute = match ($key) {
-                'peluqueria' => '/mi-apps/peluqueria/inicio',
-                'electrofrio' => '/mi-apps/electrofrio/inicio',
-                'servicio-tecnico' => '/mi-apps/servicio-tecnico/inicio',
-                default => $app->catalogo?->ruta_base,
-            };
+            // Los sistemas de clientes viven fuera de VITI. VITI conserva la ficha,
+            // la licencia y las URLs, pero no enruta al usuario a módulos sectoriales internos.
             $externalUrl = $this->httpsUrl($app->url);
             $betaUrl = $this->httpsUrl($delivery['beta_url'] ?? null);
             $apkUrl = $this->httpsUrl($delivery['apk_url'] ?? null);
-            $route = $internalRoute ?: ($externalUrl ? '/apps/externa/'.$app->id : null);
+            $route = $externalUrl;
 
             return [
                 'id'=>$app->id,'nombre'=>$app->nombre,'slug'=>$app->slug,'version'=>$app->version,'entorno'=>$app->entorno,
@@ -52,7 +47,7 @@ class ClientAppsController extends Controller
                     'apk_version'=>$delivery['apk_version'] ?? null,
                 ],
                 'ruta'=>$license['permitida'] ? $route : null,
-                'es_externa'=>(bool)$externalUrl && !$internalRoute,
+                'es_externa'=>(bool)$externalUrl,
                 'url_externa'=>$license['permitida'] && $externalUrl ? $externalUrl : null,
             ];
         })->values();

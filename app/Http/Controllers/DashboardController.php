@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{Aplicacion,Empresa,Mantenimiento,Proyecto,SolicitudSistema,Suscripcion};
+use App\Models\{Aplicacion,Cliente,Empresa,Mantenimiento,Proyecto,SolicitudSistema,Suscripcion};
 use App\Services\{AppLifecycleService,AgrActivityService,AgrAssistantService,AgrAutopilotService,AgrIncidentService,AgrMemoryService,AgrPermissionService,AgrProjectConversionService,AgrRecoveryService,AgrSystemGuardService,AgrEventStreamService,AgrEventRuleService};
 use Illuminate\Http\{JsonResponse,Request,Response};
 use Illuminate\Support\Facades\Http;
@@ -229,10 +229,14 @@ class DashboardController extends Controller
             'resumen'=>[
                 'negocios_activos'=>Empresa::where('estado','activo')->count(),
                 'empresas_registradas'=>Empresa::count(),
+                'clientes_registrados'=>Cliente::count(),
                 'aplicaciones_activas'=>$cycles->where('ciclo.estado','activa')->count(),
+                'sistemas_registrados'=>Aplicacion::where('estado','!=','retirado')->count(),
+                'sistemas_entregados'=>Aplicacion::where('acceso_cliente',true)->where('estado','!=','retirado')->count(),
                 'suscripciones_activas'=>Suscripcion::where('estado','activa')->count(),
                 'pagos_vencidos'=>Suscripcion::whereIn('estado',['gracia','suspendida'])->count(),
                 'solicitudes_activas'=>SolicitudSistema::whereNotIn('estado',['rechazada','cerrada'])->count(),
+                'solicitudes_por_revisar'=>SolicitudSistema::where('estado','en_revision')->count(),
                 'proyectos_activos'=>Proyecto::where('estado','activo')->count(),
                 'mantenimientos_abiertos'=>Mantenimiento::whereNotIn('estado',['resuelto','cerrado'])->count(),
                 'aplicaciones_pendientes_entrega'=>$cycles->where('ciclo.estado','lista_entrega')->count(),
