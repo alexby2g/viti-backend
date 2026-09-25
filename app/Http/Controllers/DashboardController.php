@@ -228,6 +228,7 @@ class DashboardController extends Controller
         return response()->json([
             'resumen'=>[
                 'negocios_activos'=>Empresa::where('estado','activo')->count(),
+                'empresas_registradas'=>Empresa::count(),
                 'aplicaciones_activas'=>$cycles->where('ciclo.estado','activa')->count(),
                 'suscripciones_activas'=>Suscripcion::where('estado','activa')->count(),
                 'pagos_vencidos'=>Suscripcion::whereIn('estado',['gracia','suspendida'])->count(),
