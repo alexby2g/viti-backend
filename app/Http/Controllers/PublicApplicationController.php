@@ -128,24 +128,29 @@ class PublicApplicationController extends Controller
 
             abort_if($byPhone && $byEmail && (int) $byPhone->id !== (int) $byEmail->id, 422, 'El teléfono y el correo pertenecen a registros diferentes.');
             $cliente = $byPhone ?: $byEmail;
-
             if ($cliente) {
-                if ($documento) {
-                    abort_if(Cliente::query()->where('documento', $documento)->whereKeyNot($cliente->id)->exists(), 422, 'Ese documento ya pertenece a otro cliente.');
-                }
-                $cliente->update([
-                    'nombre' => trim($data['nombre']),
-                    'telefono' => $data['telefono'],
-                    'correo' => $data['correo'],
-                    'whatsapp' => $data['whatsapp'] ?? $cliente->whatsapp ?? $data['telefono'],
-                    'whatsapp_business' => $data['whatsapp_business'] ?? $cliente->whatsapp_business,
-                    'documento' => $cliente->documento ?: $documento,
-                    'ci_expedido' => $cliente->ci_expedido ?: ($data['ci_expedido'] ?? null),
-                    'ciudad' => filled($data['ciudad'] ?? null) ? trim((string) $data['ciudad']) : $cliente->ciudad,
-                    'direccion' => $data['direccion'] ?? $cliente->direccion,
-                    'estado' => 'informacion_recibida',
-                ]);
+                // El formulario es público. Solo el titular autenticado puede añadir
+                // solicitudes a una ficha existente; conocer sus datos no basta.
+                $owner = $cliente->usuario()->first();
+                abort_unless(
+                    $owner && $request->user() && (int) $owner->id === (int) $request->user()->id,
+                    422,
+                    'Ya tenemos una ficha con estos datos. Inicia sesión con la cuenta titular o solicita a VITI una invitación de acceso.'
+                );
+                abort_unless(
+                    Str::lower((string) $cliente->correo) === $data['correo']
+                        && (string) $cliente->telefono === (string) $data['telefono'],
+                    422,
+                    'Los datos de contacto no coinciden con tu cuenta. Actualiza tu perfil antes de enviar otra solicitud.'
+                );
+                // No modificar identidad ni estado de una cuenta activa desde
+                // un formulario comercial; usar el perfil autenticado para eso.
             } else {
+                abort_if(
+                    $request->user()?->rol === 'cliente',
+                    422,
+                    'Esta solicitud no coincide con tu perfil VITI. Actualiza tu perfil antes de continuar.'
+                );
                 abort_if($documento && Cliente::query()->where('documento', $documento)->exists(), 422, 'Ese documento ya está registrado con otro cliente.');
                 $cliente = Cliente::create([
                     'nombre' => trim($data['nombre']),
@@ -167,24 +172,20 @@ class PublicApplicationController extends Controller
                 ->whereRaw('LOWER(nombre_comercial) = ?', [Str::lower(trim($data['empresa_nombre']))])
                 ->first();
 
-            $companyData = [
-                'actividad' => $data['empresa_actividad'] ?? null,
-                'telefono' => $data['empresa_telefono'] ?? $data['telefono'],
-                'whatsapp' => $data['empresa_whatsapp'] ?? ($data['whatsapp'] ?? $data['telefono']),
-                'ciudad' => $data['empresa_ciudad'] ?? ($data['ciudad'] ?? null),
-                'direccion' => $data['empresa_direccion'] ?? ($data['direccion'] ?? null),
-                'estado' => 'pendiente_revision',
-            ];
-
-            if ($empresa) {
-                $empresa->update($companyData);
-            } else {
-                $empresa = Empresa::create($companyData + [
+            if (!$empresa) {
+                $empresa = Empresa::create([
                     'cliente_id' => $cliente->id,
-                    'codigo' => Code::next('empresas','EMP'),
+                    'codigo' => Code::next('empresas', 'EMP'),
                     'nombre_comercial' => trim($data['empresa_nombre']),
+                    'actividad' => $data['empresa_actividad'] ?? null,
+                    'telefono' => $data['empresa_telefono'] ?? $data['telefono'],
+                    'whatsapp' => $data['empresa_whatsapp'] ?? ($data['whatsapp'] ?? $data['telefono']),
+                    'ciudad' => $data['empresa_ciudad'] ?? ($data['ciudad'] ?? null),
+                    'direccion' => $data['empresa_direccion'] ?? ($data['direccion'] ?? null),
+                    'estado' => 'pendiente_revision',
                 ]);
             }
+            // Una solicitud nueva nunca rebaja una empresa existente a pendiente_revision.
 
             // Si el visitante ya creó su cuenta antes de solicitar, conservamos el mismo
             // responsable y vinculamos el nuevo negocio a su usuario automáticamente.

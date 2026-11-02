@@ -96,7 +96,7 @@ class AccessInvitationFlowTest extends TestCase
         ]);
     }
 
-    public function test_request_first_then_account_reuses_the_same_client_and_links_the_request(): void
+    public function test_request_first_cannot_be_claimed_without_verified_access(): void
     {
         $this->seed(CuestionarioSeeder::class);
         $catalog = $this->getJson('/api/v1/publico/solicitud/catalogo')->assertOk()->json('data');
@@ -118,19 +118,19 @@ class AccessInvitationFlowTest extends TestCase
         $codigo = $requestResponse->json('data.codigo');
         $solicitud = \App\Models\SolicitudSistema::query()->where('codigo',$codigo)->firstOrFail();
         $clientIdBefore = $solicitud->cliente_id;
+        $clientCountBefore = \App\Models\Cliente::query()->count();
 
-        $accountResponse = $this->postJson('/api/v1/auth/cliente/crear-cuenta', [
+        $this->postJson('/api/v1/auth/cliente/crear-cuenta', [
             'nombre'=>'Carlos Cliente','correo'=>$email,'celular'=>$phone,'whatsapp'=>$phone,
             'password'=>'Clave2026','password_confirmation'=>'Clave2026',
-        ])->assertCreated();
+        ])->assertStatus(422);
 
-        $this->assertSame($clientIdBefore, (int) $accountResponse->json('usuario.cliente_id'));
-        $this->assertDatabaseCount('clientes', 1);
-        $this->assertDatabaseHas('usuarios', ['correo'=>$email,'cliente_id'=>$clientIdBefore,'rol'=>'cliente']);
+        $this->assertSame($clientCountBefore, \App\Models\Cliente::query()->count());
+        $this->assertDatabaseMissing('usuarios', ['correo'=>$email]);
         $this->assertDatabaseHas('solicitudes_sistema', ['codigo'=>$codigo,'cliente_id'=>$clientIdBefore]);
     }
 
-    public function test_account_first_then_public_request_uses_the_existing_client_account(): void
+    public function test_account_first_then_public_request_requires_authenticated_owner(): void
     {
         $this->seed(CuestionarioSeeder::class);
         $catalog = $this->getJson('/api/v1/publico/solicitud/catalogo')->assertOk()->json('data');
@@ -143,8 +143,9 @@ class AccessInvitationFlowTest extends TestCase
             'password'=>'Clave2026','password_confirmation'=>'Clave2026',
         ])->assertCreated();
         $clientId = (int) $account->json('usuario.cliente_id');
+        $clientCountBefore = \App\Models\Cliente::query()->count();
 
-        $response = $this->postJson('/api/v1/publico/solicitud/enviar', [
+        $payload = [
             'nombre'=>'Ana Cliente','correo'=>$email,'telefono'=>$phone,'whatsapp'=>$phone,
             'empresa_nombre'=>'Negocio Account First','titulo_sistema'=>'Sistema de reservas',
             'resumen'=>'Quiero recibir reservas y controlar horarios de atención.',
@@ -153,9 +154,16 @@ class AccessInvitationFlowTest extends TestCase
             'declaracion_aceptada'=>true,'declaracion_nombre'=>'Ana Cliente','declaracion_fecha'=>now()->toDateString(),
             'acuerdo_comercial_aceptado'=>true,'acuerdo_comercial_nombre'=>'Ana Cliente','acuerdo_comercial_fecha'=>now()->toDateString(),
             'terminos_aceptados'=>true,'respuestas'=>[],
-        ])->assertCreated()->assertJsonPath('data.cuenta_existente', true);
+        ];
 
-        $this->assertDatabaseCount('clientes', 1);
+        $this->postJson('/api/v1/publico/solicitud/enviar', $payload)->assertStatus(422);
+        $user = \App\Models\Usuario::query()->where('cliente_id', $clientId)->firstOrFail();
+        $response = $this->actingAs($user)
+            ->postJson('/api/v1/publico/solicitud/enviar', $payload)
+            ->assertCreated()
+            ->assertJsonPath('data.cuenta_existente', true);
+
+        $this->assertSame($clientCountBefore, \App\Models\Cliente::query()->count());
         $this->assertDatabaseHas('solicitudes_sistema', ['codigo'=>$response->json('data.codigo'),'cliente_id'=>$clientId]);
         $this->assertDatabaseHas('empresas', ['cliente_id'=>$clientId,'nombre_comercial'=>'Negocio Account First']);
     }
