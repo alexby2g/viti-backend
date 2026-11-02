@@ -22,7 +22,7 @@ class ClientAuthController extends Controller
     public function createAccount(Request $request): JsonResponse
     {
         $request->merge([
-            'correo' => Str::lower(trim((string) $request->input('correo'))),
+            'correo' => ($email = Str::lower(trim((string) $request->input('correo')))) !== '' ? $email : null,
             'celular' => $this->digits($request->input('celular')),
             'whatsapp' => $this->digits($request->input('whatsapp')),
             'whatsapp_business' => $this->digits($request->input('whatsapp_business')),
@@ -32,7 +32,7 @@ class ClientAuthController extends Controller
             'nombre' => ['required','string','min:3','max:180'],
             // La cuenta y el prospecto son conceptos distintos. El correo puede existir en
             // clientes/solicitudes, pero no puede pertenecer a otro usuario de acceso.
-            'correo' => ['required','email','max:160',Rule::unique('usuarios','correo')],
+            'correo' => ['nullable','email','max:160',Rule::unique('usuarios','correo')],
             'celular' => ['required','regex:/^[0-9]{7,15}$/',Rule::unique('usuarios','telefono')],
             'whatsapp' => ['nullable','regex:/^[0-9]{7,15}$/'],
             'whatsapp_business' => ['nullable','regex:/^[0-9]{7,15}$/'],
@@ -51,10 +51,12 @@ class ClientAuthController extends Controller
         ]);
 
         [$firstName, $lastName] = $this->splitName($data['nombre']);
-        $username = $this->uniqueUsername($data['correo']);
+        $username = $this->uniqueUsername($data['correo'] ?? null, $data['celular']);
 
         [$usuario, $cliente, $empresa, $linkedRequests] = DB::transaction(function () use ($data, $firstName, $lastName, $username): array {
-            $byEmail = Cliente::query()->whereRaw('LOWER(correo) = ?', [$data['correo']])->first();
+            $byEmail = filled($data['correo'] ?? null)
+                ? Cliente::query()->whereRaw('LOWER(correo) = ?', [$data['correo']])->first()
+                : null;
             $byPhone = Cliente::query()->where('telefono', $data['celular'])->first();
 
             if ($byEmail && $byPhone && (int) $byEmail->id !== (int) $byPhone->id) {
@@ -79,7 +81,7 @@ class ClientAuthController extends Controller
                 'telefono' => $data['celular'],
                 'whatsapp' => $data['whatsapp'] ?: $data['celular'],
                 'whatsapp_business' => $data['whatsapp_business'] ?: null,
-                'correo' => $data['correo'],
+                'correo' => $data['correo'] ?? null,
                 'estado' => 'prospecto',
                 'canal_origen' => 'registro_web',
             ]);
@@ -90,7 +92,7 @@ class ClientAuthController extends Controller
                 'apellido' => $lastName,
                 'usuario' => $username,
                 'telefono' => $data['celular'],
-                'correo' => $data['correo'],
+                'correo' => $data['correo'] ?? null,
                 'password' => $data['password'],
                 'rol' => 'cliente',
                 'estado' => 'activo',
@@ -253,9 +255,11 @@ class ClientAuthController extends Controller
         ];
     }
 
-    private function uniqueUsername(string $email): string
+    private function uniqueUsername(?string $email, string $phone): string
     {
-        $base = Str::slug(Str::before($email, '@'), '_') ?: 'cliente';
+        $base = $email
+            ? (Str::slug(Str::before($email, '@'), '_') ?: 'cliente')
+            : 'cliente_'.$phone;
         $base = Str::limit($base, 68, '');
         $username = $base;
         $suffix = 1;

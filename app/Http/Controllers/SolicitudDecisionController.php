@@ -20,7 +20,7 @@ class SolicitudDecisionController extends Controller
         abort_unless($solicitud->plan_viti_id && $solicitud->planViti, 422, 'La solicitud debe tener un plan VITI seleccionado.');
         abort_unless($solicitud->declaracion_aceptada, 422, 'La solicitud todavía no tiene la declaración confirmada.');
         abort_unless($solicitud->acuerdo_comercial_aceptado, 422, 'La solicitud todavía no tiene aceptado el acuerdo comercial inicial.');
-        abort_unless($solicitud->cliente?->usuario || filled($solicitud->cliente?->correo), 422, 'Registra un correo válido del responsable antes de aprobar; VITI lo necesita para habilitar su acceso.');
+        abort_unless($solicitud->cliente?->usuario || filled($solicitud->cliente?->correo) || filled($solicitud->cliente?->telefono) || filled($solicitud->cliente?->whatsapp), 422, 'Registra al menos un teléfono o correo del responsable antes de aprobar.');
 
         $solicitud->update([
             'estado' => 'aprobada',
@@ -90,7 +90,7 @@ class SolicitudDecisionController extends Controller
                 ? 'Solicitud aprobada. El responsable ya tiene acceso a VITI y el proyecto puede iniciarse.'
                 : (($access['email_enviado'] ?? false)
                     ? 'Solicitud aprobada e invitación enviada al correo del responsable.'
-                    : 'Solicitud aprobada e invitación generada. El correo no pudo enviarse automáticamente; copia el enlace desde la solicitud.'),
+                    : 'Solicitud aprobada e invitación generada. Comparte el enlace con el titular por WhatsApp o por otro medio seguro.'),
             'data' => [
                 'solicitud' => $solicitud->fresh()->load(['empresa','cliente','planViti']),
                 'acceso' => $access,

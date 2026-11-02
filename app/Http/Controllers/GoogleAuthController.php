@@ -18,9 +18,10 @@ class GoogleAuthController extends Controller
     public function redirect(Request $request): RedirectResponse
     {
         $clientId = (string) config('services.google.client_id');
+        $clientSecret = (string) config('services.google.client_secret');
         $redirect = (string) config('services.google.redirect');
 
-        if ($clientId === '' || $redirect === '') {
+        if ($clientId === '' || $clientSecret === '' || $redirect === '') {
             return $this->frontendRedirect('login', ['google' => 'not_configured']);
         }
 
@@ -89,7 +90,11 @@ class GoogleAuthController extends Controller
                 ?? Usuario::query()->whereRaw('LOWER(correo) = ?', [$email])->first();
 
             $created = false;
-            if ($usuario && $usuario->estado !== 'activo') return $this->frontendRedirect('login', ['google' => 'needs_access']);
+            // Google verifica identidad, pero no sustituye el código secreto de administradores.
+            // Este flujo OAuth solo habilita cuentas de clientes de VITI.
+            if ($usuario && ($usuario->estado !== 'activo' || $usuario->rol !== 'cliente')) {
+                return $this->frontendRedirect('login', ['google' => 'needs_access']);
+            }
 
             if (!$usuario) {
                 $displayName = trim((string) ($profile['name'] ?? Str::before($email, '@')));
