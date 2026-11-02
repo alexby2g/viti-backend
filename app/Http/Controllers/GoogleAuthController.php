@@ -18,9 +18,10 @@ class GoogleAuthController extends Controller
     public function redirect(Request $request): RedirectResponse
     {
         $clientId = (string) config('services.google.client_id');
+        $clientSecret = (string) config('services.google.client_secret');
         $redirect = (string) config('services.google.redirect');
 
-        if ($clientId === '' || $redirect === '') {
+        if ($clientId === '' || $clientSecret === '' || $redirect === '') {
             return $this->frontendRedirect('login', ['google' => 'not_configured']);
         }
 
