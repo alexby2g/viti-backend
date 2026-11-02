@@ -28,6 +28,7 @@ class RegistrationIdentityIsolationTest extends TestCase
             'estado' => 'pendiente_revision',
         ]);
 
+        $clientCountBefore = Cliente::query()->count();
         $this->postJson('/api/v1/auth/cliente/crear-cuenta', [
             'nombre' => 'Persona No Verificada',
             'correo' => 'titular@example.com',
@@ -39,7 +40,7 @@ class RegistrationIdentityIsolationTest extends TestCase
         $this->assertDatabaseMissing('usuarios', ['cliente_id' => $prospect->id]);
         $this->assertDatabaseMissing('empresa_usuario', ['empresa_id' => $company->id]);
         $this->assertSame('Titular Original', $prospect->fresh()->nombre);
-        $this->assertDatabaseCount('clientes', 1);
+        $this->assertSame($clientCountBefore, Cliente::query()->count());
     }
 
     public function test_google_verified_email_does_not_grant_access_using_only_another_persons_phone(): void
