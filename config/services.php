@@ -24,7 +24,7 @@ return [
     'google' => [
         'client_id' => env('GOOGLE_CLIENT_ID'),
         'client_secret' => env('GOOGLE_CLIENT_SECRET'),
-        'redirect' => env('GOOGLE_REDIRECT_URI'),
-        'frontend_url' => env('VITI_FRONTEND_URL'),
+        'redirect' => env('GOOGLE_REDIRECT_URI', rtrim(env('VITI_FRONTEND_URL', env('FRONTEND_APP_URL', 'http://localhost:9000')), '/').'/auth/google/callback'),
+        'frontend_url' => env('VITI_FRONTEND_URL', env('FRONTEND_APP_URL', 'http://localhost:9000')),
     ],
 ];
