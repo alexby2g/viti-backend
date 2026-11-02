@@ -22,7 +22,7 @@ class ClientAuthController extends Controller
     public function createAccount(Request $request): JsonResponse
     {
         $request->merge([
-            'correo' => Str::lower(trim((string) $request->input('correo'))),
+            'correo' => ($email = Str::lower(trim((string) $request->input('correo')))) !== '' ? $email : null,
             'celular' => $this->digits($request->input('celular')),
             'whatsapp' => $this->digits($request->input('whatsapp')),
             'whatsapp_business' => $this->digits($request->input('whatsapp_business')),
