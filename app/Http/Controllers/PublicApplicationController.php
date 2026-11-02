@@ -64,7 +64,7 @@ class PublicApplicationController extends Controller
 
         $data = $request->validate([
             'nombre' => ['required','string','min:3','max:180'],
-            'correo' => ['required','email','max:160'],
+            'correo' => ['nullable','email','max:160'],
             'telefono' => ['required','regex:/^[0-9]{7,15}$/'],
             'whatsapp' => ['nullable','regex:/^[0-9]{7,15}$/'],
             'whatsapp_business' => ['nullable','regex:/^[0-9]{7,15}$/'],
@@ -124,7 +124,9 @@ class PublicApplicationController extends Controller
         [$solicitud, $cliente, $empresa] = DB::transaction(function () use ($data, $questionnaire, $plan, $questionsById, $questionsByNumber, $incoming, $request): array {
             $documento = filled($data['documento'] ?? null) ? trim($data['documento']) : null;
             $byPhone = Cliente::query()->where('telefono', $data['telefono'])->first();
-            $byEmail = Cliente::query()->where('correo', $data['correo'])->first();
+            $byEmail = filled($data['correo'] ?? null)
+                ? Cliente::query()->where('correo', $data['correo'])->first()
+                : null;
 
             abort_if($byPhone && $byEmail && (int) $byPhone->id !== (int) $byEmail->id, 422, 'El teléfono y el correo pertenecen a registros diferentes.');
             $cliente = $byPhone ?: $byEmail;
@@ -138,7 +140,7 @@ class PublicApplicationController extends Controller
                     'Ya tenemos una ficha con estos datos. Inicia sesión con la cuenta titular o solicita a VITI una invitación de acceso.'
                 );
                 abort_unless(
-                    Str::lower((string) $cliente->correo) === $data['correo']
+                    Str::lower((string) $cliente->correo) === (string) ($data['correo'] ?? '')
                         && (string) $cliente->telefono === (string) $data['telefono'],
                     422,
                     'Los datos de contacto no coinciden con tu cuenta. Actualiza tu perfil antes de enviar otra solicitud.'
@@ -155,7 +157,7 @@ class PublicApplicationController extends Controller
                 $cliente = Cliente::create([
                     'nombre' => trim($data['nombre']),
                     'telefono' => $data['telefono'],
-                    'correo' => $data['correo'],
+                    'correo' => $data['correo'] ?? null,
                     'whatsapp' => $data['whatsapp'] ?? $data['telefono'],
                     'whatsapp_business' => $data['whatsapp_business'] ?? null,
                     'documento' => $documento,

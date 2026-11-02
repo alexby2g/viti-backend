@@ -26,14 +26,12 @@ class AccessInvitationService
             abort_unless($cliente, 422, 'La solicitud no tiene un responsable asociado.');
             abort_if($cliente->usuario, 422, 'Este responsable ya tiene una cuenta VITI activa.');
 
-            $email = Str::lower(trim((string) $cliente->correo));
-            if ($email === '') {
-                throw ValidationException::withMessages([
-                    'correo' => 'Registra el correo del responsable antes de enviar una invitación.',
-                ]);
-            }
+            // El correo es opcional. El administrador puede compartir el enlace
+            // con el titular por WhatsApp después de verificar su identidad.
+            $email = Str::lower(trim((string) $cliente->correo)) ?: null;
+            abort_unless($email || filled($cliente->telefono) || filled($cliente->whatsapp), 422, 'Registra un teléfono o correo de contacto antes de habilitar el acceso.');
 
-            if (Usuario::query()->where('correo', $email)->where(function ($query) use ($cliente): void {
+            if ($email && Usuario::query()->where('correo', $email)->where(function ($query) use ($cliente): void {
                 $query->whereNull('cliente_id')->orWhere('cliente_id', '!=', $cliente->id);
             })->exists()) {
                 throw ValidationException::withMessages([
@@ -74,7 +72,7 @@ class AccessInvitationService
             return $active->fresh(['cliente','solicitud.empresa']);
         });
 
-        $sent = $this->send($invitation);
+        $sent = filled($invitation->correo_destino) ? $this->send($invitation) : false;
         return $this->snapshot($invitation->fresh(['cliente.usuario','solicitud.empresa']), $sent);
     }
 
@@ -90,8 +88,7 @@ class AccessInvitationService
         abort_unless($invitation, 422, 'No existe una invitación activa para reenviar.');
         $invitation->loadMissing('cliente');
         $currentEmail = Str::lower(trim((string) ($invitation->cliente?->correo ?: $invitation->correo_destino)));
-        abort_if($currentEmail === '', 422, 'El responsable no tiene un correo válido para reenviar la invitación.');
-        if ($currentEmail !== $invitation->correo_destino) {
+        if ($currentEmail !== (string) $invitation->correo_destino) {
             $invitation->update(['correo_destino' => $currentEmail]);
         }
         if ($invitation->expira_at?->isPast()) {
@@ -99,7 +96,7 @@ class AccessInvitationService
             abort(410, 'La invitación venció. Genera una nueva invitación para continuar.');
         }
 
-        $sent = $this->send($invitation);
+        $sent = filled($invitation->correo_destino) ? $this->send($invitation) : false;
         return $this->snapshot($invitation->fresh(['cliente.usuario','solicitud.empresa']), $sent);
     }
 
@@ -148,10 +145,10 @@ class AccessInvitationService
 
         if (!$invitation) {
             return [
-                'estado' => filled($cliente->correo) ? 'pendiente_aprobacion' : 'sin_correo',
+                'estado' => filled($cliente->correo) || filled($cliente->telefono) || filled($cliente->whatsapp) ? 'pendiente_aprobacion' : 'sin_contacto',
                 'correo' => $cliente->correo,
                 'tiene_cuenta' => false,
-                'puede_enviar' => filled($cliente->correo) && $solicitud->estado === 'aprobada',
+                'puede_enviar' => (filled($cliente->correo) || filled($cliente->telefono) || filled($cliente->whatsapp)) && $solicitud->estado === 'aprobada',
             ];
         }
 

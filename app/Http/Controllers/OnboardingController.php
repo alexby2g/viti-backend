@@ -33,7 +33,7 @@ class OnboardingController extends Controller
             'data' => $snapshot,
             'message' => $snapshot['email_enviado']
                 ? 'Invitación creada y enviada por correo.'
-                : 'Invitación creada. El correo no pudo entregarse automáticamente; puedes copiar el enlace mientras revisas la configuración del servicio de correo.',
+                : 'Invitación creada. Copia el enlace y compártelo con el titular por WhatsApp o por otro medio seguro.',
         ], 201);
     }
 
@@ -46,7 +46,7 @@ class OnboardingController extends Controller
             'data' => $snapshot,
             'message' => $snapshot['email_enviado']
                 ? 'Invitación reenviada por correo.'
-                : 'No se pudo entregar el correo. El enlace sigue disponible para copiarlo manualmente.',
+                : 'El enlace sigue disponible. Compártelo por WhatsApp o configura un servicio de correo para enviarlo automáticamente.',
         ]);
     }
 
@@ -130,8 +130,8 @@ class OnboardingController extends Controller
             abort_unless($empresa, 422, 'La solicitud todavía no tiene un negocio asociado.');
 
             $email = Str::lower(trim((string) ($locked->correo_destino ?: $cliente->correo)));
-            abort_if($email === '', 422, 'La invitación no tiene un correo de destino.');
-            abort_if(Usuario::query()->where('correo', $email)->exists(), 422, 'Ese correo ya pertenece a otra cuenta VITI.');
+            // La invitación también puede haberse entregado de manera segura por WhatsApp.
+            abort_if($email !== '' && Usuario::query()->where('correo', $email)->exists(), 422, 'Ese correo ya pertenece a otra cuenta VITI.');
 
             $telefono = filled($cliente->telefono) ? (string) $cliente->telefono : null;
             abort_if($telefono && Usuario::query()->where('telefono', $telefono)->exists(), 422, 'El teléfono de esta solicitud ya está asociado a otra cuenta. Contacta al soporte de VITI.');
@@ -142,7 +142,7 @@ class OnboardingController extends Controller
             if ($documento === '') $documento = null;
             abort_if($documento && Usuario::query()->where('documento', $documento)->exists(), 422, 'El documento de esta solicitud ya está asociado a otra cuenta. Contacta al soporte de VITI.');
 
-            if (!$cliente->correo) $cliente->update(['correo' => $email]);
+            if (!$cliente->correo && $email !== '') $cliente->update(['correo' => $email]);
 
             $usuario = Usuario::create([
                 'cliente_id' => $cliente->id,
@@ -150,7 +150,7 @@ class OnboardingController extends Controller
                 'usuario' => $data['usuario'],
                 'documento' => $documento,
                 'telefono' => $telefono,
-                'correo' => $email,
+                'correo' => $email ?: null,
                 'password' => $data['password'],
                 'rol' => 'cliente',
                 'estado' => 'activo',
@@ -166,7 +166,7 @@ class OnboardingController extends Controller
                 'estado' => 'usada',
                 'cliente_id' => $cliente->id,
                 'solicitud_id' => $solicitud->id,
-                'correo_destino' => $email,
+                'correo_destino' => $email ?: null,
                 'usada_at' => now(),
             ]);
 
