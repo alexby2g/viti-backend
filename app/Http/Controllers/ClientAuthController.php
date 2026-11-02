@@ -64,32 +64,25 @@ class ClientAuthController extends Controller
             }
 
             $cliente = $byEmail ?: $byPhone;
-            if ($cliente && $cliente->usuario()->exists()) {
+            if ($cliente) {
+                // Un correo o celular escrito en un formulario NO demuestra identidad.
+                // Nunca vincular solicitudes o negocios anteriores sin verificar al titular.
                 throw ValidationException::withMessages([
-                    'correo' => 'Ya tienes una cuenta VITI. Inicia sesión para continuar.',
+                    'correo' => $cliente->usuario()->exists()
+                        ? 'Ya existe una cuenta VITI con estos datos. Inicia sesión para continuar.'
+                        : 'Ya existe una solicitud con estos datos de contacto. Por seguridad, recibirás una invitación de acceso cuando VITI apruebe la solicitud. No podemos vincularla solo con correo y celular.',
                 ]);
             }
 
-            if ($cliente) {
-                $cliente->update([
-                    'nombre' => trim($data['nombre']),
-                    'correo' => $data['correo'],
-                    'telefono' => $data['celular'],
-                    'whatsapp' => $data['whatsapp'] ?: $cliente->whatsapp ?: $data['celular'],
-                    'whatsapp_business' => $data['whatsapp_business'] ?: $cliente->whatsapp_business,
-                    'canal_origen' => $cliente->canal_origen ?: 'registro_web',
-                ]);
-            } else {
-                $cliente = Cliente::create([
-                    'nombre' => trim($data['nombre']),
-                    'telefono' => $data['celular'],
-                    'whatsapp' => $data['whatsapp'] ?: $data['celular'],
-                    'whatsapp_business' => $data['whatsapp_business'] ?: null,
-                    'correo' => $data['correo'],
-                    'estado' => 'prospecto',
-                    'canal_origen' => 'registro_web',
-                ]);
-            }
+            $cliente = Cliente::create([
+                'nombre' => trim($data['nombre']),
+                'telefono' => $data['celular'],
+                'whatsapp' => $data['whatsapp'] ?: $data['celular'],
+                'whatsapp_business' => $data['whatsapp_business'] ?: null,
+                'correo' => $data['correo'],
+                'estado' => 'prospecto',
+                'canal_origen' => 'registro_web',
+            ]);
 
             $usuario = Usuario::create([
                 'cliente_id' => $cliente->id,
@@ -178,7 +171,14 @@ class ClientAuthController extends Controller
                 throw ValidationException::withMessages(['celular'=>'El correo y el celular están asociados a contactos distintos. Contacta a soporte VITI.']);
             }
 
-            $cliente = $byEmail ?: $byPhone;
+            // Google verificó el correo, NO el número telefónico ingresado.
+            // Un teléfono coincidente jamás debe permitir reclamar un contacto ajeno.
+            if (!$byEmail && $byPhone) {
+                throw ValidationException::withMessages([
+                    'celular' => 'Este celular ya está asociado a otra solicitud VITI. Contacta a soporte para verificar su titularidad.',
+                ]);
+            }
+            $cliente = $byEmail;
             if ($cliente && $cliente->usuario()->exists()) {
                 throw ValidationException::withMessages(['celular'=>'Ese contacto ya tiene una cuenta VITI.']);
             }
