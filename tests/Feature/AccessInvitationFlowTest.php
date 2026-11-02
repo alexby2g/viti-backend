@@ -129,7 +129,7 @@ class AccessInvitationFlowTest extends TestCase
         $this->assertDatabaseHas('solicitudes_sistema', ['codigo'=>$codigo,'cliente_id'=>$clientIdBefore]);
     }
 
-    public function test_account_first_then_public_request_uses_the_existing_client_account(): void
+    public function test_account_first_then_public_request_requires_authenticated_owner(): void
     {
         $this->seed(CuestionarioSeeder::class);
         $catalog = $this->getJson('/api/v1/publico/solicitud/catalogo')->assertOk()->json('data');
@@ -154,7 +154,6 @@ class AccessInvitationFlowTest extends TestCase
             'terminos_aceptados'=>true,'respuestas'=>[],
         ];
 
-        // Un visitante no autenticado no puede usar la identidad de un cliente.
         $this->postJson('/api/v1/publico/solicitud/enviar', $payload)->assertStatus(422);
         $user = \App\Models\Usuario::query()->where('cliente_id', $clientId)->firstOrFail();
         $response = $this->actingAs($user)
