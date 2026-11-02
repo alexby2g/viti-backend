@@ -51,7 +51,7 @@ class PublicApplicationController extends Controller
 
         // Compatibilidad con clientes anteriores: el nuevo flujo solo pide una confirmación.
         $request->merge([
-            'correo' => Str::lower(trim((string) $request->input('correo'))),
+            'correo' => ($email = Str::lower(trim((string) $request->input('correo')))) !== '' ? $email : null,
             'forma_pago_preferida' => $request->input('forma_pago_preferida') ?: 'por_definir',
             'declaracion_aceptada' => $accepted,
             'declaracion_nombre' => $request->input('declaracion_nombre') ?: $name,
