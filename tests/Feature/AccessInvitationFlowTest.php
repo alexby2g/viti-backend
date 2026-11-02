@@ -118,13 +118,14 @@ class AccessInvitationFlowTest extends TestCase
         $codigo = $requestResponse->json('data.codigo');
         $solicitud = \App\Models\SolicitudSistema::query()->where('codigo',$codigo)->firstOrFail();
         $clientIdBefore = $solicitud->cliente_id;
+        $clientCountBefore = \App\Models\Cliente::query()->count();
 
         $this->postJson('/api/v1/auth/cliente/crear-cuenta', [
             'nombre'=>'Carlos Cliente','correo'=>$email,'celular'=>$phone,'whatsapp'=>$phone,
             'password'=>'Clave2026','password_confirmation'=>'Clave2026',
         ])->assertStatus(422);
 
-        $this->assertDatabaseCount('clientes', 1);
+        $this->assertSame($clientCountBefore, \App\Models\Cliente::query()->count());
         $this->assertDatabaseMissing('usuarios', ['correo'=>$email]);
         $this->assertDatabaseHas('solicitudes_sistema', ['codigo'=>$codigo,'cliente_id'=>$clientIdBefore]);
     }
@@ -142,6 +143,7 @@ class AccessInvitationFlowTest extends TestCase
             'password'=>'Clave2026','password_confirmation'=>'Clave2026',
         ])->assertCreated();
         $clientId = (int) $account->json('usuario.cliente_id');
+        $clientCountBefore = \App\Models\Cliente::query()->count();
 
         $payload = [
             'nombre'=>'Ana Cliente','correo'=>$email,'telefono'=>$phone,'whatsapp'=>$phone,
@@ -161,7 +163,7 @@ class AccessInvitationFlowTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('data.cuenta_existente', true);
 
-        $this->assertDatabaseCount('clientes', 1);
+        $this->assertSame($clientCountBefore, \App\Models\Cliente::query()->count());
         $this->assertDatabaseHas('solicitudes_sistema', ['codigo'=>$response->json('data.codigo'),'cliente_id'=>$clientId]);
         $this->assertDatabaseHas('empresas', ['cliente_id'=>$clientId,'nombre_comercial'=>'Negocio Account First']);
     }
