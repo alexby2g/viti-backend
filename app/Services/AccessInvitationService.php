@@ -160,7 +160,6 @@ class AccessInvitationService
         $invitation->loadMissing(['cliente.usuario','solicitud.empresa']);
         $state = $this->effectiveState($invitation);
         $active = in_array($state, ['pendiente','enviada'], true);
-        $front = $this->frontendOrigin();
         $route = '/registro-cliente/'.$invitation->token;
 
         return [
@@ -176,7 +175,7 @@ class AccessInvitationService
             'revocada_at' => $invitation->revocada_at,
             'error_envio' => $invitation->error_envio,
             'ruta' => $active ? $route : null,
-            'url' => $active ? $front.$route : null,
+            'url' => $active ? $this->invitationUrl($invitation) : null,
             'email_enviado' => $sentNow ?? (bool) $invitation->enviada_at,
             'puede_enviar' => $active,
             'puede_reenviar' => $active,
@@ -188,6 +187,11 @@ class AccessInvitationService
      * An invitation must open on the VITI frontend, never on another app or
      * on a concatenation of hosting URLs entered by mistake in Render.
      */
+    public function invitationUrl(InvitacionCliente $invitation): string
+    {
+        return $this->frontendOrigin().'/registro-cliente/'.$invitation->token;
+    }
+
     private function frontendOrigin(): string
     {
         $local = app()->environment('local', 'testing');
