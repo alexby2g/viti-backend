@@ -31,7 +31,7 @@ class VitiAccessInvitation extends Mailable
                 'cliente' => $this->invitation->cliente,
                 'solicitud' => $this->invitation->solicitud,
                 'empresa' => $this->invitation->solicitud?->empresa,
-                'url' => rtrim((string) env('FRONTEND_APP_URL', 'http://localhost:9000'), '/').'/registro-cliente/'.$this->invitation->token,
+                'url' => app(\App\Services\AccessInvitationService::class)->invitationUrl($this->invitation),
                 'expiraAt' => $this->invitation->expira_at,
             ],
         );
