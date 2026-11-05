@@ -28,8 +28,7 @@ class BrevoTransactionalEmailService
             throw new RuntimeException('La invitación no tiene un correo de destino.');
         }
 
-        $url = rtrim((string) env('FRONTEND_APP_URL', 'http://localhost:9000'), '/')
-            .'/registro-cliente/'.$invitation->token;
+        $url = app(AccessInvitationService::class)->invitationUrl($invitation);
 
         $payload = [
             'sender' => [
