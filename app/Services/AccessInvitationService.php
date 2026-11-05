@@ -160,7 +160,7 @@ class AccessInvitationService
         $invitation->loadMissing(['cliente.usuario','solicitud.empresa']);
         $state = $this->effectiveState($invitation);
         $active = in_array($state, ['pendiente','enviada'], true);
-        $front = rtrim((string) env('FRONTEND_APP_URL', 'http://localhost:9000'), '/');
+        $front = $this->frontendOrigin();
         $route = '/registro-cliente/'.$invitation->token;
 
         return [
@@ -182,6 +182,36 @@ class AccessInvitationService
             'puede_reenviar' => $active,
             'puede_revocar' => $active,
         ];
+    }
+
+    /**
+     * An invitation must open on the VITI frontend, never on another app or
+     * on a concatenation of hosting URLs entered by mistake in Render.
+     */
+    private function frontendOrigin(): string
+    {
+        $local = app()->environment('local', 'testing');
+        $candidates = [
+            env('FRONTEND_APP_URL'),
+            env('VITI_FRONTEND_URL'),
+            env('FRONTEND_URLS'),
+            $local ? 'http://localhost:9000' : 'https://viti-frontend.vercel.app',
+        ];
+
+        foreach ($candidates as $candidate) {
+            $url = trim((string) $candidate);
+            if ($url === '' || preg_match('/[\\s,;]/', $url)) continue;
+            $parts = parse_url($url);
+            if (!is_array($parts) || !in_array($parts['scheme'] ?? '', $local ? ['http', 'https'] : ['https'], true)) continue;
+            $host = strtolower((string) ($parts['host'] ?? ''));
+            if ($host === '' || str_contains($host, 'fitfamily')) continue;
+            if (isset($parts['user'], $parts['pass']) || isset($parts['query']) || isset($parts['fragment'])) continue;
+            if (isset($parts['path']) && !in_array($parts['path'], ['', '/'], true)) continue;
+            if (!$local && in_array($host, ['localhost', '127.0.0.1'], true)) continue;
+            return rtrim($url, '/');
+        }
+
+        throw new \\RuntimeException('Configura una URL válida del frontend de VITI para generar invitaciones.');
     }
 
     private function effectiveState(InvitacionCliente $invitation): string
