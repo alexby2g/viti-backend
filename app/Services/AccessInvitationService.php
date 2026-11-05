@@ -205,13 +205,13 @@ class AccessInvitationService
             if (!is_array($parts) || !in_array($parts['scheme'] ?? '', $local ? ['http', 'https'] : ['https'], true)) continue;
             $host = strtolower((string) ($parts['host'] ?? ''));
             if ($host === '' || str_contains($host, 'fitfamily')) continue;
-            if (isset($parts['user'], $parts['pass']) || isset($parts['query']) || isset($parts['fragment'])) continue;
+            if (isset($parts['user']) || isset($parts['pass']) || isset($parts['query']) || isset($parts['fragment'])) continue;
             if (isset($parts['path']) && !in_array($parts['path'], ['', '/'], true)) continue;
             if (!$local && in_array($host, ['localhost', '127.0.0.1'], true)) continue;
             return rtrim($url, '/');
         }
 
-        throw new \\RuntimeException('Configura una URL válida del frontend de VITI para generar invitaciones.');
+        throw new \RuntimeException('Configura una URL válida del frontend de VITI para generar invitaciones.');
     }
 
     private function effectiveState(InvitacionCliente $invitation): string
