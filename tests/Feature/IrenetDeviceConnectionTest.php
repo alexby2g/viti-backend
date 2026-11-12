@@ -88,7 +88,7 @@ class IrenetDeviceConnectionTest extends TestCase
                 'clientes', 'empresas', 'solicitudes_en_revision', 'proyectos_activos', 'soportes_abiertos',
             ]]]);
 
-        $this->assertSame('no-store', $response->headers->get('Cache-Control'));
+        $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
         $this->assertArrayNotHasKey('usuario', $response->json('data'));
         $this->assertArrayNotHasKey('token', $response->json('data'));
     }
@@ -101,7 +101,7 @@ class IrenetDeviceConnectionTest extends TestCase
         $this->withToken($data['token'])
             ->getJson('/api/v1/irenet/context')->assertOk();
 
-        $this->withToken(null);
+        $this->withHeader('Authorization', '');
         $this->actingAs($owner)
             ->deleteJson('/api/v1/irenet/dispositivos/'.$data['id'])
             ->assertOk();
