@@ -20,8 +20,8 @@ class SecurityHardeningTest extends TestCase
             'password' => 'Prueba123456',
             'password_confirmation' => 'Prueba123456',
         ])
-            ->assertStatus(410)
-            ->assertJsonPath('codigo', 'registro_por_invitacion');
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['token', 'celular']);
 
         $this->assertDatabaseMissing('usuarios', ['usuario' => 'registro_abierto']);
     }

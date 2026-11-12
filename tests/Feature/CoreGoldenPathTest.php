@@ -30,6 +30,15 @@ class CoreGoldenPathTest extends TestCase
             'telefono'=>'69112233',
             'estado'=>'informacion_recibida',
         ]);
+        Usuario::create([
+            'cliente_id'=>$client->id,
+            'nombre'=>'Cuenta Cliente Golden Path',
+            'usuario'=>'cliente_golden_path',
+            'telefono'=>'69112233',
+            'password'=>'Prueba123456',
+            'rol'=>'cliente',
+            'estado'=>'activo',
+        ]);
         $company=Empresa::create([
             'cliente_id'=>$client->id,
             'codigo'=>'EMP-GOLDEN',
