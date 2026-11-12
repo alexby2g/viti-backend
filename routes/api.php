@@ -146,6 +146,7 @@ Route::prefix('v1')->group(function (): void {
 
         Route::middleware('platform_admin')->group(function (): void {
             Route::get('dashboard', DashboardController::class);
+            Route::post('assistant/messages', \App\Http\Controllers\AssistantMessageController::class);
             Route::post('agr/voice', AgrVoiceController::class);
             Route::post('agr/acciones/crear-cliente', [AgrActionController::class,'confirmCreateClient']);
             Route::get('almacenamiento/estado', [StorageController::class,'status'])->middleware('superadmin');
