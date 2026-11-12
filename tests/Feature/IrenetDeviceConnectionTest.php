@@ -15,8 +15,8 @@ class IrenetDeviceConnectionTest extends TestCase
         return Usuario::create([
             'nombre' => 'Prueba IRENET '.$suffix,
             'usuario' => 'irenet_'.$role.'_'.$suffix,
-            'documento' => '99123000'.$suffix,
-            'telefono' => '7110000'.$suffix,
+            'documento' => '9'.str_pad((string) abs(crc32('doc-'.$role.'-'.$suffix)), 9, '0', STR_PAD_LEFT),
+            'telefono' => '7'.str_pad((string) abs(crc32('tel-'.$role.'-'.$suffix)), 8, '0', STR_PAD_LEFT),
             'password' => 'Prueba123456',
             'rol' => $role,
             'estado' => 'activo',
