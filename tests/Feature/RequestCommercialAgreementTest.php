@@ -30,6 +30,15 @@ class RequestCommercialAgreementTest extends TestCase
             'telefono'=>'73990001',
             'estado'=>'informacion_recibida',
         ]);
+        Usuario::create([
+            'cliente_id'=>$client->id,
+            'nombre'=>'Cuenta Laura Prueba',
+            'usuario'=>'laura_prueba_comercial',
+            'telefono'=>'73990001',
+            'password'=>'Prueba123456',
+            'rol'=>'cliente',
+            'estado'=>'activo',
+        ]);
         $company = Empresa::create([
             'cliente_id'=>$client->id,
             'codigo'=>'EMP-COMERCIAL-TEST',
