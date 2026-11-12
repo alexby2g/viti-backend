@@ -14,6 +14,12 @@ return [
         'reply_to_name' => env('BREVO_REPLY_TO_NAME', env('MAIL_FROM_NAME', 'AGR Studio · VITI')),
     ],
 
+    'ollama_cloud' => [
+        'enabled' => env('AGR_OLLAMA_CLOUD_ENABLED', false),
+        'api_key' => env('OLLAMA_API_KEY', ''),
+        'model' => env('AGR_OLLAMA_CLOUD_MODEL', 'gemma4:31b'),
+    ],
+
     'elevenlabs' => [
         'api_key' => env('ELEVENLABS_API_KEY'),
         'voice_id' => env('ELEVENLABS_VOICE_ID', 'ZKOQuf0oY2dzqs2f3sdk'),

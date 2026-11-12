@@ -29,6 +29,14 @@ class AppServiceProvider extends ServiceProvider
             Limit::perHour(30)->by($request->ip()),
         ]);
 
+        RateLimiter::for('agr-ollama', function (Request $request): array {
+            $userKey = 'agr-ollama:'.($request->user()?->id ?: $request->ip());
+            return [
+                Limit::perMinute(8)->by($userKey),
+                Limit::perHour(90)->by($userKey),
+            ];
+        });
+
         RateLimiter::for('api', function (Request $request): Limit {
             if ($request->user()) {
                 return Limit::perMinute(300)->by('user:'.$request->user()->id);
