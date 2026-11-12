@@ -14,6 +14,7 @@ class AgrAssistantService
         if ($text === '') return $this->helpResponse();
         if ($this->matches($text, ['ayuda', 'que puedes hacer', 'comandos', 'opciones'])) return $this->helpResponse();
         if ($this->matches($text, ['resumen', 'resumen de viti', 'estado de viti', 'como esta viti', 'como va viti'])) return $this->summaryResponse($text);
+        if ($this->matches($text, ['que necesita atencion', 'que requiere atencion', 'que pide atencion', 'cuales necesitan atencion', 'que debo atender', 'que hay pendiente', 'prioridades de hoy', 'que solicitudes requieren atencion'])) return $this->attentionResponse();
 
         if ($this->matches($text, ['abrir clientes', 'ir a clientes', 'mostrar clientes'])) return $this->navigationResponse('clients', $this->reply('open_clients', $text), '/empresas');
         if ($this->matches($text, ['abrir empresas', 'ir a empresas', 'mostrar empresas'])) return $this->navigationResponse('companies', $this->reply('open_companies', $text), '/empresas');
@@ -36,7 +37,7 @@ class AgrAssistantService
             return $this->countResponse('count_companies', $this->reply('count_companies', $text, $count), $count);
         }
         if ($this->matches($text, ['solicitudes pendientes', 'solicitudes sin resolver', 'cuantas solicitudes pendientes'])) {
-            $count = SolicitudSistema::query()->whereNotIn('estado', ['completada', 'rechazada', 'cancelada'])->count();
+            $count = SolicitudSistema::query()->whereIn('estado', ['en_revision', 'aprobada'])->count();
             return $this->countResponse('pending_requests', $this->reply('pending_requests', $text, $count), $count);
         }
         if ($this->matches($text, ['cuantos proyectos', 'cantidad de proyectos', 'total de proyectos'])) {
@@ -76,7 +77,7 @@ class AgrAssistantService
     {
         $clients = Cliente::query()->count();
         $companies = Empresa::query()->where('estado', 'activo')->count();
-        $requests = SolicitudSistema::query()->whereNotIn('estado', ['completada', 'rechazada', 'cancelada'])->count();
+        $requests = SolicitudSistema::query()->whereIn('estado', ['en_revision', 'aprobada'])->count();
         $projects = Proyecto::query()->where('estado', 'activo')->count();
         $payments = Suscripcion::query()->whereIn('estado', ['gracia', 'suspendida'])->count();
         $support = Mantenimiento::query()->whereNotIn('estado', ['resuelto', 'cerrado'])->count();
@@ -86,6 +87,61 @@ class AgrAssistantService
             'message'=>$this->reply('summary', $text, null, compact('clients','companies','requests','projects','payments','support')),
             'data'=>compact('clients','companies','requests','projects','payments','support'),
             'meta'=>['style'=>'contextual','source'=>'viti_local']
+        ];
+    }
+
+    /**
+     * Explica prioridades verificables usando exclusivamente estados accionables.
+     * No modifica solicitudes ni ejecuta comandos.
+     */
+    public function attentionResponse(): array
+    {
+        $review = SolicitudSistema::query()->where('estado', 'en_revision')->count();
+        $approved = SolicitudSistema::query()->where('estado', 'aprobada')->count();
+        $payments = Suscripcion::query()->whereIn('estado', ['gracia', 'suspendida'])->count();
+        $support = Mantenimiento::query()->whereNotIn('estado', ['resuelto', 'cerrado'])->count();
+
+        $requests = SolicitudSistema::query()
+            ->whereIn('estado', ['en_revision', 'aprobada'])
+            ->latest('id')
+            ->limit(5)
+            ->get(['id', 'codigo', 'titulo', 'estado', 'prioridad']);
+
+        $details = $requests->map(function (SolicitudSistema $request): string {
+            $code = trim((string) $request->codigo);
+            $title = trim((string) $request->titulo);
+            $identifier = $code !== '' ? $code : ($title !== '' ? Str::limit($title, 80) : 'Solicitud '.$request->id);
+            $state = $request->estado === 'en_revision' ? 'en revisión' : 'aprobada, pendiente de convertir';
+            return $identifier.' ('.$state.')';
+        })->all();
+
+        $message = "Revisé VITI: {$review} solicitudes en revisión, {$approved} aprobadas pendientes de convertir, "
+            ."{$payments} suscripciones en gracia o suspendidas y {$support} mantenimientos abiertos.";
+
+        if ($details !== []) {
+            $message .= ' Solicitudes: '.implode('; ', $details).'.';
+            if ($review + $approved > count($details)) {
+                $message .= ' Hay más solicitudes; puedes revisarlas en el módulo Solicitudes.';
+            }
+        }
+
+        if ($review + $approved + $payments + $support === 0) {
+            $message .= ' No encontré pendientes en estas cuatro categorías.';
+        }
+
+        $message .= ' Puedes decir «abrir solicitudes», «abrir pagos» o «abrir soportes» para revisarlos.';
+
+        return [
+            'intent' => 'attention',
+            'message' => $message,
+            'data' => [
+                'requests_review' => $review,
+                'requests_approved' => $approved,
+                'payments_attention' => $payments,
+                'support_open' => $support,
+                'requests' => $requests->map(fn (SolicitudSistema $request) => $request->only(['id','codigo','titulo','estado','prioridad']))->values()->all(),
+            ],
+            'meta' => ['style' => 'contextual', 'source' => 'viti_local', 'read_only' => true],
         ];
     }
 
@@ -138,7 +194,7 @@ class AgrAssistantService
             'summary' => [
                 'Tengo una lectura rápida de VITI: {clients} clientes, {companies} empresas activas, {requests} solicitudes pendientes, {projects} proyectos activos, {payments} cuentas con atención y {support} soportes abiertos.',
                 'Así está VITI ahora mismo: {clients} clientes, {companies} empresas activas y {projects} proyectos en curso. Además, hay {requests} solicitudes pendientes, {payments} pagos que requieren atención y {support} soportes abiertos.',
-                'Panorama operativo de VITI: {companies} negocios activos, {clients} clientes registrados y {projects} proyectos activos. Lo que pide atención hoy: {requests} solicitudes, {payments} pagos y {support} soportes.'
+                'Panorama operativo de VITI: {companies} negocios activos, {clients} clientes registrados y {projects} proyectos activos. Para revisar: {requests} solicitudes en revisión o aprobadas sin convertir, {payments} suscripciones en atención y {support} soportes.'
             ],
             'count_clients' => ['VITI tiene {count} clientes registrados.','Detecté {count} clientes en la base actual de VITI.','El registro actual suma {count} clientes.'],
             'count_companies' => ['Hay {count} empresas registradas en VITI.','La plataforma tiene {count} empresas en su registro.','En este momento, VITI contabiliza {count} empresas.'],

@@ -46,7 +46,7 @@ class AgrMemoryService
             $memory['pending'] = ['type' => $response['intent'], 'step' => 0, 'data' => []];
             $response['memory'] = ['active' => true, 'pending_action' => true, 'hint' => 'AGR recopilará los datos paso a paso.'];
         } else {
-            $followUp = $this->resolveFollowUp($text, $memory);
+            $followUp = $this->resolveFollowUp($text, $memory, $assistant, $response);
             if ($followUp !== null) $response = $followUp;
         }
 
@@ -273,10 +273,18 @@ class AgrMemoryService
         return in_array(mb_strtolower($value), ['sin resumen','ninguno','ninguna','no'], true) ? null : $value;
     }
 
-    private function resolveFollowUp(string $text, array $memory): ?array
+    private function resolveFollowUp(string $text, array $memory, AgrAssistantService $assistant, array $current): ?array
     {
         $last = $memory['last_result'] ?? null;
         if (!$last) return null;
+
+        // Seguimiento de un resumen, solo cuando la orden actual no tuvo respuesta propia.
+        $normalized = trim((string) preg_replace('/[¿?¡!.,]/u', '', $text));
+        if (($current['intent'] ?? '') === 'unknown'
+            && in_array($last['intent'] ?? '', ['summary', 'attention'], true)
+            && in_array($normalized, ['cuales son', 'cuáles son', 'cuales', 'cuáles', 'y cuales', 'y cuáles', 'dime cuales', 'dime cuáles', 'me las muestras'], true)) {
+            return $assistant->attentionResponse();
+        }
         if ($this->matches($text, ['ese cliente', 'ese usuario', 'el cliente anterior', 'el primero'])) {
             $results = $last['data']['results'] ?? [];
             if (($last['intent'] ?? '') === 'search_client' && !empty($results)) {
