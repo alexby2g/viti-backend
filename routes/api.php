@@ -7,6 +7,7 @@ Route::get('health', fn () => ['status'=>'ok','service'=>'VITI Core API','time'=
 
 Route::prefix('v1')->group(function (): void {
     Route::get('setup/status', [SetupController::class,'status']);
+    Route::get('irenet/context', [\App\Http\Controllers\IrenetConnectionController::class,'context'])->middleware('throttle:30,1');
     Route::post('setup', [SetupController::class,'store'])->middleware('throttle:login');
 
     Route::prefix('auth')->group(function (): void {
@@ -147,6 +148,9 @@ Route::prefix('v1')->group(function (): void {
         Route::middleware('platform_admin')->group(function (): void {
             Route::get('dashboard', DashboardController::class);
             Route::post('assistant/messages', \App\Http\Controllers\AssistantMessageController::class);
+            Route::get('irenet/dispositivos', [\App\Http\Controllers\IrenetConnectionController::class,'devices'])->middleware('superadmin');
+            Route::post('irenet/dispositivos', [\App\Http\Controllers\IrenetConnectionController::class,'pair'])->middleware(['superadmin','throttle:5,1']);
+            Route::delete('irenet/dispositivos/{device}', [\App\Http\Controllers\IrenetConnectionController::class,'revoke'])->middleware('superadmin');
             Route::post('agr/voice', AgrVoiceController::class);
             Route::post('agr/acciones/crear-cliente', [AgrActionController::class,'confirmCreateClient']);
             Route::get('almacenamiento/estado', [StorageController::class,'status'])->middleware('superadmin');
