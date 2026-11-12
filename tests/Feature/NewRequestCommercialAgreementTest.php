@@ -12,7 +12,7 @@ class NewRequestCommercialAgreementTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_new_request_requires_plan_payment_preference_subscription_frequency_and_agreement(): void
+    public function test_request_with_selected_plan_requires_payment_preference_frequency_and_agreement(): void
     {
         $this->seed(CuestionarioSeeder::class);
         $questionnaire = Cuestionario::query()->where('activo', true)->firstOrFail();
@@ -26,7 +26,7 @@ class NewRequestCommercialAgreementTest extends TestCase
         $request = SolicitudSistema::create([
             'empresa_id'=>$company->id,'cliente_id'=>$client->id,'cuestionario_id'=>$questionnaire->id,
             'codigo'=>'SOL-NEW-AGREEMENT','public_token'=>Str::random(48),'publico_habilitado'=>true,'titulo'=>'Solicitud nueva',
-            'estado'=>'borrador','prioridad'=>'normal','acuerdo_comercial_requerido'=>true,
+            'estado'=>'borrador','prioridad'=>'normal','plan_viti_id'=>$plan->id,'acuerdo_comercial_requerido'=>true,
             'declaracion_aceptada'=>true,'declaracion_nombre'=>'Cliente nuevo','declaracion_fecha'=>now()->toDateString(),
         ]);
         foreach ($questionnaire->secciones()->with('preguntas')->get()->flatMap->preguntas->where('obligatoria', true) as $question) {

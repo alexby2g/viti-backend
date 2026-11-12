@@ -19,7 +19,7 @@ class CoreWorkflowIntegrityTest extends TestCase
         $this->actingAs($admin)
             ->postJson('/api/v1/proyectos', $this->projectPayload($company,$client,$request))
             ->assertStatus(422)
-            ->assertJsonPath('message','La solicitud debe estar aprobada antes de convertirse en proyecto.');
+            ->assertJsonPath('message','La solicitud debe estar aprobada antes de iniciar el proyecto.');
 
         $this->assertDatabaseMissing('proyectos',['solicitud_id'=>$request->id]);
         $this->assertDatabaseHas('solicitudes_sistema',['id'=>$request->id,'estado'=>'en_revision']);
@@ -28,6 +28,15 @@ class CoreWorkflowIntegrityTest extends TestCase
     public function test_approved_request_becomes_project_and_is_marked_converted(): void
     {
         [$admin,$client,$company] = $this->fixture('REQUEST-OK');
+        Usuario::create([
+            'cliente_id'=>$client->id,
+            'nombre'=>'Cuenta Cliente Autorizado',
+            'usuario'=>'cliente_request_ok',
+            'telefono'=>$client->telefono,
+            'password'=>'Prueba123456',
+            'rol'=>'cliente',
+            'estado'=>'activo',
+        ]);
         $request = $this->systemRequest($company,$client,'aprobada');
 
         $this->actingAs($admin)
@@ -37,6 +46,19 @@ class CoreWorkflowIntegrityTest extends TestCase
 
         $this->assertDatabaseHas('proyectos',['solicitud_id'=>$request->id,'empresa_id'=>$company->id]);
         $this->assertDatabaseHas('solicitudes_sistema',['id'=>$request->id,'estado'=>'convertida']);
+    }
+
+    public function test_approved_request_waits_for_client_account_before_project_creation(): void
+    {
+        [$admin,$client,$company] = $this->fixture('ACCOUNT-REQUIRED');
+        $request = $this->systemRequest($company,$client,'aprobada');
+
+        $this->actingAs($admin)
+            ->postJson('/api/v1/proyectos', $this->projectPayload($company,$client,$request))
+            ->assertStatus(422)
+            ->assertJsonPath('message','El responsable debe crear su cuenta VITI desde la invitación antes de iniciar el proyecto.');
+
+        $this->assertDatabaseMissing('proyectos',['solicitud_id'=>$request->id]);
     }
 
     public function test_application_cannot_link_project_from_another_company(): void
