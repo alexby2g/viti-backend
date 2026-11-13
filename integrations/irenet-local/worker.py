@@ -94,7 +94,8 @@ def ask_ollama(question):
         raise RuntimeError("Ollama devolvió una respuesta vacía.")
     # Keep answers under the backend limit, without silently chopping mid-word.
     if len(result) > 11900:
-        shortened = result[:11800].rsplit("\n", 1)[0]
+        prefix = result[:11800]
+        shortened = prefix.rsplit("\n", 1)[0] if "\n" in prefix else prefix.rsplit(" ", 1)[0]
         return shortened + "\n\n[Respuesta extensa: el resultado supera el límite de tamaño. Solicita un análisis más específico.]"
     return result
 
