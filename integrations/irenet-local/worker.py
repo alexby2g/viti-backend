@@ -18,7 +18,7 @@ import sys
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import Request, build_opener, HTTPSHandler, HTTPRedirectHandler
+from urllib.request import Request, urlopen, build_opener, HTTPSHandler, HTTPRedirectHandler
 
 API_BASE = os.environ.get(
     "VITI_API_BASE",
