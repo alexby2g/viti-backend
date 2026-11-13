@@ -18,8 +18,8 @@ return new class extends Migration {
 
         Schema::create('agr_saved_analyses', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('solicitud_id')->constrained('solicitudes_sistema')->cascadeOnDelete();
-            $table->foreignId('usuario_id')->constrained('usuarios')->cascadeOnDelete();
+            $table->foreignId('solicitud_id')->constrained('solicitudes_sistema')->restrictOnDelete();
+            $table->foreignId('usuario_id')->nullable()->constrained('usuarios')->nullOnDelete();
             $table->uuid('source_job_id')->unique();
             $table->unsignedInteger('version');
             $table->string('estado', 20)->default('borrador');
