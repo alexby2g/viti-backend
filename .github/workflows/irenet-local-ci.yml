@@ -1,0 +1,21 @@
+name: IRENET Local Bridge CI
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  local-worker-security:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate Python connector syntax
+        run: python -m py_compile integrations/irenet-local/worker.py
+      - name: Validate local-only bridge security
+        run: python -m unittest discover -s integrations/irenet-local -p 'test_*.py' -v
