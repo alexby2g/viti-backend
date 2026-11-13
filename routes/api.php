@@ -35,6 +35,13 @@ Route::prefix('v1')->group(function (): void {
         Route::post('{token}/enviar', [PublicSolicitudController::class,'submit']);
     });
 
+    // Dedicated Windows worker: this token only permits obtaining and resolving
+    // inference jobs; it cannot access administrative VITI APIs.
+    Route::middleware('throttle:30,1')->prefix('assistant/local/worker')->group(function (): void {
+        Route::get('next', [\App\Http\Controllers\AgrLocalWorkerController::class, 'next']);
+        Route::post('jobs/{id}/complete', [\App\Http\Controllers\AgrLocalWorkerController::class, 'complete']);
+    });
+
     Route::middleware(['auth:sanctum','throttle:api'])->group(function (): void {
         Route::get('auth/me', [AuthController::class,'me']);
         Route::post('auth/perfil/foto', [AuthController::class,'uploadPhoto']);
@@ -148,6 +155,8 @@ Route::prefix('v1')->group(function (): void {
             Route::get('dashboard', DashboardController::class);
             Route::post('assistant/messages', \App\Http\Controllers\AssistantMessageController::class);
             Route::post('assistant/ollama', \App\Http\Controllers\AgrOllamaController::class)->middleware('throttle:agr-ollama');
+            Route::post('assistant/local/jobs', [\App\Http\Controllers\AgrLocalInferenceController::class, 'submit'])->middleware('throttle:agr-ollama');
+            Route::get('assistant/local/jobs/{id}', [\App\Http\Controllers\AgrLocalInferenceController::class, 'show']);
             Route::post('agr/voice', AgrVoiceController::class);
             Route::post('agr/acciones/crear-cliente', [AgrActionController::class,'confirmCreateClient']);
             Route::get('almacenamiento/estado', [StorageController::class,'status'])->middleware('superadmin');
