@@ -12,7 +12,9 @@ class AgrAssistantService
         $text = $this->normalize($input);
 
         if ($text === '') return $this->helpResponse();
-        if ($this->matches($text, ['ayuda', 'que puedes hacer', 'comandos', 'opciones'])) return $this->helpResponse();
+        // El comando de ayuda requiere intención explícita: "ayudarme" dentro de una
+        // pregunta sobre software no debe bloquear el modo conversacional de Ollama.
+        if (in_array($text, ['ayuda', 'ayuda por favor', 'necesito ayuda', 'que puedes hacer', 'comandos', 'opciones', 'mostrar comandos'], true)) return $this->helpResponse();
         if ($this->matches($text, ['resumen', 'resumen de viti', 'estado de viti', 'como esta viti', 'como va viti'])) return $this->summaryResponse($text);
         if ($this->matches($text, ['que necesita atencion', 'que requiere atencion', 'que pide atencion', 'cuales necesitan atencion', 'que debo atender', 'que hay pendiente', 'prioridades de hoy', 'que solicitudes requieren atencion'])) return $this->attentionResponse();
 
