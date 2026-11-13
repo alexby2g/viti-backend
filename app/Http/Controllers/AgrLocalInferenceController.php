@@ -103,7 +103,6 @@ class AgrLocalInferenceController extends Controller
             'status' => 'pending',
         ], 202)->header('Cache-Control', 'no-store');
     }
-    }
 
     public function show(Request $request, string $id): JsonResponse
     {
