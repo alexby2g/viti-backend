@@ -78,7 +78,7 @@ def ask_ollama(question):
             {"role": "system", "content": CONTEXT},
             {"role": "user", "content": question},
         ],
-        "options": {"temperature": 0.4, "num_predict": 500},
+        "options": {"temperature": 0.4, "num_predict": 1800},
     }
     req = Request(
         OLLAMA_URL,
@@ -86,13 +86,17 @@ def ask_ollama(question):
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urlopen(req, timeout=145) as response:
+    with urlopen(req, timeout=240) as response:
         answer = json.loads(response.read(150000).decode("utf-8"))
     result = (answer.get("message") or {}).get("content", "")
     result = result.strip() if isinstance(result, str) else ""
     if not result:
         raise RuntimeError("Ollama devolvió una respuesta vacía.")
-    return result[:6000]
+    # Keep answers under the backend limit, without silently chopping mid-word.
+    if len(result) > 11900:
+        shortened = result[:11800].rsplit("\n", 1)[0]
+        return shortened + "\n\n[Respuesta extensa: el resultado supera el límite de tamaño. Solicita un análisis más específico.]"
+    return result
 
 
 def run():
