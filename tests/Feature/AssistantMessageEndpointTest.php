@@ -45,6 +45,22 @@ class AssistantMessageEndpointTest extends TestCase
             ->assertJsonStructure(['message', 'data', 'memory']);
     }
 
+    public function test_natural_request_with_ayudarme_is_not_misclassified_as_help(): void
+    {
+        $this->actingAs($this->userWithRole('administrador'))
+            ->postJson('/api/v1/assistant/messages', [
+                'message' => '¿Puedes ayudarme a diseñar un sistema web de ventas e inventario?',
+            ])
+            ->assertOk()
+            ->assertJsonPath('intent', 'unknown');
+
+        $this->postJson('/api/v1/assistant/messages', [
+            'message' => '¿Qué puedes hacer?',
+        ])
+            ->assertOk()
+            ->assertJsonPath('intent', 'help');
+    }
+
     public function test_empty_and_oversized_messages_are_rejected(): void
     {
         $admin = $this->userWithRole('administrador');
