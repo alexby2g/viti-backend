@@ -18,7 +18,7 @@ import sys
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import Request, build_opener, HTTPSHandler, HTTPRedirectHandler
 
 API_BASE = os.environ.get(
     "VITI_API_BASE",
@@ -58,7 +58,13 @@ def api_call(method, path, payload=None):
         headers["Content-Type"] = "application/json"
     req = Request(API_BASE + path, data=data, headers=headers, method=method)
     # SSL certificate verification uses Python's normal trusted CA store.
-    with urlopen(req, timeout=85, context=ssl.create_default_context()) as response:
+    # Never forward the private bridge token to a redirected host.
+    class NoRedirect(HTTPRedirectHandler):
+        def redirect_request(self, request, fp, code, msg, headers, newurl):
+            return None
+
+    opener = build_opener(HTTPSHandler(context=ssl.create_default_context()), NoRedirect())
+    with opener.open(req, timeout=85) as response:
         if response.status == 204:
             return None
         return json.loads(response.read(7000).decode("utf-8"))
