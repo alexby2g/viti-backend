@@ -82,7 +82,7 @@ class AgrLocalInferenceController extends Controller
             ."\nPrioridad: {$solicitud->prioridad}\nResumen: "
             .($summary !== '' ? $summary : 'No registrado.');
 
-        return $this->queuePrompt($request, $prompt);
+        return $this->queuePrompt($request, $prompt, (int) $solicitud->id);
     }
 
     private function redactContacts(string $text): string
@@ -93,7 +93,7 @@ class AgrLocalInferenceController extends Controller
         return preg_replace('/(?:\+?\d[\s().-]*){7,}/u', '[telefono oculto]', $text) ?? $text;
     }
 
-    private function queuePrompt(Request $request, string $message): JsonResponse
+    private function queuePrompt(Request $request, string $message, ?int $solicitudId = null): JsonResponse
     {
         // Purge only old local inference jobs, not any other platform data.
         DB::table('agr_local_inference_jobs')->where('created_at', '<', now()->subDay())->delete();
@@ -102,6 +102,7 @@ class AgrLocalInferenceController extends Controller
         DB::table('agr_local_inference_jobs')->insert([
             'id' => $id,
             'usuario_id' => $request->user()->id,
+            'analysis_solicitud_id' => $solicitudId,
             'encrypted_prompt' => Crypt::encryptString($message),
             'status' => 'pending',
             'expires_at' => now()->addMinutes(7),

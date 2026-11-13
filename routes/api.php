@@ -158,6 +158,9 @@ Route::prefix('v1')->group(function (): void {
             Route::post('assistant/local/jobs', [\App\Http\Controllers\AgrLocalInferenceController::class, 'submit'])->middleware('throttle:agr-ollama');
             Route::post('assistant/local/analyze-request', [\App\Http\Controllers\AgrLocalInferenceController::class, 'analyzeRequest'])->middleware('throttle:agr-ollama');
             Route::get('assistant/local/jobs/{id}', [\App\Http\Controllers\AgrLocalInferenceController::class, 'show']);
+            Route::post('assistant/local/analyses', [\App\Http\Controllers\AgrSavedAnalysisController::class, 'store'])->middleware('throttle:agr-ollama');
+            Route::get('assistant/local/analyses', [\App\Http\Controllers\AgrSavedAnalysisController::class, 'index']);
+            Route::get('assistant/local/analyses/{id}', [\App\Http\Controllers\AgrSavedAnalysisController::class, 'show'])->whereNumber('id');
             Route::post('agr/voice', AgrVoiceController::class);
             Route::post('agr/acciones/crear-cliente', [AgrActionController::class,'confirmCreateClient']);
             Route::get('almacenamiento/estado', [StorageController::class,'status'])->middleware('superadmin');
