@@ -74,7 +74,10 @@ class AgrLocalInferenceController extends Controller
             ."Presenta: 1) necesidad principal, 2) módulos recomendados, 3) entidades "
             ."y relaciones de datos, 4) preguntas que faltan, 5) etapas de desarrollo "
             ."y 6) riesgos. Diferencia requisitos confirmados de sugerencias. "
-            ."Si el resumen es insuficiente, indícalo sin inventar detalles.\n\n"
+            ."Si el resumen es insuficiente, indícalo sin inventar detalles. "
+            ."Redacta un informe completo pero breve: máximo 550 palabras, "
+            ."hasta 4 elementos por sección, evita repetir información "
+            ."y termina cada apartado con una frase completa.\n\n"
             ."Solicitud: {$code}\nTítulo: {$title}\nEstado: {$solicitud->estado}"
             ."\nPrioridad: {$solicitud->prioridad}\nResumen: "
             .($summary !== '' ? $summary : 'No registrado.');

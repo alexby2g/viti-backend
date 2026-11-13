@@ -115,6 +115,36 @@ class AgrIrenetLocalBridgeTest extends TestCase
             ])->assertStatus(409);
     }
 
+    public function test_long_local_answers_are_stored_and_returned_without_truncation(): void
+    {
+        $this->enabled();
+        $admin = $this->actor('administrador', '007');
+        $id = $this->actingAs($admin)
+            ->postJson('/api/v1/assistant/local/jobs', ['message' => 'Informe completo'])
+            ->assertAccepted()->json('id');
+
+        $this->withHeader('X-Irenet-Bridge-Token', self::SECRET)
+            ->getJson('/api/v1/assistant/local/worker/next')
+            ->assertOk()->assertJsonPath('id', $id);
+
+        $longAnswer = str_repeat('Necesidad, módulos, datos, preguntas y riesgos. ', 190);
+        $this->withHeader('X-Irenet-Bridge-Token', self::SECRET)
+            ->postJson('/api/v1/assistant/local/worker/jobs/'.$id.'/complete', [
+                'status' => 'completed',
+                'answer' => $longAnswer,
+            ])->assertOk();
+
+        $this->actingAs($admin)
+            ->getJson('/api/v1/assistant/local/jobs/'.$id)
+            ->assertOk()
+            ->assertJsonPath('status', 'completed')
+            ->assertJsonPath('message', trim($longAnswer));
+
+        $this->assertGreaterThan(6000, strlen($longAnswer));
+        $stored = DB::table('agr_local_inference_jobs')->where('id', $id)->first();
+        $this->assertSame(trim($longAnswer), Crypt::decryptString($stored->encrypted_answer));
+    }
+
     public function test_expired_jobs_are_not_given_to_workers(): void
     {
         $this->enabled();

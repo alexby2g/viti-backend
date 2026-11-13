@@ -60,7 +60,7 @@ class AgrLocalWorkerController extends Controller
 
         $data = $request->validate([
             'status' => ['required', 'in:completed,failed'],
-            'answer' => ['required_if:status,completed', 'nullable', 'string', 'max:6000'],
+            'answer' => ['required_if:status,completed', 'nullable', 'string', 'max:12000'],
         ]);
 
         $answer = trim((string) ($data['answer'] ?? ''));
