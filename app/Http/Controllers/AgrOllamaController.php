@@ -70,7 +70,7 @@ class AgrOllamaController extends Controller
             $result = Http::withToken($apiKey)
                 ->acceptJson()
                 ->connectTimeout(5)
-                ->timeout(22)
+                ->timeout(45)
                 ->post('https://ollama.com/api/chat', [
                     'model' => $model,
                     'stream' => false,
@@ -79,9 +79,43 @@ class AgrOllamaController extends Controller
                 ]);
 
             if (!$result->successful()) {
+                // No registrar ni devolver el cuerpo del proveedor: podría contener información privada.
+                $status = $result->status();
+                [$code, $publicMessage] = match (true) {
+                    in_array($status, [401, 403], true) => [
+                        'ollama_auth_failed',
+                        'Ollama rechazó la autenticación. Revisa la clave API en Environment de Render.',
+                    ],
+                    $status === 402 => [
+                        'ollama_billing_required',
+                        'Ollama Cloud requiere saldo o un plan habilitado para continuar.',
+                    ],
+                    $status === 404 => [
+                        'ollama_model_unavailable',
+                        'El modelo configurado no está disponible. Comprueba AGR_OLLAMA_CLOUD_MODEL en Render.',
+                    ],
+                    $status === 429 => [
+                        'ollama_rate_limited',
+                        'Ollama alcanzó un límite de solicitudes o de uso. Revisa tu cuenta y vuelve a intentarlo.',
+                    ],
+                    $status === 400 => [
+                        'ollama_invalid_request',
+                        'Ollama rechazó la solicitud. Revisa el modelo y la configuración del servicio.',
+                    ],
+                    $status >= 500 => [
+                        'ollama_provider_unavailable',
+                        'Ollama Cloud no está respondiendo correctamente en este momento.',
+                    ],
+                    default => [
+                        'ollama_upstream_error',
+                        'Ollama no pudo responder. Comprueba el servicio y la configuración.',
+                    ],
+                };
+
                 return response()->json([
-                    'message' => 'Ollama no pudo responder. Puedes seguir usando los comandos locales de AGR 006.',
-                    'code' => 'ollama_upstream_error',
+                    'message' => $publicMessage,
+                    'code' => $code,
+                    'provider_status' => $status,
                 ], 502)->header('Cache-Control', 'no-store');
             }
 
