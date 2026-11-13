@@ -36,10 +36,23 @@ class WorkerSecurityTest(unittest.TestCase):
         payload = json.loads(req.data)
         self.assertEqual(payload["model"], "qwen2.5:7b")
         self.assertFalse(payload["stream"])
+        self.assertEqual(payload["options"]["num_predict"], 1800)
         self.assertEqual(payload["messages"][-1]["content"], "Diseña un sistema web")
         self.assertNotIn("tools", payload)
         self.assertNotIn("format", payload)
         self.assertNotIn("exec(", worker.ask_ollama.__code__.co_names)
+
+    def test_long_reply_is_not_chopped_at_old_6000_character_limit(self):
+        full = "Este es el análisis completo. " * 290
+        mocked = MagicMock()
+        mocked.__enter__.return_value.read.return_value = json.dumps({
+            "message": {"role": "assistant", "content": full}
+        }).encode("utf-8")
+
+        with patch.object(worker, "urlopen", return_value=mocked):
+            output = worker.ask_ollama("Analiza solicitud SOL-00079")
+        self.assertEqual(output, full.strip())
+        self.assertGreater(len(output), 6000)
 
     def test_api_bridge_does_not_follow_redirects(self):
         with patch.object(worker, "TOKEN", "a" * 40):
