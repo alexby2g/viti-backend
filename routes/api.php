@@ -156,6 +156,7 @@ Route::prefix('v1')->group(function (): void {
             Route::post('assistant/messages', \App\Http\Controllers\AssistantMessageController::class);
             Route::post('assistant/ollama', \App\Http\Controllers\AgrOllamaController::class)->middleware('throttle:agr-ollama');
             Route::post('assistant/local/jobs', [\App\Http\Controllers\AgrLocalInferenceController::class, 'submit'])->middleware('throttle:agr-ollama');
+            Route::post('assistant/local/analyze-request', [\App\Http\Controllers\AgrLocalInferenceController::class, 'analyzeRequest'])->middleware('throttle:agr-ollama');
             Route::get('assistant/local/jobs/{id}', [\App\Http\Controllers\AgrLocalInferenceController::class, 'show']);
             Route::post('agr/voice', AgrVoiceController::class);
             Route::post('agr/acciones/crear-cliente', [AgrActionController::class,'confirmCreateClient']);
