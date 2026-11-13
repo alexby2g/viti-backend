@@ -113,7 +113,7 @@ class AgrSavedAnalysisTest extends TestCase
             ->assertJsonPath('already_saved', true);
         $this->assertDatabaseCount('agr_saved_analyses', 1);
 
-        $secondText = str_repeat('Reporte completo de análisis local. ', 205);
+        $secondText = trim(str_repeat('Reporte completo de análisis local. ', 205));
         $secondJob = $this->completedAnalysisJob($secondText);
         $second = $this->postJson('/api/v1/assistant/local/analyses', [
             'job_id' => $secondJob,
