@@ -14,6 +14,11 @@ return [
         'reply_to_name' => env('BREVO_REPLY_TO_NAME', env('MAIL_FROM_NAME', 'AGR Studio · VITI')),
     ],
 
+    'irenet_bridge' => [
+        'enabled' => env('IRENET_LOCAL_BRIDGE_ENABLED', false),
+        'secret' => env('IRENET_LOCAL_BRIDGE_TOKEN', ''),
+    ],
+
     'ollama_cloud' => [
         'enabled' => env('AGR_OLLAMA_CLOUD_ENABLED', false),
         'api_key' => env('OLLAMA_API_KEY', ''),
