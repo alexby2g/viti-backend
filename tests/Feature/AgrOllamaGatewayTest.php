@@ -115,7 +115,39 @@ class AgrOllamaGatewayTest extends TestCase
         $this->actingAs($this->actor('administrador'))
             ->postJson('/api/v1/assistant/ollama', ['message' => 'hola'])
             ->assertStatus(502)
-            ->assertJsonPath('code', 'ollama_upstream_error')
+            ->assertJsonPath('code', 'ollama_rate_limited')
+            ->assertJsonPath('provider_status', 429)
             ->assertDontSee('private upstream details');
     }
+    public function test_upstream_status_codes_are_explained_without_leaking_raw_provider_response(): void
+    {
+        config()->set('services.ollama_cloud.enabled', true);
+        config()->set('services.ollama_cloud.api_key', 'test-secret-not-for-output');
+
+        Http::fake([
+            'ollama.com/api/chat' => Http::sequence()
+                ->push(['error' => 'PRIVATE-401'], 401)
+                ->push(['error' => 'PRIVATE-402'], 402)
+                ->push(['error' => 'PRIVATE-404'], 404)
+                ->push(['error' => 'PRIVATE-400'], 400)
+                ->push(['error' => 'PRIVATE-500'], 500),
+        ]);
+
+        $this->actingAs($this->actor('administrador'));
+        foreach ([
+            [401, 'ollama_auth_failed'],
+            [402, 'ollama_billing_required'],
+            [404, 'ollama_model_unavailable'],
+            [400, 'ollama_invalid_request'],
+            [500, 'ollama_provider_unavailable'],
+        ] as [$status, $code]) {
+            $this->postJson('/api/v1/assistant/ollama', ['message' => 'prueba segura'])
+                ->assertStatus(502)
+                ->assertJsonPath('code', $code)
+                ->assertJsonPath('provider_status', $status)
+                ->assertDontSee('PRIVATE-')
+                ->assertDontSee('test-secret-not-for-output');
+        }
+    }
+
 }
