@@ -35,6 +35,13 @@ Route::prefix('v1')->group(function (): void {
         Route::post('{token}/enviar', [PublicSolicitudController::class,'submit']);
     });
 
+    // Dedicated Windows worker: this token only permits obtaining and resolving
+    // inference jobs; it cannot access administrative VITI APIs.
+    Route::middleware('throttle:30,1')->prefix('assistant/local/worker')->group(function (): void {
+        Route::get('next', [\App\Http\Controllers\AgrLocalWorkerController::class, 'next']);
+        Route::post('jobs/{id}/complete', [\App\Http\Controllers\AgrLocalWorkerController::class, 'complete']);
+    });
+
     Route::middleware(['auth:sanctum','throttle:api'])->group(function (): void {
         Route::get('auth/me', [AuthController::class,'me']);
         Route::post('auth/perfil/foto', [AuthController::class,'uploadPhoto']);
