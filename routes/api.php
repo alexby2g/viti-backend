@@ -12,7 +12,7 @@ Route::prefix('v1')->group(function (): void {
     Route::prefix('auth')->group(function (): void {
         Route::get('status', [AuthController::class,'status']);
         Route::post('login', [AuthController::class,'login'])->middleware('throttle:login');
-        Route::post('cliente/registro', fn () => response()->json(['message' => 'Registro público temporalmente deshabilitado.'], 403))->middleware('throttle:login');
+        Route::post('cliente/registro', [ClientAuthController::class,'register'])->middleware('throttle:login');
         Route::post('cliente/crear-cuenta', [ClientAuthController::class,'createAccount'])->middleware('throttle:login');
         Route::post('electrofrio/login',[ElectrofrioCustomerAuthController::class,'login'])->middleware('throttle:login');
     });
