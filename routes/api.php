@@ -83,6 +83,7 @@ Route::prefix('v1')->group(function (): void {
             Route::post('solicitud', [ClientPortalController::class,'startRequest']);
             Route::post('solicitudes/{solicitud}/sincronizar', [ClientPortalController::class,'syncFromQuestionnaire']);
             Route::get('proyecto', [ClientProjectController::class,'show']);
+            Route::get('proyecto/entrega', [\App\Http\Controllers\ProyectoEntregaController::class,'clientShow']);
             Route::get('aplicaciones', [ClientAppsController::class,'index']);
             Route::get('aplicaciones/peluqueria', [ClientAppsController::class,'peluqueria']);
             Route::get('aplicaciones/{aplicacion}/licencia', [ClientAppsController::class,'license']);
@@ -204,6 +205,10 @@ Route::prefix('v1')->group(function (): void {
             Route::get('solicitudes/{solicitud}/historial', [SolicitudController::class,'timeline']);
             Route::apiResource('proyectos', ProyectoController::class)->parameters(['proyectos'=>'proyecto']);
             Route::post('proyectos/{proyecto}/avances', [ProyectoController::class,'addProgress']);
+            Route::get('proyectos/{proyecto}/entrega', [\App\Http\Controllers\ProyectoEntregaController::class,'show']);
+            Route::put('proyectos/{proyecto}/entrega', [\App\Http\Controllers\ProyectoEntregaController::class,'save']);
+            Route::post('proyectos/{proyecto}/entrega/publicar', [\App\Http\Controllers\ProyectoEntregaController::class,'publish']);
+            Route::post('proyectos/{proyecto}/entrega/retirar', [\App\Http\Controllers\ProyectoEntregaController::class,'withdraw']);
             Route::get('proyectos/{proyecto}/tareas', [\App\Http\Controllers\ProyectoTareaController::class,'index']);
             Route::post('proyectos/{proyecto}/tareas', [\App\Http\Controllers\ProyectoTareaController::class,'store']);
             Route::patch('proyectos/{proyecto}/tareas/{tarea}', [\App\Http\Controllers\ProyectoTareaController::class,'update'])->whereNumber('tarea');

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\{Aplicacion,Archivo,Cliente,Empresa,Proyecto,ProyectoAvance,SolicitudSistema};
 use App\Support\Audit;
+use App\Services\TenantContext;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -63,8 +64,29 @@ class ArchivoController extends Controller
         return $this->stream($archivo);
     }
 
-    public function clientDownload(Request $request, Archivo $archivo): StreamedResponse
+    public function clientDownload(Request $request, Archivo $archivo, TenantContext $tenants): StreamedResponse
     {
+        // Los archivos etiquetados como entrega son PRIVADOS hasta su publicación explícita.
+        // Nunca se conceden por conocer el ID del archivo o compartir el cliente de otra empresa.
+        if ($archivo->adjuntable_type === Proyecto::class && $archivo->categoria === 'entrega') {
+            $empresa = $tenants->resolve($request);
+            $tenants->assertCanUse($request->user(), $empresa, 'inicio');
+
+            $proyecto = Proyecto::query()
+                ->whereKey($archivo->adjuntable_id)
+                ->where('empresa_id', $empresa->id)
+                ->firstOrFail();
+
+            $entrega = $proyecto->entrega;
+            abort_unless(
+                $entrega && $entrega->estado === 'publicada'
+                && in_array((int)$archivo->id, array_map('intval', $entrega->archivo_ids ?: []), true),
+                403, 'Este archivo de entrega todavía no fue publicado para tu empresa.'
+            );
+
+            return $this->stream($archivo);
+        }
+
         $clienteId = (int) $request->user()->cliente_id;
         $allowed = false;
         if ($archivo->adjuntable_type === ProyectoAvance::class) {

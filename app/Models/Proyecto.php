@@ -21,6 +21,7 @@ class Proyecto extends Model
     public function pagos(){return $this->hasMany(ProyectoPago::class)->latest('fecha_pago');}
     public function archivos(){return $this->morphMany(Archivo::class,'adjuntable');}
 
+    public function entrega(){return $this->hasOne(ProyectoEntrega::class);}
     public function tareas(){return $this->hasMany(ProyectoTarea::class);}
     public function repositorios(){return $this->hasMany(ProyectoRepositorio::class);}
     public function miembros(){return $this->hasMany(ProyectoMiembro::class);}
