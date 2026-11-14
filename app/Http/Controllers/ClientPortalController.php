@@ -123,56 +123,68 @@ class ClientPortalController extends Controller
     public function startRequest(Request $request): JsonResponse
     {
         $cliente = $this->client($request);
+        // El registro de usuario y el perfil personal preceden a cualquier solicitud.
+        abort_unless(
+            filled($cliente->nombre) && filled($cliente->telefono) &&
+            filled($cliente->documento) && filled($cliente->ciudad),
+            422,
+            'Completa primero tu perfil (cédula de identidad y ciudad) desde Mi cuenta.'
+        );
+
         $data = $request->validate([
-            'empresa_id'=>['nullable','integer','exists:empresas,id'],
+            'empresa_id' => ['nullable', 'integer', 'exists:empresas,id'],
         ]);
-        $cuestionario = Cuestionario::query()->where('activo',true)->latest('id')->first();
+        $cuestionario = Cuestionario::query()->where('activo', true)->latest('id')->first();
         abort_unless($cuestionario, 422, 'No hay un cuestionario activo disponible.');
 
         $empresas = $cliente->empresas()->orderBy('id')->get();
-        abort_if($empresas->isEmpty(), 422, 'Primero debes tener un negocio registrado para iniciar una nueva solicitud.');
-
+        $empresa = null;
         if (!empty($data['empresa_id'])) {
-            $empresa = $empresas->firstWhere('id', (int)$data['empresa_id']);
+            $empresa = $empresas->firstWhere('id', (int) $data['empresa_id']);
             abort_unless($empresa, 403, 'El negocio seleccionado no pertenece a tu cuenta.');
-        } else {
-            abort_if($empresas->count() > 1, 422, 'Selecciona el negocio al que corresponde esta nueva solicitud.');
+        } elseif ($empresas->count() === 1) {
             $empresa = $empresas->first();
+        } elseif ($empresas->count() > 1) {
+            abort(422, 'Selecciona el negocio al que corresponde esta solicitud.');
         }
 
-        $solicitud = DB::transaction(function () use ($cliente,$cuestionario,$empresa): SolicitudSistema {
+        // No se crea ninguna empresa ficticia: el cliente declara la empresa
+        // real en el formulario y se vincula al enviar.
+        $solicitud = DB::transaction(function () use ($cliente, $cuestionario, $empresa): SolicitudSistema {
             $solicitud = SolicitudSistema::create([
-                'empresa_id'=>$empresa->id,
-                'cliente_id'=>$cliente->id,
-                'cuestionario_id'=>$cuestionario->id,
-                'codigo'=>Code::next('solicitudes_sistema','SOL'),
-                'public_token'=>Str::random(48),
-                'publico_habilitado'=>true,
-                'titulo'=>'Sistema para '.$empresa->nombre_comercial,
-                'estado'=>'borrador',
-                'prioridad'=>'normal',
-                'acuerdo_comercial_requerido'=>true,
+                'empresa_id' => $empresa?->id,
+                'cliente_id' => $cliente->id,
+                'cuestionario_id' => $cuestionario->id,
+                'codigo' => Code::next('solicitudes_sistema', 'SOL'),
+                'public_token' => Str::random(48),
+                'publico_habilitado' => true,
+                'titulo' => $empresa ? 'Sistema para '.$empresa->nombre_comercial : 'Nueva solicitud de sistema',
+                'estado' => 'borrador',
+                'prioridad' => 'normal',
+                'acuerdo_comercial_requerido' => true,
             ]);
 
             $map = [
-                1=>$empresa->nombre_comercial,
-                2=>$cliente->nombre,
-                3=>$cliente->telefono,
-                4=>$empresa->actividad,
+                1 => $empresa?->nombre_comercial,
+                2 => $cliente->nombre,
+                3 => $cliente->telefono,
+                4 => $empresa?->actividad,
             ];
             foreach ($cuestionario->secciones()->with('preguntas')->get()->flatMap->preguntas as $pregunta) {
-                if (array_key_exists($pregunta->numero,$map) && filled($map[$pregunta->numero])) {
+                if (array_key_exists($pregunta->numero, $map) && filled($map[$pregunta->numero])) {
                     SolicitudRespuesta::updateOrCreate(
-                        ['solicitud_id'=>$solicitud->id,'pregunta_id'=>$pregunta->id],
-                        ['respuesta_texto'=>(string)$map[$pregunta->numero]]
+                        ['solicitud_id' => $solicitud->id, 'pregunta_id' => $pregunta->id],
+                        ['respuesta_texto' => (string) $map[$pregunta->numero]]
                     );
                 }
             }
             return $solicitud;
         });
 
-        Audit::log($request,'solicitud_cliente_iniciada',$solicitud,'El cliente inició una nueva solicitud para '.$empresa->nombre_comercial.'.');
-        return response()->json(['data'=>$solicitud->load(['empresa','planViti','cuestionario.secciones.preguntas','respuestas'])],201);
+        Audit::log($request, 'solicitud_cliente_iniciada', $solicitud, 'El cliente inició una solicitud desde su cuenta.');
+        return response()->json([
+            'data' => $solicitud->load(['empresa', 'planViti', 'cuestionario.secciones.preguntas', 'respuestas'])
+        ], 201);
     }
 
     public function syncFromQuestionnaire(Request $request, SolicitudSistema $solicitud): JsonResponse
