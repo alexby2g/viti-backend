@@ -204,6 +204,9 @@ Route::prefix('v1')->group(function (): void {
             Route::get('solicitudes/{solicitud}/historial', [SolicitudController::class,'timeline']);
             Route::apiResource('proyectos', ProyectoController::class)->parameters(['proyectos'=>'proyecto']);
             Route::post('proyectos/{proyecto}/avances', [ProyectoController::class,'addProgress']);
+            Route::get('proyectos/{proyecto}/tareas', [\App\Http\Controllers\ProyectoTareaController::class,'index']);
+            Route::post('proyectos/{proyecto}/tareas', [\App\Http\Controllers\ProyectoTareaController::class,'store']);
+            Route::patch('proyectos/{proyecto}/tareas/{tarea}', [\App\Http\Controllers\ProyectoTareaController::class,'update'])->whereNumber('tarea');
             Route::apiResource('aplicaciones', AplicacionController::class)->parameters(['aplicaciones'=>'aplicacion']);
             Route::apiResource('mantenimientos', MantenimientoController::class)->parameters(['mantenimientos'=>'mantenimiento'])->except('show');
             Route::prefix('apps/peluqueria')->group(function (): void {
