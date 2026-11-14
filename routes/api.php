@@ -12,8 +12,8 @@ Route::prefix('v1')->group(function (): void {
     Route::prefix('auth')->group(function (): void {
         Route::get('status', [AuthController::class,'status']);
         Route::post('login', [AuthController::class,'login'])->middleware('throttle:login');
-        Route::post('cliente/registro', [ClientAuthController::class,'register'])->middleware('throttle:login');
-        Route::post('cliente/crear-cuenta', [ClientAuthController::class,'createAccount'])->middleware('throttle:login');
+        Route::post('cliente/registro', fn () => response()->json(['message' => 'Registro público temporalmente deshabilitado.'], 403))->middleware('throttle:login');
+        Route::post('cliente/crear-cuenta', fn () => response()->json(['message' => 'Registro público temporalmente deshabilitado.'], 403))->middleware('throttle:login');
         Route::post('electrofrio/login',[ElectrofrioCustomerAuthController::class,'login'])->middleware('throttle:login');
     });
 
@@ -23,16 +23,16 @@ Route::prefix('v1')->group(function (): void {
     });
 
     Route::prefix('publico/registro')->middleware('throttle:api')->group(function (): void {
-        Route::get('{token}', [OnboardingController::class,'showInvitation']);
-        Route::post('{token}', [OnboardingController::class,'register'])->middleware('throttle:login');
+        Route::get('{token}', fn () => response()->json(['message' => 'Invitaciones temporalmente deshabilitadas.'], 403));
+        Route::post('{token}', fn () => response()->json(['message' => 'Invitaciones temporalmente deshabilitadas.'], 403))->middleware('throttle:login');
     });
 
-    Route::post('publico/solicitudes', [PublicSolicitudController::class,'start'])->middleware('throttle:5,1');
+    Route::post('publico/solicitudes', fn () => response()->json(['message' => 'Solicitudes públicas temporalmente deshabilitadas.'], 403))->middleware('throttle:5,1');
 
     Route::prefix('publico/solicitudes')->middleware('throttle:api')->group(function (): void {
-        Route::get('{token}', [PublicSolicitudController::class,'show']);
-        Route::put('{token}', [PublicSolicitudController::class,'save']);
-        Route::post('{token}/enviar', [PublicSolicitudController::class,'submit']);
+        Route::get('{token}', fn () => response()->json(['message' => 'Solicitudes públicas temporalmente deshabilitadas.'], 403));
+        Route::put('{token}', fn () => response()->json(['message' => 'Solicitudes públicas temporalmente deshabilitadas.'], 403));
+        Route::post('{token}/enviar', fn () => response()->json(['message' => 'Solicitudes públicas temporalmente deshabilitadas.'], 403));
     });
 
     // Dedicated Windows worker: this token only permits obtaining and resolving
