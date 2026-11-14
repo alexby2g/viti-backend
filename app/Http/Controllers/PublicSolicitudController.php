@@ -75,8 +75,14 @@ class PublicSolicitudController extends Controller
 
     private function resolve(string $token):SolicitudSistema
     {
-        $solicitud=SolicitudSistema::query()->where('public_token',$token)->where('publico_habilitado',true)->first();
-        abort_unless($solicitud,410,'Este enlace de solicitud ya no está disponible.');
+        $usuario = request()->user();
+        abort_unless($usuario && $usuario->rol === 'cliente' && $usuario->estado === 'activo' && $usuario->cliente_id, 403, 'Inicia sesión con tu cuenta de cliente.');
+        $solicitud = SolicitudSistema::query()
+            ->where('public_token', $token)
+            ->where('cliente_id', $usuario->cliente_id)
+            ->where('publico_habilitado', true)
+            ->first();
+        abort_unless($solicitud, 404, 'Solicitud no encontrada para tu cuenta.');
         return $solicitud;
     }
 }
