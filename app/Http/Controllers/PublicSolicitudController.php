@@ -65,7 +65,35 @@ class PublicSolicitudController extends Controller
 
     private function updateRegistration(SolicitudSistema $solicitud,?array $registration):void
     {
-        if(!$registration)return;$cliente=$solicitud->cliente;if($cliente){$clientUpdates=[];if(array_key_exists('cliente_nombre',$registration))$clientUpdates['nombre']=trim($registration['cliente_nombre']);if(array_key_exists('cliente_whatsapp',$registration))$clientUpdates['whatsapp']=$registration['cliente_whatsapp']?:null;if(array_key_exists('cliente_ciudad',$registration))$clientUpdates['ciudad']=trim((string)$registration['cliente_ciudad']);if(array_key_exists('cliente_direccion',$registration))$clientUpdates['direccion']=$registration['cliente_direccion']?:null;if($clientUpdates){$cliente->update($clientUpdates);if(isset($clientUpdates['nombre']))Usuario::query()->where('cliente_id',$cliente->id)->update(['nombre'=>$clientUpdates['nombre']]);}}$empresa=$solicitud->empresa;if($empresa){if(array_key_exists('empresa_nombre',$registration)){$name=trim($registration['empresa_nombre']);$duplicate=Empresa::query()->where('cliente_id',$solicitud->cliente_id)->where('id','!=',$empresa->id)->whereRaw('LOWER(nombre_comercial) = ?',[Str::lower($name)])->exists();if($duplicate)throw ValidationException::withMessages(['registro.empresa_nombre'=>'Ya tienes otro negocio registrado con ese nombre.']);}$companyUpdates=[];$map=['empresa_nombre'=>'nombre_comercial','empresa_actividad'=>'actividad','empresa_telefono'=>'telefono','empresa_whatsapp'=>'whatsapp','empresa_ciudad'=>'ciudad','empresa_direccion'=>'direccion'];foreach($map as $source=>$target)if(array_key_exists($source,$registration)){$value=is_string($registration[$source])?trim($registration[$source]):$registration[$source];$companyUpdates[$target]=$value===''?null:$value;}if($companyUpdates)$empresa->update($companyUpdates);}$requestUpdates=[];if(array_key_exists('titulo_sistema',$registration))$requestUpdates['titulo']=trim($registration['titulo_sistema']);if(array_key_exists('resumen',$registration))$requestUpdates['resumen']=$registration['resumen']?:null;if($requestUpdates)$solicitud->update($requestUpdates);
+        if(!$registration)return;$cliente=$solicitud->cliente;if($cliente){$clientUpdates=[];if(array_key_exists('cliente_nombre',$registration))$clientUpdates['nombre']=trim($registration['cliente_nombre']);if(array_key_exists('cliente_whatsapp',$registration))$clientUpdates['whatsapp']=$registration['cliente_whatsapp']?:null;if(array_key_exists('cliente_ciudad',$registration))$clientUpdates['ciudad']=trim((string)$registration['cliente_ciudad']);if(array_key_exists('cliente_direccion',$registration))$clientUpdates['direccion']=$registration['cliente_direccion']?:null;if($clientUpdates){$cliente->update($clientUpdates);if(isset($clientUpdates['nombre']))Usuario::query()->where('cliente_id',$cliente->id)->update(['nombre'=>$clientUpdates['nombre']]);}}$empresa=$solicitud->empresa;
+        if (!$empresa && $cliente && filled($registration['empresa_nombre'] ?? null)) {
+            $nombreEmpresa = trim((string) $registration['empresa_nombre']);
+            $empresa = Empresa::query()
+                ->where('cliente_id', $cliente->id)
+                ->whereRaw('LOWER(nombre_comercial) = ?', [Str::lower($nombreEmpresa)])
+                ->first();
+            if (!$empresa) {
+                $empresa = Empresa::create([
+                    'cliente_id' => $cliente->id,
+                    'codigo' => Code::next('empresas', 'EMP'),
+                    'nombre_comercial' => $nombreEmpresa,
+                    'actividad' => $registration['empresa_actividad'] ?? null,
+                    'telefono' => $cliente->telefono,
+                    'whatsapp' => $cliente->whatsapp,
+                    'ciudad' => $cliente->ciudad,
+                    'direccion' => $cliente->direccion,
+                    'estado' => 'pendiente_revision',
+                ]);
+            }
+            $solicitud->update(['empresa_id' => $empresa->id]);
+            $usuario = request()->user();
+            if ($usuario && (int) $usuario->cliente_id === (int) $cliente->id) {
+                $empresa->usuarios()->syncWithoutDetaching([
+                    $usuario->id => ['rol_negocio' => 'propietario', 'activo' => true],
+                ]);
+            }
+        }
+        if($empresa){if(array_key_exists('empresa_nombre',$registration)){$name=trim($registration['empresa_nombre']);$duplicate=Empresa::query()->where('cliente_id',$solicitud->cliente_id)->where('id','!=',$empresa->id)->whereRaw('LOWER(nombre_comercial) = ?',[Str::lower($name)])->exists();if($duplicate)throw ValidationException::withMessages(['registro.empresa_nombre'=>'Ya tienes otro negocio registrado con ese nombre.']);}$companyUpdates=[];$map=['empresa_nombre'=>'nombre_comercial','empresa_actividad'=>'actividad','empresa_telefono'=>'telefono','empresa_whatsapp'=>'whatsapp','empresa_ciudad'=>'ciudad','empresa_direccion'=>'direccion'];foreach($map as $source=>$target)if(array_key_exists($source,$registration)){$value=is_string($registration[$source])?trim($registration[$source]):$registration[$source];$companyUpdates[$target]=$value===''?null:$value;}if($companyUpdates)$empresa->update($companyUpdates);}$requestUpdates=[];if(array_key_exists('titulo_sistema',$registration))$requestUpdates['titulo']=trim($registration['titulo_sistema']);if(array_key_exists('resumen',$registration))$requestUpdates['resumen']=$registration['resumen']?:null;if($requestUpdates)$solicitud->update($requestUpdates);
     }
 
     private function allowedPayments(?PlanViti $plan):array{return match($this->planKey($plan)){'custom'=>['por_definir'],'professional','enterprise'=>['tres_partes','contado','por_definir'],default=>['50_50','contado','por_definir']};}
