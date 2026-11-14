@@ -1,0 +1,58 @@
+name: IRENET Windows Autostart CI
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  windows-autostart:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse Windows PowerShell 5.1 scripts
+        shell: powershell
+        run: |
+          $scripts = @(
+            'integrations/irenet-local/setup-autostart.ps1',
+            'integrations/irenet-local/run-autostart.ps1',
+            'integrations/irenet-local/remove-autostart.ps1'
+          )
+          foreach ($file in $scripts) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $file).Path, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              throw "Error de sintaxis PowerShell: $file : $($errors[0].Message)"
+            }
+          }
+      - name: Install, validate encrypted secret, and remove startup
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:VITI_IRENET_BRIDGE_TOKEN = 'TEST-BRIDGE-TOKEN-NOT-A-REAL-SECRET-1234567890'
+          $scriptFolder = 'integrations/irenet-local'
+          & "$scriptFolder/setup-autostart.ps1"
+          $secretFile = Join-Path $env:LOCALAPPDATA 'VITI-IRENET/bridge-token.dpapi'
+          $vbsFile = Join-Path $env:LOCALAPPDATA 'VITI-IRENET/start-bridge-hidden.vbs'
+          $shortcut = Join-Path ([Environment]::GetFolderPath('Startup')) 'VITI - IRENET local.lnk'
+          if (!(Test-Path -LiteralPath $shortcut)) { throw 'Falta el acceso directo de Windows' }
+          if (!(Test-Path -LiteralPath $secretFile)) { throw 'Falta el token DPAPI' }
+          if (!(Test-Path -LiteralPath $vbsFile)) { throw 'Falta el lanzador oculto' }
+          $ciphertext = Get-Content -LiteralPath $secretFile -Raw
+          $vbs = Get-Content -LiteralPath $vbsFile -Raw
+          if ($ciphertext.Contains($env:VITI_IRENET_BRIDGE_TOKEN)) { throw 'La clave se almacenó sin cifrar' }
+          if ($vbs.Contains($env:VITI_IRENET_BRIDGE_TOKEN)) { throw 'La clave se filtró al lanzador' }
+          $secure = ConvertTo-SecureString -String $ciphertext
+          $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+          try {
+            $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
+            if ($plain -ne $env:VITI_IRENET_BRIDGE_TOKEN) { throw 'DPAPI no recuperó la misma clave' }
+          } finally {
+            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+          }
+          & "$scriptFolder/remove-autostart.ps1" -ForgetToken
+          if (Test-Path -LiteralPath $shortcut) { throw 'El acceso directo no se eliminó' }
+          if (Test-Path -LiteralPath $secretFile) { throw 'El secreto local no se eliminó' }
