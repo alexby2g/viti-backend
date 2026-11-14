@@ -13,7 +13,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('status', [AuthController::class,'status']);
         Route::post('login', [AuthController::class,'login'])->middleware('throttle:login');
         Route::post('cliente/registro', fn () => response()->json(['message' => 'Registro público temporalmente deshabilitado.'], 403))->middleware('throttle:login');
-        Route::post('cliente/crear-cuenta', fn () => response()->json(['message' => 'Registro público temporalmente deshabilitado.'], 403))->middleware('throttle:login');
+        Route::post('cliente/crear-cuenta', [ClientAuthController::class,'createAccount'])->middleware('throttle:login');
         Route::post('electrofrio/login',[ElectrofrioCustomerAuthController::class,'login'])->middleware('throttle:login');
     });
 
@@ -81,6 +81,10 @@ Route::prefix('v1')->group(function (): void {
             Route::get('solicitud', [ClientPortalController::class,'currentRequest']);
             Route::get('solicitudes', [ClientPortalController::class,'requests']);
             Route::post('solicitud', [ClientPortalController::class,'startRequest']);
+            // Cuestionario exclusivo del titular autenticado; nunca por enlace anónimo.
+            Route::get('solicitudes/{token}/formulario', [PublicSolicitudController::class,'show']);
+            Route::put('solicitudes/{token}/formulario', [PublicSolicitudController::class,'save']);
+            Route::post('solicitudes/{token}/formulario/enviar', [PublicSolicitudController::class,'submit']);
             Route::post('solicitudes/{solicitud}/sincronizar', [ClientPortalController::class,'syncFromQuestionnaire']);
             Route::get('proyecto', [ClientProjectController::class,'show']);
             Route::get('proyecto/entrega', [\App\Http\Controllers\ProyectoEntregaController::class,'clientShow']);
