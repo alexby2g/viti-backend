@@ -22,7 +22,7 @@ class SolicitudSistema extends Model
 
     public function getEnlacePublicoAttribute(): string
     {
-        return rtrim((string) env('FRONTEND_APP_URL', 'http://localhost:9000'), '/').'/solicitar/'.$this->public_token;
+        return '/solicitar/'.rawurlencode((string) $this->public_token);
     }
     public function empresa(){return $this->belongsTo(Empresa::class);}
     public function cliente(){return $this->belongsTo(Cliente::class);}
