@@ -80,6 +80,42 @@ class SaasAlertService
             });
     }
 
+    /**
+     * Rectificación del abono reconocido por error en VITI. Mantener la alerta
+     * separada de la confirmación original para que el cliente vea el cambio.
+     */
+    public function paymentRectified(ProyectoPago $payment): void
+    {
+        if ($payment->estado_revision !== 'anulado') return;
+
+        $project = $payment->proyecto;
+        $business = $payment->empresa?->nombre_comercial ?: 'Negocio';
+        $reference = $project?->codigo ?: 'Proyecto';
+        $amount = number_format((float)$payment->monto, 2, ',', '.');
+        $message = $business.' · '.$reference.' · Bs '.$amount.
+            '. Se rectificó una confirmación en VITI: el importe ya no cuenta como pagado.'.
+            ' Motivo: '.($payment->motivo_revision ?: 'Revisión administrativa.');
+
+        if ($payment->pagador_usuario_id) {
+            $payer = Usuario::find($payment->pagador_usuario_id);
+            if ($payer && $payer->estado === 'activo') {
+                $this->ensure(
+                    $payer,'comprobante_proyecto_'.$payment->id.'_rectificado',
+                    'pago','Confirmación de pago rectificada',
+                    $message,'/mi-pagos',(int)$payment->empresa_id
+                );
+            }
+        }
+        Usuario::query()->where('rol','superadmin')->where('estado','activo')
+            ->get(['id','rol'])->each(function(Usuario $admin) use ($payment,$message): void {
+                $this->ensure(
+                    $admin,'comprobante_proyecto_'.$payment->id.'_rectificado',
+                    'pago','Confirmación de pago rectificada',
+                    $message,'/pagos',(int)$payment->empresa_id
+                );
+            });
+    }
+
     public function syncFor(Usuario $user): void
     {
         if ($user->isSuperAdmin()) $this->syncAdmin($user);
