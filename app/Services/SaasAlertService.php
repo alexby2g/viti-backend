@@ -2,12 +2,83 @@
 
 namespace App\Services;
 
-use App\Models\{AlertaSaas,Aplicacion,SolicitudSistema,Suscripcion,Usuario};
+use App\Models\{AlertaSaas,Aplicacion,ProyectoPago,SolicitudSistema,Suscripcion,SuscripcionPago,Usuario};
 use Illuminate\Support\Carbon;
 
 class SaasAlertService
 {
     public function __construct(private SubscriptionAccessService $subscriptions) {}
+
+    /**
+     * Publicar un aviso interno por cada comprobante recibido.
+     * La clave por pago impide duplicados y no cambia saldos.
+     */
+    public function paymentSubmitted(ProyectoPago|SuscripcionPago $payment): void
+    {
+        $isProject = $payment instanceof ProyectoPago;
+        $kind = $isProject ? 'proyecto' : 'suscripcion';
+        $reference = $isProject
+            ? ($payment->proyecto?->codigo ?: 'Proyecto')
+            : ($payment->suscripcion?->aplicacion?->nombre ?: 'Suscripción');
+        $business = $payment->empresa?->nombre_comercial ?: 'Negocio';
+        $amount = number_format((float)$payment->monto, 2, ',', '.');
+
+        Usuario::query()->where('rol', 'superadmin')->where('estado', 'activo')
+            ->get(['id','rol'])->each(function (Usuario $admin) use ($payment,$kind,$reference,$business,$amount): void {
+                $this->ensure(
+                    $admin,
+                    'comprobante_'.$kind.'_'.$payment->id.'_recibido',
+                    'pago',
+                    'Nuevo comprobante de pago por revisar',
+                    $business.' · '.$reference.' · Bs '.$amount.'. Pendiente de validación.',
+                    '/pagos',
+                    (int)$payment->empresa_id
+                );
+            });
+    }
+
+    /**
+     * Notificar el resultado de la revisión al pagador y a administración.
+     * Confirmado en VITI no equivale por sí solo a acreditación bancaria.
+     */
+    public function paymentReviewed(ProyectoPago|SuscripcionPago $payment): void
+    {
+        if (!in_array($payment->estado_revision, ['confirmado','rechazado'], true)) return;
+
+        $isProject = $payment instanceof ProyectoPago;
+        $kind = $isProject ? 'proyecto' : 'suscripcion';
+        $reference = $isProject
+            ? ($payment->proyecto?->codigo ?: 'Proyecto')
+            : ($payment->suscripcion?->aplicacion?->nombre ?: 'Suscripción');
+        $business = $payment->empresa?->nombre_comercial ?: 'Negocio';
+        $amount = number_format((float)$payment->monto, 2, ',', '.');
+        $approved = $payment->estado_revision === 'confirmado';
+        $status = $approved ? 'Confirmado en VITI' : 'Rechazado';
+        $reason = !$approved && $payment->motivo_revision
+            ? ' Motivo: '.$payment->motivo_revision : '';
+        $key = 'comprobante_'.$kind.'_'.$payment->id.'_'.($approved ? 'confirmado':'rechazado');
+
+        if ($payment->pagador_usuario_id) {
+            $payer = Usuario::find($payment->pagador_usuario_id);
+            if ($payer && $payer->estado === 'activo') {
+                $this->ensure(
+                    $payer,$key,'pago',
+                    $approved ? 'Comprobante revisado: confirmado en VITI' : 'Comprobante rechazado',
+                    $business.' · '.$reference.' · Bs '.$amount.'. '.$status.'.'.$reason,
+                    '/mi-pagos',(int)$payment->empresa_id
+                );
+            }
+        }
+
+        Usuario::query()->where('rol', 'superadmin')->where('estado','activo')
+            ->get(['id','rol'])->each(function (Usuario $admin) use ($payment,$key,$reference,$business,$amount,$status): void {
+                $this->ensure(
+                    $admin,$key,'pago','Comprobante revisado: '.$status,
+                    $business.' · '.$reference.' · Bs '.$amount.'.',
+                    '/pagos',(int)$payment->empresa_id
+                );
+            });
+    }
 
     public function syncFor(Usuario $user): void
     {
