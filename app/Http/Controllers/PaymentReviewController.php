@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{Empresa,Proyecto,ProyectoPago,Suscripcion,SuscripcionPago};
-use App\Services\SubscriptionAccessService;
+use App\Services\{SaasAlertService,SubscriptionAccessService};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -13,12 +13,12 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class PaymentReviewController extends Controller
 {
-    public function confirmarProyecto(Request $request, ProyectoPago $pago): JsonResponse
+    public function confirmarProyecto(Request $request, ProyectoPago $pago, SaasAlertService $alerts): JsonResponse
     {
         $paymentId = (int) $pago->id;
         $projectId = (int) $pago->proyecto_id;
 
-        DB::transaction(function () use ($request,$paymentId,$projectId): void {
+        DB::transaction(function () use ($request,$paymentId,$projectId,$alerts): void {
             // El proyecto se bloquea primero para serializar cualquier cambio contable
             // relacionado con él. Así un doble clic no procesa dos veces el mismo pago.
             $project = Proyecto::query()->lockForUpdate()->findOrFail($projectId);
@@ -33,6 +33,7 @@ class PaymentReviewController extends Controller
             ]);
             Empresa::whereKey($locked->empresa_id)->update(['metodo_pago_preferido'=>$locked->metodo]);
             $this->refreshProject($project);
+            $alerts->paymentReviewed($locked);
         }, 3);
 
         return response()->json([
@@ -41,12 +42,12 @@ class PaymentReviewController extends Controller
         ]);
     }
 
-    public function rechazarProyecto(Request $request, ProyectoPago $pago): JsonResponse
+    public function rechazarProyecto(Request $request, ProyectoPago $pago, SaasAlertService $alerts): JsonResponse
     {
         $data=$request->validate(['motivo'=>['required','string','min:5','max:500']]);
         $paymentId = (int) $pago->id;
 
-        DB::transaction(function () use ($request,$data,$paymentId): void {
+        DB::transaction(function () use ($request,$data,$paymentId,$alerts): void {
             $locked = ProyectoPago::query()->lockForUpdate()->findOrFail($paymentId);
             abort_unless($locked->estado_revision === 'pendiente_revision',422,'Este comprobante ya fue revisado.');
             $locked->update([
@@ -55,6 +56,7 @@ class PaymentReviewController extends Controller
                 'revisado_por'=>$request->user()->id,
                 'motivo_revision'=>$data['motivo'],
             ]);
+            $alerts->paymentReviewed($locked);
         }, 3);
 
         return response()->json([
@@ -63,12 +65,12 @@ class PaymentReviewController extends Controller
         ]);
     }
 
-    public function confirmarSuscripcion(Request $request, SuscripcionPago $pago, SubscriptionAccessService $access): JsonResponse
+    public function confirmarSuscripcion(Request $request, SuscripcionPago $pago, SubscriptionAccessService $access, SaasAlertService $alerts): JsonResponse
     {
         $paymentId = (int) $pago->id;
         $subscriptionId = (int) $pago->suscripcion_id;
 
-        DB::transaction(function () use ($request,$paymentId,$subscriptionId): void {
+        DB::transaction(function () use ($request,$paymentId,$subscriptionId,$alerts): void {
             // La suscripción es el recurso contable que cambia de vigencia, por eso
             // se bloquea junto con el comprobante antes de revisar su estado.
             $subscription = Suscripcion::query()->lockForUpdate()->findOrFail($subscriptionId);
@@ -83,6 +85,7 @@ class PaymentReviewController extends Controller
             ]);
             $this->applySubscriptionPayment($subscription,$locked);
             Empresa::whereKey($locked->empresa_id)->update(['metodo_pago_preferido'=>$locked->metodo]);
+            $alerts->paymentReviewed($locked);
         }, 3);
 
         $subscription = Suscripcion::query()->findOrFail($subscriptionId);
@@ -93,7 +96,7 @@ class PaymentReviewController extends Controller
         ]);
     }
 
-    public function rechazarSuscripcion(Request $request, SuscripcionPago $pago): JsonResponse
+    public function rechazarSuscripcion(Request $request, SuscripcionPago $pago, SaasAlertService $alerts): JsonResponse
     {
         $data=$request->validate(['motivo'=>['required','string','min:5','max:500']]);
         $paymentId = (int) $pago->id;
@@ -107,6 +110,7 @@ class PaymentReviewController extends Controller
                 'revisado_por'=>$request->user()->id,
                 'motivo_revision'=>$data['motivo'],
             ]);
+            $alerts->paymentReviewed($locked);
         }, 3);
 
         return response()->json([
