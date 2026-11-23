@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{Empresa,Proyecto,ProyectoPago,Suscripcion,SuscripcionPago};
+use App\Models\{Auditoria,Empresa,Proyecto,ProyectoPago,Suscripcion,SuscripcionPago};
 use App\Services\{SaasAlertService,SubscriptionAccessService};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -65,6 +65,79 @@ class PaymentReviewController extends Controller
         ]);
     }
 
+    /**
+     * Rectifica una confirmación administrativa hecha por error sin borrar el
+     * comprobante ni su historial. Solo se permite antes de publicar la entrega.
+     * Nunca ejecuta una reversión bancaria; ajusta el registro interno de VITI.
+     */
+    public function anularConfirmacionProyecto(Request $request, ProyectoPago $pago, SaasAlertService $alerts): JsonResponse
+    {
+        $data = $request->validate([
+            'motivo'=>['required','string','min:15','max:500'],
+            'confirmacion'=>['required','in:ANULAR CONFIRMACION'],
+        ]);
+        $paymentId = (int) $pago->id;
+        $projectId = (int) $pago->proyecto_id;
+
+        DB::transaction(function () use ($request,$data,$paymentId,$projectId,$alerts): void {
+            $project = Proyecto::query()->lockForUpdate()->findOrFail($projectId);
+            $locked = ProyectoPago::query()->lockForUpdate()->findOrFail($paymentId);
+            abort_unless((int) $locked->proyecto_id === (int) $project->id, 422, 'El comprobante no pertenece al proyecto.');
+            abort_unless(
+                $locked->estado_revision === 'confirmado' && $locked->origen === 'cliente',
+                422, 'Solo puedes rectificar comprobantes del cliente que estén confirmados.'
+            );
+            abort_if(
+                $project->entrega()->whereNotNull('publicado_at')->exists(),
+                422, 'El proyecto ya tiene entrega publicada. Requiere conciliación formal fuera de esta operación.'
+            );
+
+            $previousStatus = $project->estado_pago;
+            $previousReview = [
+                'estado_revision'=>$locked->estado_revision,
+                'revisado_por'=>$locked->revisado_por,
+                'revisado_at'=>$locked->revisado_at?->toIso8601String(),
+                'motivo_revision'=>$locked->motivo_revision,
+            ];
+            $locked->update([
+                'estado_revision'=>'anulado',
+                'motivo_revision'=>trim($data['motivo']),
+                'revisado_por'=>$request->user()->id,
+                'revisado_at'=>now(),
+            ]);
+            $this->refreshProject($project);
+            $project->refresh();
+
+            Auditoria::create([
+                'usuario_id'=>$request->user()->id,
+                'empresa_id'=>$locked->empresa_id,
+                'accion'=>'pago_proyecto_confirmacion_rectificada',
+                'entidad_tipo'=>ProyectoPago::class,
+                'entidad_id'=>$locked->id,
+                'descripcion'=>'Confirmación interna de comprobante rectificada sin borrar archivo ni evidencia.',
+                'datos'=>[
+                    'proyecto_id'=>$project->id,
+                    'codigo'=>$project->codigo,
+                    'importe'=>$locked->monto,
+                    'estado_anterior'=>$previousStatus,
+                    'estado_actual'=>$project->estado_pago,
+                    'revision_anterior'=>$previousReview,
+                    'revision_actual'=>'anulado',
+                    'motivo'=>trim($data['motivo']),
+                    'requiere_verificacion_bancaria'=>true,
+                ],
+                'ip'=>$request->ip(),
+                'user_agent'=>$request->userAgent(),
+            ]);
+            $alerts->paymentRectified($locked);
+        }, 3);
+
+        return response()->json([
+            'message'=>'Confirmación rectificada. Se conservó el comprobante y se recalculó el saldo interno.',
+            'data'=>ProyectoPago::query()->findOrFail($paymentId)->load(['pagador:id,nombre,apellido','revisor:id,nombre,apellido']),
+        ]);
+    }
+
     public function confirmarSuscripcion(Request $request, SuscripcionPago $pago, SubscriptionAccessService $access, SaasAlertService $alerts): JsonResponse
     {
         $paymentId = (int) $pago->id;
@@ -101,7 +174,7 @@ class PaymentReviewController extends Controller
         $data=$request->validate(['motivo'=>['required','string','min:5','max:500']]);
         $paymentId = (int) $pago->id;
 
-        DB::transaction(function () use ($request,$data,$paymentId): void {
+        DB::transaction(function () use ($request,$data,$paymentId,$alerts): void {
             $locked = SuscripcionPago::query()->lockForUpdate()->findOrFail($paymentId);
             abort_unless($locked->estado_revision === 'pendiente_revision',422,'Este comprobante ya fue revisado.');
             $locked->update([
