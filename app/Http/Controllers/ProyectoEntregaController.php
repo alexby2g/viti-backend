@@ -75,10 +75,19 @@ class ProyectoEntregaController extends Controller
             $lockedProject = Proyecto::query()->lockForUpdate()->findOrFail($proyecto->id);
             abort_if($lockedProject->estado === 'cancelado', 422, 'No se puede entregar un proyecto cancelado.');
 
-            // Conservamos la regla existente del acto de entrega de aplicaciones.
-            if ($lockedProject->precio_acordado !== null) {
-                abort_unless($lockedProject->estado_pago === 'pagado', 422,
-                    'El proyecto tiene un saldo pendiente. Verifica el pago antes de publicar la entrega.');
+            // Una solicitud con acuerdo comercial y presupuesto positivo no debe
+            // considerarse gratuita cuando todavía falta conciliar el precio en el proyecto.
+            $solicitudConImporte = $lockedProject->solicitud()
+                ->where('acuerdo_comercial_requerido', true)
+                ->where('acuerdo_comercial_aceptado', true)
+                ->where('presupuesto_estimado', '>', 0)
+                ->exists();
+            if ($lockedProject->precio_acordado !== null || $solicitudConImporte) {
+                abort_unless(
+                    $lockedProject->precio_acordado !== null && $lockedProject->estado_pago === 'pagado',
+                    422,
+                    'Existe un acuerdo comercial pendiente de conciliación o pago. Registra el precio acordado y verifica el pago antes de publicar.'
+                );
             }
 
             $record = ProyectoEntrega::query()->where('proyecto_id', $proyecto->id)
