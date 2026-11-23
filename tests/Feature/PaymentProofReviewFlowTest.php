@@ -37,6 +37,11 @@ class PaymentProofReviewFlowTest extends TestCase
             'estado_revision'=>'pendiente_revision',
             'origen'=>'cliente',
         ]);
+        $this->assertDatabaseHas('alertas_saas',[
+            'usuario_id'=>$admin->id,
+            'clave'=>'comprobante_proyecto_'.$paymentId.'_recibido',
+            'ruta'=>'/pagos',
+        ]);
         $this->assertDatabaseHas('proyectos',['id'=>$project->id,'estado_pago'=>'pendiente_anticipo']);
 
         $this->actingAs($clientUser)
@@ -53,6 +58,16 @@ class PaymentProofReviewFlowTest extends TestCase
             ->assertOk();
 
         $this->assertDatabaseHas('proyecto_pagos',['id'=>$paymentId,'estado_revision'=>'confirmado']);
+        $this->assertDatabaseHas('alertas_saas',[
+            'usuario_id'=>$clientUser->id,
+            'clave'=>'comprobante_proyecto_'.$paymentId.'_confirmado',
+            'ruta'=>'/mi-pagos',
+        ]);
+        $this->assertDatabaseHas('alertas_saas',[
+            'usuario_id'=>$admin->id,
+            'clave'=>'comprobante_proyecto_'.$paymentId.'_confirmado',
+            'ruta'=>'/pagos',
+        ]);
         $this->assertDatabaseHas('proyectos',['id'=>$project->id,'estado_pago'=>'pendiente_saldo']);
 
         $this->actingAs($clientUser)
@@ -89,6 +104,11 @@ class PaymentProofReviewFlowTest extends TestCase
             'id'=>$paymentId,
             'estado_revision'=>'rechazado',
             'motivo_revision'=>'El comprobante no permite verificar la operación.',
+        ]);
+        $this->assertDatabaseHas('alertas_saas',[
+            'usuario_id'=>$clientUser->id,
+            'clave'=>'comprobante_proyecto_'.$paymentId.'_rechazado',
+            'ruta'=>'/mi-pagos',
         ]);
         $this->assertDatabaseHas('proyectos',['id'=>$project->id,'estado_pago'=>'pendiente_anticipo']);
 
@@ -158,6 +178,11 @@ class PaymentProofReviewFlowTest extends TestCase
         $response->assertCreated()->assertJsonPath('data.estado_revision','pendiente_revision');
         $paymentId=(int)$response->json('data.id');
         $this->assertDatabaseHas('suscripcion_pagos',['id'=>$paymentId,'suscripcion_id'=>$subscription->id,'estado_revision'=>'pendiente_revision','origen'=>'cliente']);
+        $this->assertDatabaseHas('alertas_saas',[
+            'usuario_id'=>$admin->id,
+            'clave'=>'comprobante_suscripcion_'.$paymentId.'_recibido',
+            'ruta'=>'/pagos',
+        ]);
         $this->assertDatabaseHas('suscripciones',['id'=>$subscription->id,'primer_cobro_pagado'=>false]);
 
         $this->actingAs($admin)
@@ -165,6 +190,11 @@ class PaymentProofReviewFlowTest extends TestCase
             ->assertOk();
 
         $this->assertDatabaseHas('suscripcion_pagos',['id'=>$paymentId,'estado_revision'=>'confirmado']);
+        $this->assertDatabaseHas('alertas_saas',[
+            'usuario_id'=>$clientUser->id,
+            'clave'=>'comprobante_suscripcion_'.$paymentId.'_confirmado',
+            'ruta'=>'/mi-pagos',
+        ]);
         $this->assertDatabaseHas('suscripciones',['id'=>$subscription->id,'primer_cobro_pagado'=>true]);
     }
 
