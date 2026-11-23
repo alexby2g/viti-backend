@@ -103,6 +103,42 @@ class ProyectoEntregaFlowTest extends TestCase
         $this->assertDatabaseHas('auditoria', ['accion'=>'proyecto_entrega_publicada']);
     }
 
+    public function test_delivery_waits_for_completion_of_quality_tasks_even_after_payment(): void
+    {
+        ['admin'=>$admin,'project'=>$project] = $this->scenario('08');
+        $pdf = $this->file($project, 'informe-pruebas.pdf');
+        $project->update(['estado_pago'=>'pagado']);
+        $qa = $project->tareas()->create([
+            'titulo'=>'Pruebas integrales y preparación de entrega',
+            'area'=>'qa',
+            'estado'=>'en_desarrollo',
+            'prioridad'=>'alta',
+            'criterios_aceptacion'=>'Resultados reales revisados y recepción preparada.',
+        ]);
+
+        $this->actingAs($admin)->putJson("/api/v1/proyectos/{$project->id}/entrega", [
+            'titulo'=>'Entrega de prueba',
+            'archivo_ids'=>[$pdf->id],
+        ])->assertOk();
+
+        $this->getJson("/api/v1/proyectos/{$project->id}/entrega")
+            ->assertOk()->assertJsonPath('qa_pendiente', true);
+
+        $this->postJson("/api/v1/proyectos/{$project->id}/entrega/publicar")
+            ->assertUnprocessable();
+        $this->assertDatabaseHas('proyecto_entregas',[
+            'proyecto_id'=>$project->id,
+            'estado'=>'borrador',
+        ]);
+
+        $qa->update(['estado'=>'completada','completada_at'=>now()]);
+        $this->getJson("/api/v1/proyectos/{$project->id}/entrega")
+            ->assertOk()->assertJsonPath('qa_pendiente', false);
+
+        $this->postJson("/api/v1/proyectos/{$project->id}/entrega/publicar")
+            ->assertOk()->assertJsonPath('data.estado','publicada');
+    }
+
     public function test_delivery_cannot_include_files_of_other_projects_or_other_categories(): void
     {
         ['admin' => $admin, 'project' => $project] = $this->scenario('02');
