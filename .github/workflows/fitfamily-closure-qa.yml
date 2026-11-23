@@ -1,0 +1,45 @@
+name: FitFamily Closure QA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tests/Feature/FitFamilyClosureQualityTest.php'
+      - 'tests/Feature/ProyectoEntregaFlowTest.php'
+      - '.github/workflows/fitfamily-closure-qa.yml'
+      - 'app/Http/Controllers/FitFamilyOrderController.php'
+      - 'app/Services/FitFamilyContext.php'
+      - 'app/Http/Controllers/ProyectoEntregaController.php'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fitfamily-isolated:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      APP_ENV: testing
+      APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      APP_DEBUG: 'false'
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ':memory:'
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, pdo_sqlite
+          coverage: none
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Build isolated schema
+        run: php artisan migrate:fresh --force
+      - name: Test FitFamily permissions and cancellation
+        run: php artisan test tests/Feature/FitFamilyClosureQualityTest.php --stop-on-failure
+      - name: Test private VITI delivery and QA gate
+        run: php artisan test tests/Feature/ProyectoEntregaFlowTest.php --stop-on-failure
