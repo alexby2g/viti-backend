@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{Proyecto,ProyectoPago,Suscripcion,SuscripcionPago};
-use App\Services\{SubscriptionAccessService,TenantContext};
+use App\Services\{SaasAlertService,SubscriptionAccessService,TenantContext};
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +16,7 @@ class ClientPaymentController extends Controller
 {
     private const METHODS = ['qr','transferencia','efectivo','otro'];
 
-    public function proyecto(Request $request, Proyecto $proyecto, TenantContext $tenants): JsonResponse
+    public function proyecto(Request $request, Proyecto $proyecto, TenantContext $tenants, SaasAlertService $alerts): JsonResponse
     {
         $empresa = $tenants->resolve($request);
         $tenants->assertCanManage($request->user(),$empresa);
@@ -36,7 +36,7 @@ class ClientPaymentController extends Controller
         $proof = $this->storeProof($request,'proyectos/'.$proyecto->id);
 
         try {
-            $payment = DB::transaction(function () use ($request,$proyecto,$empresa,$data,$proof): ProyectoPago {
+            $payment = DB::transaction(function () use ($request,$proyecto,$empresa,$data,$proof,$alerts): ProyectoPago {
                 // Serializa los envíos del mismo proyecto. Dos clics simultáneos ya no
                 // pueden crear dos comprobantes pendientes antes de verse entre sí.
                 $lockedProject = Proyecto::query()->lockForUpdate()->findOrFail($proyecto->id);
@@ -52,7 +52,7 @@ class ClientPaymentController extends Controller
                 abort_if($currentExpected <= 0,422,'Este proyecto no tiene un pago pendiente.');
                 $this->assertAmount((float)$data['monto'],$currentExpected,false);
 
-                return ProyectoPago::create([
+                $savedPayment = ProyectoPago::create([
                     'proyecto_id'=>$lockedProject->id,
                     'empresa_id'=>$empresa->id,
                     'pagador_usuario_id'=>$request->user()->id,
@@ -70,6 +70,8 @@ class ClientPaymentController extends Controller
                     'origen'=>'cliente',
                     'enviado_at'=>now(),
                 ]);
+                $alerts->paymentSubmitted($savedPayment);
+                return $savedPayment;
             },3);
         } catch (Throwable $e) {
             $this->deleteProof($proof['path']);
@@ -82,7 +84,7 @@ class ClientPaymentController extends Controller
         ],201);
     }
 
-    public function suscripcion(Request $request, Suscripcion $suscripcion, TenantContext $tenants, SubscriptionAccessService $access): JsonResponse
+    public function suscripcion(Request $request, Suscripcion $suscripcion, TenantContext $tenants, SubscriptionAccessService $access, SaasAlertService $alerts): JsonResponse
     {
         $empresa = $tenants->resolve($request);
         $tenants->assertCanManage($request->user(),$empresa);
@@ -103,7 +105,7 @@ class ClientPaymentController extends Controller
         $proof = $this->storeProof($request,'suscripciones/'.$suscripcion->id);
 
         try {
-            $payment = DB::transaction(function () use ($request,$suscripcion,$empresa,$access,$data,$proof): SuscripcionPago {
+            $payment = DB::transaction(function () use ($request,$suscripcion,$empresa,$access,$data,$proof,$alerts): SuscripcionPago {
                 $lockedSubscription = Suscripcion::query()->lockForUpdate()->findOrFail($suscripcion->id);
                 abort_unless((int)$lockedSubscription->empresa_id === (int)$empresa->id,403,'Esta suscripción no pertenece a tu negocio.');
                 abort_if($lockedSubscription->estado === 'cancelada',422,'Esta suscripción está cancelada.');
@@ -119,7 +121,7 @@ class ClientPaymentController extends Controller
                 $currentExpected = $this->subscriptionDue($lockedSubscription);
                 $this->assertAmount((float)$data['monto'],$currentExpected,true);
 
-                return SuscripcionPago::create([
+                $savedPayment = SuscripcionPago::create([
                     'suscripcion_id'=>$lockedSubscription->id,
                     'empresa_id'=>$empresa->id,
                     'pagador_usuario_id'=>$request->user()->id,
@@ -136,6 +138,8 @@ class ClientPaymentController extends Controller
                     'origen'=>'cliente',
                     'enviado_at'=>now(),
                 ]);
+                $alerts->paymentSubmitted($savedPayment);
+                return $savedPayment;
             },3);
         } catch (Throwable $e) {
             $this->deleteProof($proof['path']);
