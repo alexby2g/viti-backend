@@ -198,6 +198,78 @@ class PaymentProofReviewFlowTest extends TestCase
         $this->assertDatabaseHas('suscripciones',['id'=>$subscription->id,'primer_cobro_pagado'=>true]);
     }
 
+    public function test_admin_can_rectify_confirmed_client_project_payment_with_reason_and_keep_audit(): void
+    {
+        Storage::fake('private_uploads');
+        [$clientUser,$admin,$company,$project]=$this->scenario();
+
+        $upload=$this->actingAs($clientUser)
+            ->withHeader('X-VITI-Empresa',(string)$company->id)
+            ->post('/api/v1/mi/pagos/proyectos/'.$project->id.'/comprobante',[
+                'monto'=>975,
+                'metodo'=>'qr',
+                'fecha_pago'=>'2026-08-10',
+                'comprobante'=>UploadedFile::fake()->image('ejemplo.png',800,800),
+            ]);
+        $upload->assertCreated();
+        $paymentId=(int)$upload->json('data.id');
+
+        $this->actingAs($admin)
+            ->postJson('/api/v1/pagos/proyecto-pagos/'.$paymentId.'/confirmar')
+            ->assertOk();
+        $this->assertDatabaseHas('proyectos',['id'=>$project->id,'estado_pago'=>'pendiente_saldo']);
+
+        // Must not rectify silently or without an explicit admin acknowledgement.
+        $this->actingAs($admin)
+            ->postJson('/api/v1/pagos/proyecto-pagos/'.$paymentId.'/anular-confirmacion',[
+                'motivo'=>'Comprobante de ejemplo sin validez bancaria.',
+            ])->assertStatus(422);
+        $this->assertDatabaseHas('proyecto_pagos',['id'=>$paymentId,'estado_revision'=>'confirmado']);
+
+        $this->actingAs($admin)
+            ->postJson('/api/v1/pagos/proyecto-pagos/'.$paymentId.'/anular-confirmacion',[
+                'motivo'=>'Comprobante de ejemplo sin validez bancaria.',
+                'confirmacion'=>'ANULAR CONFIRMACION',
+            ])->assertOk();
+
+        $this->assertDatabaseHas('proyecto_pagos',[
+            'id'=>$paymentId,
+            'estado_revision'=>'anulado',
+            'motivo_revision'=>'Comprobante de ejemplo sin validez bancaria.',
+        ]);
+        $this->assertDatabaseHas('proyectos',['id'=>$project->id,'estado_pago'=>'pendiente_anticipo']);
+        $this->assertDatabaseHas('auditoria',[
+            'accion'=>'pago_proyecto_confirmacion_rectificada',
+            'entidad_id'=>$paymentId,
+            'usuario_id'=>$admin->id,
+        ]);
+        $this->assertDatabaseHas('alertas_saas',[
+            'usuario_id'=>$clientUser->id,
+            'clave'=>'comprobante_proyecto_'.$paymentId.'_rectificado',
+        ]);
+
+        $payment=\App\Models\ProyectoPago::findOrFail($paymentId);
+        Storage::disk('private_uploads')->assertExists($payment->comprobante_path);
+
+        $this->actingAs($clientUser)
+            ->withHeader('X-VITI-Empresa',(string)$company->id)
+            ->getJson('/api/v1/mi/pagos')
+            ->assertOk()
+            ->assertJsonPath('data.proyectos.0.pagado',0)
+            ->assertJsonPath('data.proyectos.0.pendiente',1950)
+            ->assertJsonPath('data.proyectos.0.siguiente_pago.tipo','anticipo');
+
+        // A second click must not generate another reversal or duplicate audit.
+        $this->actingAs($admin)
+            ->postJson('/api/v1/pagos/proyecto-pagos/'.$paymentId.'/anular-confirmacion',[
+                'motivo'=>'Comprobante de ejemplo sin validez bancaria.',
+                'confirmacion'=>'ANULAR CONFIRMACION',
+            ])->assertStatus(422);
+        $this->assertEquals(1,\App\Models\Auditoria::query()
+            ->where('accion','pago_proyecto_confirmacion_rectificada')
+            ->where('entidad_id',$paymentId)->count());
+    }
+
     private function scenario(): array
     {
         $client=Cliente::create(['nombre'=>'Laura Cordero','telefono'=>'73997967','estado'=>'informacion_recibida']);
