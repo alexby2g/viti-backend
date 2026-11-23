@@ -53,6 +53,7 @@ Route::middleware(['auth:sanctum','throttle:api'])->group(function (): void {
         Route::get('pagos/proyecto-pagos/{pago}/comprobante', [PaymentReviewController::class,'comprobanteProyecto']);
         Route::post('pagos/proyecto-pagos/{pago}/confirmar', [PaymentReviewController::class,'confirmarProyecto']);
         Route::post('pagos/proyecto-pagos/{pago}/rechazar', [PaymentReviewController::class,'rechazarProyecto']);
+        Route::post('pagos/proyecto-pagos/{pago}/anular-confirmacion', [PaymentReviewController::class,'anularConfirmacionProyecto']);
         Route::get('pagos/suscripcion-pagos/{pago}/comprobante', [PaymentReviewController::class,'comprobanteSuscripcion']);
         Route::post('pagos/suscripcion-pagos/{pago}/confirmar', [PaymentReviewController::class,'confirmarSuscripcion']);
         Route::post('pagos/suscripcion-pagos/{pago}/rechazar', [PaymentReviewController::class,'rechazarSuscripcion']);
