@@ -18,6 +18,10 @@ class ClientBillingController extends Controller
             ->where('empresa_id',$empresa->id)
             ->with([
                 'empresa:id,nombre_comercial,metodo_pago_preferido',
+                'solicitud'=>fn($q)=>$q->select(
+                    'id','plan_viti_id','presupuesto_estimado','acuerdo_comercial_requerido',
+                    'acuerdo_comercial_aceptado','frecuencia_suscripcion_preferida'
+                )->with('planViti:id,nombre,precio_proyecto,precio_mensual,precio_anual'),
                 'aplicacion'=>fn($q)=>$q->with('suscripcion.pagos.pagador:id,nombre,apellido,usuario,telefono'),
                 'pagos.pagador:id,nombre,apellido,usuario,telefono',
             ])
@@ -34,6 +38,16 @@ class ClientBillingController extends Controller
                     ? max(0,round($initialTarget-$initialPaid,2))
                     : max(0,round($total-$paid,2));
                 $pendingProjectProof=$project->pagos->firstWhere('estado_revision','pendiente_revision');
+                $agreementRequest=$project->solicitud;
+                $agreementAccepted=$agreementRequest
+                    && (bool)$agreementRequest->acuerdo_comercial_requerido
+                    && (bool)$agreementRequest->acuerdo_comercial_aceptado;
+                $plan=$agreementRequest?->planViti;
+                $agreedReference=$agreementAccepted
+                    ? ($agreementRequest->presupuesto_estimado ?? $plan?->precio_proyecto)
+                    : null;
+                $installmentConfigured=$project->precio_acordado !== null
+                    && $project->anticipo_monto !== null;
 
                 $app = $project->aplicacion;
                 $subscription = $app ? $access->statusFor($app) : null;
@@ -57,13 +71,24 @@ class ClientBillingController extends Controller
                     'anticipo_monto'=>$project->anticipo_monto !== null ? (float)$project->anticipo_monto : null,
                     'saldo_monto'=>$project->saldo_monto !== null ? (float)$project->saldo_monto : null,
                     'estado_pago'=>$project->estado_pago,
+                    'acuerdo_comercial'=>$agreementAccepted ? [
+                        'aceptado'=>true,
+                        'precio_implementacion'=>$agreedReference !== null ? (float)$agreedReference : null,
+                        'nombre_plan'=>$plan?->nombre,
+                        'frecuencia'=>$agreementRequest->frecuencia_suscripcion_preferida ?: 'mensual',
+                        'tarifa_mensual'=>$plan?->precio_mensual !== null ? (float)$plan->precio_mensual : null,
+                        'cuotas_configuradas'=>$installmentConfigured,
+                    ] : null,
                     'pagado'=>$paid,
                     'pendiente'=>max(0,round($total-$paid,2)),
                     'siguiente_pago'=>[
                         'tipo'=>$nextType,
                         'monto'=>$nextAmount,
-                        'puede_enviar'=>$project->precio_acordado !== null && $nextAmount>0 && !$pendingProjectProof,
+                        'puede_enviar'=>$installmentConfigured && $nextAmount>0 && !$pendingProjectProof,
                         'comprobante_pendiente_id'=>$pendingProjectProof?->id,
+                        'motivo_bloqueo'=>!$installmentConfigured && $agreementAccepted
+                            ? 'Acuerdo aceptado. VITI debe configurar el anticipo y el saldo antes de solicitar un pago.'
+                            : null,
                     ],
                     'pagos'=>$project->pagos->values(),
                     'aplicacion'=>$app ? ['id'=>$app->id,'nombre'=>$app->nombre,'estado'=>$app->estado,'acceso_cliente'=>(bool)$app->acceso_cliente] : null,
