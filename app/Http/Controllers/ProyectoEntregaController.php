@@ -21,6 +21,8 @@ class ProyectoEntregaController extends Controller
         return response()->json([
             'data' => $this->serialize($entrega, $files),
             'disponibles' => $files->values(),
+            'qa_pendiente' => $proyecto->tareas()
+                ->where('area', 'qa')->where('estado', '!=', 'completada')->exists(),
         ])->header('Cache-Control', 'no-store');
     }
 
@@ -89,6 +91,15 @@ class ProyectoEntregaController extends Controller
                     'Existe un acuerdo comercial pendiente de conciliación o pago. Registra el precio acordado y verifica el pago antes de publicar.'
                 );
             }
+
+            // Los archivos del paquete no equivalen a pruebas finales aprobadas.
+            // Bloquear cierre mientras exista una tarea QA sin completar.
+            abort_if(
+                $lockedProject->tareas()->where('area', 'qa')
+                    ->where('estado', '!=', 'completada')->exists(),
+                422,
+                'Primero completa y documenta las pruebas de calidad pendientes antes de publicar la entrega.'
+            );
 
             $record = ProyectoEntrega::query()->where('proyecto_id', $proyecto->id)
                 ->lockForUpdate()->firstOrFail();
