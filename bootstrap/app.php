@@ -27,6 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
             Route::middleware('api')->prefix('api/v1')->group(base_path('routes/support.php'));
             Route::middleware('api')->prefix('api/v1')->group(base_path('routes/native-security.php'));
             Route::middleware('api')->prefix('api/v1')->group(base_path('routes/fitfamily.php'));
+            Route::middleware('api')->prefix('api/v1')->group(base_path('routes/sensaciones.php'));
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
