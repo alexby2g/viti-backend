@@ -32,6 +32,7 @@ class SensacionesPremiumTest extends TestCase
             '2026_11_27_230001_create_sensaciones_collections.php',
             '2026_11_27_230002_create_sensaciones_settings.php',
             '2026_11_27_230003_create_sensaciones_import_items.php',
+            '2026_11_28_000000_add_sensaciones_video_posters.php',
         ] as $file) (require database_path('migrations/'.$file))->up();
         config(['sensaciones.enabled'=>true]);
     }
@@ -49,6 +50,16 @@ class SensacionesPremiumTest extends TestCase
         $this->assertCount(1,$data['data']);
         $this->assertSame('Público',$data['data'][0]['title']);
         $this->assertArrayNotHasKey('path',$data['data'][0]);
+    }
+
+    public function test_video_poster_respects_publication(): void {
+        $id=DB::table('sensaciones_media')->insertGetId(['usuario_id'=>1,'title'=>'Video QA','kind'=>'video','path'=>'private.mp4','mime'=>'video/mp4','poster_path'=>'sensaciones/posters/test.jpg','poster_mime'=>'image/jpeg','published'=>false,'created_at'=>now(),'updated_at'=>now()]);
+        $this->get('/api/v1/sensaciones/media/'.$id.'/poster')->assertNotFound();
+        $this->assertCount(0,app(\App\Http\Controllers\Sensaciones\MediaController::class)->index()->getData(true)['data']);
+        DB::table('sensaciones_media')->where('id',$id)->update(['published'=>true]);
+        $item=app(\App\Http\Controllers\Sensaciones\MediaController::class)->index()->getData(true)['data'][0];
+        $this->assertSame('/api/v1/sensaciones/media/'.$id.'/poster',$item['poster_url']);
+        $this->assertArrayNotHasKey('poster_path',$item);
     }
 
     public function test_public_collections_hide_unpublished_members(): void {

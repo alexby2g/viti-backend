@@ -21,6 +21,7 @@ class MediaController extends Controller
             'description' => $row->description, 'kind' => $row->kind,
             'published' => (bool) $row->published,
             'url' => '/api/v1/sensaciones/media/'.$row->id.'/file',
+            'poster_url' => !empty($row->poster_path) ? '/api/v1/sensaciones/media/'.$row->id.'/poster' : null,
         ];
     }
 
@@ -94,6 +95,51 @@ class MediaController extends Controller
         }
         DB::table('sensaciones_media')->where('id',$id)->update(['published'=>$data['published'],'updated_at'=>now()]);
         return response()->json($this->item(DB::table('sensaciones_media')->find($id)));
+    }
+
+    public function savePoster(Request $request,int $id) {
+        $this->enabled();
+        abort_unless(\Illuminate\Support\Facades\Schema::hasColumn('sensaciones_media','poster_path'),503,'La actualización de portadas aún no está disponible.');
+        $row=DB::table('sensaciones_media')->where('kind','video')->find($id);
+        abort_unless($row,404);
+        $request->validate(['poster'=>'required|file|image|mimes:jpg,jpeg,png,webp|max:1024|dimensions:max_width=4096,max_height=4096']);
+        $file=$request->file('poster');
+        $mime=$file->getMimeType();
+        $types=['image/jpeg'=>'jpg','image/png'=>'png','image/webp'=>'webp'];
+        abort_unless(isset($types[$mime]),422,'Formato de portada no admitido.');
+        abort_if(app()->isProduction() && config('filesystems.disks.private_uploads.driver')!=='s3',503,'Almacenamiento persistente no disponible.');
+        $disk=Storage::disk('private_uploads');
+        $path=$disk->putFileAs('sensaciones/posters',$file,Str::uuid().'.'.$types[$mime]);
+        abort_unless($path,503,'No se pudo guardar la portada.');
+        try {
+            $old=DB::transaction(function()use($id,$path,$mime){
+                $current=DB::table('sensaciones_media')->where('kind','video')->lockForUpdate()->find($id);
+                abort_unless($current,404);
+                DB::table('sensaciones_media')->where('id',$id)->update(['poster_path'=>$path,'poster_mime'=>$mime,'updated_at'=>now()]);
+                return $current->poster_path;
+            });
+        } catch(\Throwable $e) {
+            try{$disk->delete($path);}catch(\Throwable $cleanup){report($cleanup);}
+            throw $e;
+        }
+        if($old && str_starts_with($old,'sensaciones/posters/')){
+            try{$disk->delete($old);}catch(\Throwable $cleanup){report($cleanup);}
+        }
+        return response()->json($this->item(DB::table('sensaciones_media')->find($id)));
+    }
+
+    public function poster(Request $request,int $id) {
+        $this->enabled();
+        $row=DB::table('sensaciones_media')->where('kind','video')->find($id);
+        abort_unless($row && !empty($row->poster_path) && ($row->published || $request->user('sanctum')?->isSuperAdmin()),404);
+        $disk=Storage::disk('private_uploads');
+        if(config('filesystems.disks.private_uploads.driver')==='s3'){
+            return redirect()->away($disk->temporaryUrl($row->poster_path,now()->addMinutes(5),[
+                'ResponseContentType'=>$row->poster_mime,'ResponseContentDisposition'=>'inline',
+            ]))->header('Cache-Control','private, no-store');
+        }
+        abort_unless($disk->exists($row->poster_path),404);
+        return response()->file($disk->path($row->poster_path),['Content-Type'=>$row->poster_mime,'Cache-Control'=>'private, no-store','X-Content-Type-Options'=>'nosniff']);
     }
 
     public function file(Request $request, int $id) {

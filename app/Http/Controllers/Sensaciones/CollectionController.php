@@ -16,6 +16,7 @@ class CollectionController extends Controller {
         $items = collect($ids)->map(fn($id) => $media->get($id))->filter()->map(fn($m)=>[
             'id'=>$m->id,'title'=>$m->title,'kind'=>$m->kind,'published'=>(bool)$m->published,
             'url'=>'/api/v1/sensaciones/media/'.$m->id.'/file',
+            'poster_url'=>!empty($m->poster_path)?'/api/v1/sensaciones/media/'.$m->id.'/poster':null,
         ])->values();
         $cover = $items->first(fn($m)=>$m['id']==$row->cover_id && $m['kind']==='photo')
             ?? $items->first(fn($m)=>$m['kind']==='photo');
