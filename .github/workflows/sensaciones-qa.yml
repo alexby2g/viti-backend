@@ -9,10 +9,38 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - driver: sqlite
+            database: ':memory:'
+          - driver: pgsql
+            database: sensaciones_qa_ci
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: sensaciones_qa_ci
+          POSTGRES_USER: qa
+          POSTGRES_PASSWORD: qa_ephemeral_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U qa -d sensaciones_qa_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     env:
       APP_ENV: testing
-      DB_CONNECTION: sqlite
-      DB_DATABASE: ':memory:'
+      DB_CONNECTION: ${{ matrix.driver }}
+      DB_DATABASE: ${{ matrix.database }}
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_USERNAME: qa
+      DB_PASSWORD: qa_ephemeral_only
+      DB_URL: ''
+      SENSACIONES_CI_POSTGRES: '1'
       CACHE_STORE: array
       SESSION_DRIVER: array
       QUEUE_CONNECTION: sync
@@ -26,7 +54,7 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
-          extensions: dom, fileinfo, mbstring, pdo_sqlite, gd
+          extensions: dom, fileinfo, mbstring, pdo_sqlite, pdo_pgsql, gd
           coverage: none
       - run: composer install --no-interaction --prefer-dist --no-progress
       - run: find app/Http/Controllers/Sensaciones app/Services/Sensaciones -name '*.php' -print0 | xargs -0 -n1 php -l
