@@ -57,5 +57,5 @@ jobs:
           extensions: dom, fileinfo, mbstring, pdo_sqlite, pdo_pgsql, gd
           coverage: none
       - run: composer install --no-interaction --prefer-dist --no-progress
-      - run: find app/Http/Controllers/Sensaciones app/Services/Sensaciones -name '*.php' -print0 | xargs -0 -n1 php -l
-      - run: php artisan test --filter=SensacionesPremiumTest
+      - run: find app/Http/Controllers/Sensaciones app/Services/Sensaciones app/Console/Commands -name '*.php' -print0 | xargs -0 -n1 php -l
+      - run: php artisan test --filter=Sensaciones
