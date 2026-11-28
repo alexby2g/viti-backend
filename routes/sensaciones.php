@@ -10,6 +10,7 @@ Route::prefix('sensaciones')->group(function () {
     Route::get('settings',[SettingsController::class,'show'])->middleware('throttle:60,1');
     Route::get('collections',[CollectionController::class,'index'])->middleware('throttle:60,1');
     Route::get('media', [MediaController::class,'index'])->middleware('throttle:60,1');
+    Route::get('media/{id}/poster',[MediaController::class,'poster'])->whereNumber('id')->middleware('throttle:120,1');
     Route::get('media/{id}/file', [MediaController::class,'file'])->whereNumber('id')->middleware('throttle:120,1');
     Route::middleware(['auth:sanctum','superadmin','throttle:30,1'])->group(function () {
         Route::get('studio/overview',[\App\Http\Controllers\Sensaciones\StudioOverviewController::class,'show']);
@@ -21,6 +22,7 @@ Route::prefix('sensaciones')->group(function () {
         Route::put('studio/collections/{id}',[CollectionController::class,'save'])->whereNumber('id');
         Route::post('studio/uploads',[DirectUploadController::class,'begin'])->middleware('throttle:6,1');
         Route::post('studio/uploads/{id}/finish',[DirectUploadController::class,'finish'])->whereUuid('id');
+        Route::post('studio/media/{id}/poster',[MediaController::class,'savePoster'])->whereNumber('id');
         Route::get('studio/media', [MediaController::class,'studio']);
         Route::post('studio/media', [MediaController::class,'store']);
         Route::patch('studio/media/{id}', [MediaController::class,'publish'])->whereNumber('id');
