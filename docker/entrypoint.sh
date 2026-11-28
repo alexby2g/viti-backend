@@ -16,6 +16,21 @@ if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
   php artisan migrate --force
 fi
 
+# Activación específica de Sensaciones: solo estas migraciones aditivas.
+# No cambiar RUN_MIGRATIONS ni ejecutar seeders para habilitar el módulo.
+if [ "${SENSACIONES_PREPARE_SCHEMA:-false}" = "true" ]; then
+  if php artisan migrate --force \
+    --path=database/migrations/2026_11_27_230000_create_sensaciones_media_table.php \
+    --path=database/migrations/2026_11_27_230001_create_sensaciones_collections.php \
+    --path=database/migrations/2026_11_27_230002_create_sensaciones_settings.php \
+    --path=database/migrations/2026_11_27_230003_create_sensaciones_import_items.php; then
+    echo "Sensaciones: migraciones específicas completadas."
+  else
+    echo "Sensaciones: migraciones fallidas; se desactiva el módulo para preservar el servicio existente." >&2
+    export SENSACIONES_ENABLED=false
+  fi
+fi
+
 if [ "${RUN_SEEDER:-false}" = "true" ]; then
   php artisan db:seed --force
 fi
