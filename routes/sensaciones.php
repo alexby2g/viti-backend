@@ -12,6 +12,8 @@ Route::prefix('sensaciones')->group(function () {
     Route::get('media', [MediaController::class,'index'])->middleware('throttle:60,1');
     Route::get('media/{id}/file', [MediaController::class,'file'])->whereNumber('id')->middleware('throttle:120,1');
     Route::middleware(['auth:sanctum','superadmin','throttle:30,1'])->group(function () {
+        Route::get('studio/overview',[\App\Http\Controllers\Sensaciones\StudioOverviewController::class,'show']);
+        Route::patch('studio/media/{id}/metadata',[MediaController::class,'edit'])->whereNumber('id');
         Route::get('studio/settings',[SettingsController::class,'studio']);
         Route::put('studio/settings',[SettingsController::class,'save']);
         Route::get('studio/collections',[CollectionController::class,'studio']);
