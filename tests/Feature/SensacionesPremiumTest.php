@@ -14,14 +14,53 @@ class SensacionesPremiumTest extends TestCase
         parent::setUp();
         // Estas pruebas jamás deben crear tablas en la base de producción.
         $this->assertTrue(app()->environment('testing'));
-        $this->assertSame('sqlite',config('database.default'));
-        $this->assertSame(':memory:',config('database.connections.sqlite.database'));
+        $driver=config('database.default');
+        $this->assertContains($driver,['sqlite','pgsql']);
+        $this->assertEmpty(config("database.connections.{$driver}.url"));
+        if($driver==='sqlite'){
+            $this->assertSame(':memory:',config('database.connections.sqlite.database'));
+        }else{
+            $this->assertSame('1',getenv('SENSACIONES_CI_POSTGRES'));
+            $this->assertSame('127.0.0.1',config('database.connections.pgsql.host'));
+            $this->assertSame('sensaciones_qa_ci',config('database.connections.pgsql.database'));
+            $this->assertSame('sensaciones_qa_ci',DB::selectOne('select current_database() as db')->db);
+        }
+        // Cada prueba se revierte, incluso en PostgreSQL efímero.
+        DB::beginTransaction();
         foreach([
             '2026_11_27_230000_create_sensaciones_media_table.php',
             '2026_11_27_230001_create_sensaciones_collections.php',
             '2026_11_27_230002_create_sensaciones_settings.php',
         ] as $file) (require database_path('migrations/'.$file))->up();
         config(['sensaciones.enabled'=>true]);
+    }
+
+    protected function tearDown(): void {
+        if(DB::transactionLevel()>0) DB::rollBack();
+        parent::tearDown();
+    }
+
+    public function test_public_catalog_excludes_drafts(): void {
+        foreach([true,false] as $published){
+            DB::table('sensaciones_media')->insert(['usuario_id'=>1,'title'=>$published?'Público':'Privado','kind'=>'photo','path'=>'test.jpg','mime'=>'image/jpeg','published'=>$published,'created_at'=>now(),'updated_at'=>now()]);
+        }
+        $data=app(\App\Http\Controllers\Sensaciones\MediaController::class)->index()->getData(true);
+        $this->assertCount(1,$data['data']);
+        $this->assertSame('Público',$data['data'][0]['title']);
+        $this->assertArrayNotHasKey('path',$data['data'][0]);
+    }
+
+    public function test_public_collections_hide_unpublished_members(): void {
+        $ids=[];
+        foreach([true,false] as $published){
+            $ids[]=DB::table('sensaciones_media')->insertGetId(['usuario_id'=>1,'title'=>$published?'Visible':'Oculto','kind'=>'photo','path'=>'test.jpg','mime'=>'image/jpeg','published'=>$published,'created_at'=>now(),'updated_at'=>now()]);
+        }
+        DB::table('sensaciones_collections')->insert(['kind'=>'album','title'=>'Álbum QA','media_ids'=>json_encode($ids),'cover_id'=>$ids[1],'published'=>true,'created_at'=>now(),'updated_at'=>now()]);
+        $item=app(\App\Http\Controllers\Sensaciones\CollectionController::class)->index()->getData(true)['data'][0];
+        $this->assertCount(1,$item['items']);
+        $this->assertSame('Visible',$item['items'][0]['title']);
+        $this->assertSame('/api/v1/sensaciones/media/'.$ids[0].'/file',$item['cover']);
+        $this->assertArrayNotHasKey('media_ids',$item);
     }
 
     public function test_default_brand_and_services_have_no_private_media(): void {
