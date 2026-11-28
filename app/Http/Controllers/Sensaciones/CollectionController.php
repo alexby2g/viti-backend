@@ -23,9 +23,13 @@ class CollectionController extends Controller {
             'published'=>(bool)$row->published,'cover_id'=>$row->cover_id,'media_ids'=>$ids,
             'cover'=>$cover['url']??null,'items'=>$items];
     }
-    public function index() {
+    public function index(?Request $request=null) {
         $this->enabled();
-        return response()->json(DB::table('sensaciones_collections')->where('published',true)->latest('id')->paginate(12)
+        $data=($request ?? request())->validate(['view'=>'nullable|in:projects,comparisons']);
+        $query=DB::table('sensaciones_collections')->where('published',true);
+        if(($data['view']??null)==='projects') $query->whereIn('kind',['album','project']);
+        if(($data['view']??null)==='comparisons') $query->where('kind','comparison');
+        return response()->json($query->latest('id')->paginate(12)
           ->through(function($row){ $data=$this->present($row); unset($data['media_ids']); return $data; }));
     }
     public function studio() {
