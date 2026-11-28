@@ -1,0 +1,71 @@
+# Solo QA. Nunca usar para adoptar o modificar recursos de producción.
+services:
+  - type: web
+    name: sensaciones-v4-qa-api
+    runtime: docker
+    repo: https://github.com/alexby2g/viti-backend
+    branch: sensaciones-v4
+    region: ohio
+    plan: free
+    dockerfilePath: ./Dockerfile
+    autoDeployTrigger: "off"
+    healthCheckPath: /up
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_NAME
+        value: Sensaciones QA
+      - key: APP_DEBUG
+        value: "false"
+      - key: APP_KEY
+        sync: false
+      - key: VITI_SETUP_SECRET
+        generateValue: true
+      - key: APP_LOCALE
+        value: es
+      - key: LOG_CHANNEL
+        value: stderr
+      - key: DB_CONNECTION
+        value: pgsql
+      - key: DB_URL
+        fromDatabase:
+          name: sensaciones-v4-qa-db
+          property: connectionString
+      - key: DB_SSLMODE
+        value: prefer
+      - key: SESSION_DRIVER
+        value: file
+      - key: SESSION_COOKIE
+        value: sensaciones-qa-session
+      - key: SESSION_SECURE_COOKIE
+        value: "true"
+      - key: SESSION_HTTP_ONLY
+        value: "true"
+      - key: SESSION_SAME_SITE
+        value: lax
+      - key: CACHE_STORE
+        value: file
+      - key: QUEUE_CONNECTION
+        value: sync
+      - key: MAIL_MAILER
+        value: log
+      - key: PUBLIC_FILESYSTEM_DRIVER
+        value: local
+      - key: PRIVATE_FILESYSTEM_DRIVER
+        value: local
+      - key: RUN_MIGRATIONS
+        value: "false"
+      - key: RUN_SEEDER
+        value: "false"
+      - key: SENSACIONES_ENABLED
+        value: "false"
+      - key: SENSACIONES_DIRECT_UPLOADS
+        value: "false"
+      - key: SENSACIONES_WATERMARK_AVAILABLE
+        value: "false"
+databases:
+  - name: sensaciones-v4-qa-db
+    databaseName: sensaciones_qa
+    region: ohio
+    plan: free
+    ipAllowList: []
