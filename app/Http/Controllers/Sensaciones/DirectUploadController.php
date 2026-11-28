@@ -13,14 +13,18 @@ class DirectUploadController extends Controller {
     private function disk() {
         abort_unless(config('sensaciones.enabled') && config('sensaciones.direct_uploads'),404);
         abort_unless(config('filesystems.disks.private_uploads.driver')==='s3',503,'Se requiere R2 privado.');
-        return Storage::disk('private_uploads');
+        // R2 does not require the optional AWS SDK request checksum for a presigned PUT.
+        return Storage::build(array_merge(config('filesystems.disks.private_uploads'),[
+            'request_checksum_calculation'=>'when_required',
+            'response_checksum_validation'=>'when_required',
+        ]));
     }
     public function begin(Request $request) {
         $disk=$this->disk();
         $d=$request->validate(['title'=>'required|string|max:150','description'=>'nullable|string|max:2000',
           'mime'=>'required|in:'.implode(',',array_keys(self::TYPES)),'bytes'=>'required|integer|min:1|max:262144000']);
         abort_if(str_starts_with($d['mime'],'image/') && $d['bytes']>15728640,422,'Máximo 15 MiB para fotos.');
-        $id=(string)Str::uuid(); $expires=now()->addMinutes(15);
+        $id=(string)Str::uuid(); $expires=now()->addMinutes(60);
         $key='sensaciones/staging/'.$id;
         $client=$disk->getClient();
         $command=$client->getCommand('PutObject',[
@@ -31,22 +35,28 @@ class DirectUploadController extends Controller {
         DB::table('sensaciones_uploads')->insert([
           'id'=>$id,'usuario_id'=>$request->user()->id,'title'=>$d['title'],'description'=>$d['description']??null,
           'mime'=>$d['mime'],'bytes'=>$d['bytes'],'expires_at'=>$expires,'created_at'=>now(),'updated_at'=>now()]);
-        return response()->json(['id'=>$id,'url'=>(string)$signed->getUri(),'headers'=>['Content-Type'=>$d['mime']],'expires_at'=>$expires->toIso8601String()],201);
+        $headers=['Content-Type'=>$d['mime']];
+        foreach($signed->getHeaders() as $name=>$values){
+            if(in_array(strtolower($name),['host','content-length','content-type'],true))continue;
+            $headers[$name]=implode(', ',$values);
+        }
+        return response()->json(['id'=>$id,'url'=>(string)$signed->getUri(),'headers'=>$headers,'expires_at'=>$expires->toIso8601String()],201)->header('Cache-Control','private, no-store');
     }
     public function finish(Request $request, string $id) {
         $disk=$this->disk();
-        return DB::transaction(function() use($request,$id,$disk){
+        $result=DB::transaction(function() use($request,$id,$disk){
             $row=DB::table('sensaciones_uploads')->where('id',$id)->where('usuario_id',$request->user()->id)->lockForUpdate()->first();
             abort_unless($row,404);
             if($row->media_id) return response()->json(['id'=>$row->media_id]);
             abort_if(Carbon::parse($row->expires_at)->isPast(),422,'La sesión de carga ha vencido.');
             $source='sensaciones/staging/'.$id;
-            abort_unless($disk->exists($source) && $disk->size($source)===(int)$row->bytes,422,'El tamaño del archivo no coincide.');
+            abort_unless($disk->exists($source) && (int)$disk->size($source)===(int)$row->bytes,422,'El tamaño del archivo no coincide.');
             // La URL de carga nunca permite escribir en la ubicación definitiva.
             $target='sensaciones/media/'.Str::uuid().'.'.self::TYPES[$row->mime];
-            abort_unless($disk->copy($source,$target),503,'No se pudo finalizar la carga.');
+            $bucket=config('filesystems.disks.private_uploads.bucket');
+            $disk->getClient()->copyObject(['Bucket'=>$bucket,'Key'=>$target,'CopySource'=>$bucket.'/'.$source]);
             try {
-                abort_unless($disk->size($target)===(int)$row->bytes,422,'Tamaño final incorrecto.');
+                abort_unless((int)$disk->size($target)===(int)$row->bytes,422,'Tamaño final incorrecto.');
                 $head=$disk->getClient()->getObject(['Bucket'=>config('filesystems.disks.private_uploads.bucket'),'Key'=>$target,'Range'=>'bytes=0-4095']);
                 $bytes=(string)$head['Body'];
                 $ok=match($row->mime){
@@ -69,5 +79,8 @@ class DirectUploadController extends Controller {
             }
             return response()->json(['id'=>$media],201);
         });
+        // Delete only our own staging object after the database commit succeeded.
+        try{$disk->delete('sensaciones/staging/'.$id);}catch(\Throwable $cleanup){report($cleanup);}
+        return $result;
     }
 }
