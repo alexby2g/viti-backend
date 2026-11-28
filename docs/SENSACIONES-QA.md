@@ -28,3 +28,10 @@ No desplegar en producción hasta aprobar QA. Las ramas main y los datos de Viti
 9. Verificar regresiones de Viti (clientes, empresas, portal, aplicaciones).
 
 Pendiente: importador de datos Sensaciones 3.0, marca y SEO, video de presentación, watermark real, pruebas R2, limpieza automatizada, despliegue y cambio de dominio.
+
+## Fase 3 — Premium
+- Ejecutar `php artisan test --filter=SensacionesPremiumTest` solo en testing con SQLite :memory:.
+- Configurar `SENSACIONES_SITE_URL` con la URL HTTPS pública verificada, únicamente para el sitemap. No usar dominio de producción en staging indexable; proteger previews y bloquear su indexación. El sitemap se sirve en `/api/v1/sensaciones/sitemap.xml`; enviar la URL definitiva desde Search Console después de publicar. Los títulos y descripciones actuales se aplican en Vue; SSR, Open Graph para bots y SEO por proyecto siguen pendientes.
+- En `/sensaciones/studio/marca` elegir una foto y video publicados, colores, servicios y WhatsApp internacional (solo dígitos). No hay número de contacto preconfigurado.
+- `SENSACIONES_WATERMARK_AVAILABLE=true` únicamente tras instalar/verificar GD con JPEG, PNG y WebP; probar consumo de memoria, transparencia y orientación EXIF. Marca de agua opcional, máximo provisional 6 MP por foto y 1 MP por logo; fuera del límite no se sirve el original cuando está activada. El logo seleccionado está excluido; originales permanecen privados. No retirar el logo mientras la función esté activa. URLs temporales ya emitidas antes de habilitar la marca pueden seguir válidas hasta expirar. Sin caché de derivados por ahora; no usar en alto tráfico sin pruebas de carga. El logo en el reproductor no se incrusta en el video.
+- La aplicación aún requiere pruebas integrales, importación de datos 3.0, validación de R2 y despliegue aislado. No promover main.
