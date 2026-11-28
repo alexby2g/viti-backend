@@ -28,9 +28,8 @@ services:
       - key: DB_CONNECTION
         value: pgsql
       - key: DB_URL
-        fromDatabase:
-          name: sensaciones-v4-qa-db
-          property: connectionString
+        # Solo una base nueva de QA; nunca la URL de Viti.
+        sync: false
       - key: DB_SSLMODE
         value: prefer
       - key: SESSION_DRIVER
@@ -63,9 +62,3 @@ services:
         value: "false"
       - key: SENSACIONES_WATERMARK_AVAILABLE
         value: "false"
-databases:
-  - name: sensaciones-v4-qa-db
-    databaseName: sensaciones_qa
-    region: ohio
-    plan: free
-    ipAllowList: []
