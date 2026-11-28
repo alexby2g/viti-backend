@@ -24,10 +24,13 @@ class MediaController extends Controller
         ];
     }
 
-    public function index() {
+    public function index(?Request $request=null) {
         $this->enabled();
-        return response()->json(DB::table('sensaciones_media')->where('published', true)
-            ->latest('id')->paginate(24)->through(fn ($row) => $this->item($row)));
+        $filters=($request ?? request())->validate(['q'=>'nullable|string|max:100','kind'=>'nullable|in:photo,video']);
+        $query=DB::table('sensaciones_media')->where('published',true);
+        if(!empty($filters['q'])) $query->whereRaw('LOWER(title) LIKE ?', ['%'.mb_strtolower($filters['q']).'%']);
+        if(!empty($filters['kind'])) $query->where('kind',$filters['kind']);
+        return response()->json($query->latest('id')->paginate(24)->through(fn ($row) => $this->item($row)));
     }
 
     public function studio(Request $request) {
