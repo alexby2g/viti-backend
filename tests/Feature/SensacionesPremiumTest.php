@@ -63,6 +63,21 @@ class SensacionesPremiumTest extends TestCase
         $this->assertArrayNotHasKey('media_ids',$item);
     }
 
+    public function test_studio_overview_reports_disabled_without_fake_counts(): void {
+        config(['sensaciones.enabled'=>false]);
+        $data=app(\App\Http\Controllers\Sensaciones\StudioOverviewController::class)->show()->getData(true);
+        $this->assertFalse($data['ready']);
+        $this->assertFalse($data['uploads_available']);
+        $this->assertNull($data['counts']);
+    }
+
+    public function test_studio_overview_reports_real_counts(): void {
+        $data=app(\App\Http\Controllers\Sensaciones\StudioOverviewController::class)->show()->getData(true);
+        $this->assertTrue($data['ready']);
+        $this->assertSame(0,$data['counts']['photos']);
+        $this->assertSame(0,$data['counts']['drafts']);
+    }
+
     public function test_default_brand_and_services_have_no_private_media(): void {
         $data=app(SettingsController::class)->show()->getData(true);
         $this->assertSame('Sensaciones Audiovisuales Digital',$data['brand']);
