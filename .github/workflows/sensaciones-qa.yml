@@ -1,0 +1,33 @@
+name: Sensaciones backend QA
+on:
+  push:
+    branches: [sensaciones-v4]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ':memory:'
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+      MAIL_MAILER: array
+      SENSACIONES_ENABLED: 'false'
+      SENSACIONES_DIRECT_UPLOADS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: dom, fileinfo, mbstring, pdo_sqlite, gd
+          coverage: none
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - run: find app/Http/Controllers/Sensaciones app/Services/Sensaciones -name '*.php' -print0 | xargs -0 -n1 php -l
+      - run: php artisan test --filter=SensacionesPremiumTest
