@@ -80,6 +80,8 @@ class MediaController extends Controller
         $this->enabled();
         $row = DB::table('sensaciones_media')->find($id);
         abort_unless($row && ($row->published || $request->user('sanctum')?->isSuperAdmin()),404);
+        $marked=app(\App\Services\Sensaciones\PhotoWatermark::class)->response($row);
+        if($marked) return $marked;
         $disk = Storage::disk('private_uploads');
         if (config('filesystems.disks.private_uploads.driver') === 's3') {
             return redirect()->away($disk->temporaryUrl($row->path, now()->addMinutes(5), [
