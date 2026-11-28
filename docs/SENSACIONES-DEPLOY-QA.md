@@ -35,3 +35,11 @@ Confirmar nombre de la base y proyecto en el proveedor. Ejecutar migrate --prete
 - https://render.com/docs/render-dashboard
 - https://neon.com/blog/new-usage-based-pricing
 
+
+## Alternativa sin aprovisionamiento cloud
+
+La rama sensaciones-v4 permite revisar la portada en Vercel Preview sin API (modo VITE_SENSACIONES_OFFLINE_PREVIEW=1); el router redirige rutas privadas al portafolio y no presenta datos de clientes ni trabajos simulados como reales. El diseño muestra los servicios de ejemplo. No es un entorno autenticado ni una prueba del backend.
+
+El workflow backend ejecuta la suite SensacionesPremiumTest con SQLite :memory: y PostgreSQL 18 temporal en GitHub Actions. No utiliza Neon ni secretos productivos. La suite comprueba que el destino PostgreSQL es 127.0.0.1/sensaciones_qa_ci y que DB_URL está vacío antes de ejecutar migraciones del módulo, y revierte las transacciones. Revisar resultados en Actions; el workflow no despliega servicios. El consumo de GitHub Actions está sujeto a sus propios límites. Esto sustituye por ahora la necesidad de aprovisionar una base de datos cloud para las pruebas unitarias/integración del módulo, pero no las pruebas completas de Viti ni de Render/R2.
+
+No aplicar el Blueprint hasta disponer de una base QA persistente y de coste autorizado. No utilizar SQLite temporal para almacenar trabajo real en Render: se pierde al reiniciar o redeplegar.
