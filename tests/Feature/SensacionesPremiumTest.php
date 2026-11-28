@@ -31,6 +31,7 @@ class SensacionesPremiumTest extends TestCase
             '2026_11_27_230000_create_sensaciones_media_table.php',
             '2026_11_27_230001_create_sensaciones_collections.php',
             '2026_11_27_230002_create_sensaciones_settings.php',
+            '2026_11_27_230003_create_sensaciones_import_items.php',
         ] as $file) (require database_path('migrations/'.$file))->up();
         config(['sensaciones.enabled'=>true]);
     }
@@ -69,6 +70,9 @@ class SensacionesPremiumTest extends TestCase
         $this->assertFalse($data['ready']);
         $this->assertFalse($data['uploads_available']);
         $this->assertNull($data['counts']);
+        $this->assertFalse($data['diagnostics']['module_enabled']);
+        $this->assertTrue($data['diagnostics']['schema_ready']);
+        $this->assertFalse($data['diagnostics']['storage_connection_verified']);
     }
 
     public function test_studio_overview_reports_real_counts(): void {
