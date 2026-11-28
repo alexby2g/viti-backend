@@ -6,6 +6,7 @@ use App\Http\Controllers\Sensaciones\CollectionController;
 use App\Http\Controllers\Sensaciones\DirectUploadController;
 
 Route::prefix('sensaciones')->group(function () {
+    Route::get('sitemap.xml',[\App\Http\Controllers\Sensaciones\SitemapController::class,'index'])->middleware('throttle:60,1');
     Route::get('settings',[SettingsController::class,'show'])->middleware('throttle:60,1');
     Route::get('collections',[CollectionController::class,'index'])->middleware('throttle:60,1');
     Route::get('media', [MediaController::class,'index'])->middleware('throttle:60,1');
