@@ -39,6 +39,8 @@ class SettingsController extends Controller {
         $data=$this->values();
         $data['logo_url']=$this->mediaUrl($data['logo_id'],'photo');
         $data['intro_url']=$this->mediaUrl($data['intro_id'],'video');
+        $intro=$data['intro_url']?DB::table('sensaciones_media')->find($data['intro_id']):null;
+        $data['intro_poster_url']=!empty($intro->poster_path)?'/api/v1/sensaciones/media/'.$intro->id.'/poster':null;
         unset($data['logo_id'],$data['intro_id']);
         return response()->json($data);
     }
