@@ -72,6 +72,11 @@ class MediaController extends Controller
         $this->enabled();
         $data = $request->validate(['published'=>'required|boolean']);
         abort_unless(DB::table('sensaciones_media')->where('id',$id)->exists(),404);
+        if (!$data['published']) {
+            $row=DB::table('sensaciones_settings')->find(1);
+            $settings=$row?(json_decode($row->settings,true)?:[]):[];
+            abort_if(!empty($settings['watermark']) && (int)($settings['logo_id']??0)===$id,409,'Desactiva la marca de agua o selecciona otro logotipo antes de retirar este archivo.');
+        }
         DB::table('sensaciones_media')->where('id',$id)->update(['published'=>$data['published'],'updated_at'=>now()]);
         return response()->json($this->item(DB::table('sensaciones_media')->find($id)));
     }
