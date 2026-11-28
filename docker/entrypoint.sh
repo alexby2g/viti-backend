@@ -23,7 +23,8 @@ if [ "${SENSACIONES_PREPARE_SCHEMA:-false}" = "true" ]; then
     --path=database/migrations/2026_11_27_230000_create_sensaciones_media_table.php \
     --path=database/migrations/2026_11_27_230001_create_sensaciones_collections.php \
     --path=database/migrations/2026_11_27_230002_create_sensaciones_settings.php \
-    --path=database/migrations/2026_11_27_230003_create_sensaciones_import_items.php; then
+    --path=database/migrations/2026_11_27_230003_create_sensaciones_import_items.php \
+    --path=database/migrations/2026_11_28_000000_add_sensaciones_video_posters.php; then
     echo "Sensaciones: migraciones específicas completadas."
   else
     echo "Sensaciones: migraciones fallidas; se desactiva el módulo para preservar el servicio existente." >&2
