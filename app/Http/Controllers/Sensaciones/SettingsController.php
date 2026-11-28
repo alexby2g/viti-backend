@@ -15,7 +15,7 @@ class SettingsController extends Controller {
             'headline'=>'Historias que merecen ser vistas.',
             'tagline'=>'Fotografía, video y creatividad con una mirada propia.',
             'primary'=>'#FF681E','secondary'=>'#980B20','background'=>'#101014',
-            'logo_id'=>null,'intro_id'=>null,'whatsapp'=>null,
+            'logo_id'=>null,'intro_id'=>null,'whatsapp'=>null,'watermark'=>false,
             'seo_title'=>'Sensaciones Audiovisuales Digital',
             'seo_description'=>'Producción audiovisual, fotografía y arte digital.',
             'services'=>[
@@ -50,7 +50,7 @@ class SettingsController extends Controller {
             'primary'=>['required','regex:/^#[0-9a-fA-F]{6}$/'],
             'secondary'=>['required','regex:/^#[0-9a-fA-F]{6}$/'],
             'background'=>['required','regex:/^#[0-9a-fA-F]{6}$/'],
-            'logo_id'=>'nullable|integer','intro_id'=>'nullable|integer',
+            'logo_id'=>'nullable|integer','intro_id'=>'nullable|integer','watermark'=>'required|boolean',
             'whatsapp'=>['nullable','regex:/^[1-9][0-9]{7,14}$/'],
             'seo_title'=>'required|string|max:70','seo_description'=>'required|string|max:160',
             'services'=>'present|array|max:12','services.*'=>'array:title,description',
@@ -60,6 +60,8 @@ class SettingsController extends Controller {
             if(!empty($data[$key]) && !$this->mediaUrl($data[$key],$kind))
                 throw ValidationException::withMessages([$key=>'Selecciona un archivo publicado del tipo correcto.']);
         }
+        if($data['watermark'] && (empty($data['logo_id']) || !config('sensaciones.watermark_available') || !extension_loaded('gd')))
+            throw ValidationException::withMessages(['watermark'=>'Activa GD y configura un logotipo publicado antes de habilitar la marca de agua.']);
         $values=array_replace($this->defaults(),$data);
         DB::table('sensaciones_settings')->upsert([['id'=>1,'settings'=>json_encode($values,JSON_THROW_ON_ERROR),'created_at'=>now(),'updated_at'=>now()]],['id'],['settings','updated_at']);
         return response()->json($values);
