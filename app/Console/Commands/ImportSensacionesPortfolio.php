@@ -128,7 +128,7 @@ class ImportSensacionesPortfolio extends Command
             return self::SUCCESS;
         }catch(\Throwable $e){
             $this->error('Importación detenida. Las operaciones completadas pueden permanecer como borradores; reintenta con el mismo origen tras revisar el error.');
-            if($e instanceof \RuntimeException)$this->error($e->getMessage());else $this->error('Error de infraestructura. Revisar logs protegidos.');
+            if(get_class($e)===\RuntimeException::class)$this->error($e->getMessage());else $this->error('Error de infraestructura. Revisar logs protegidos.');
             return self::FAILURE;
         }
     }
