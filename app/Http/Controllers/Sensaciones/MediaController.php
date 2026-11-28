@@ -30,10 +30,22 @@ class MediaController extends Controller
             ->latest('id')->paginate(24)->through(fn ($row) => $this->item($row)));
     }
 
-    public function studio() {
+    public function studio(Request $request) {
         $this->enabled();
-        return response()->json(DB::table('sensaciones_media')->latest('id')->paginate(24)
-            ->through(fn ($row) => $this->item($row)));
+        $filters=$request->validate(['q'=>'nullable|string|max:100','kind'=>'nullable|in:photo,video','status'=>'nullable|in:published,draft']);
+        $query=DB::table('sensaciones_media');
+        if(!empty($filters['q'])) $query->whereRaw('LOWER(title) LIKE ?', ['%'.mb_strtolower($filters['q']).'%']);
+        if(!empty($filters['kind'])) $query->where('kind',$filters['kind']);
+        if(!empty($filters['status'])) $query->where('published',$filters['status']==='published');
+        return response()->json($query->latest('id')->paginate(24)->through(fn ($row) => $this->item($row)));
+    }
+
+    public function edit(Request $request,int $id) {
+        $this->enabled();
+        $data=$request->validate(['title'=>'required|string|max:150','description'=>'nullable|string|max:2000']);
+        abort_unless(DB::table('sensaciones_media')->where('id',$id)->exists(),404);
+        DB::table('sensaciones_media')->where('id',$id)->update(['title'=>$data['title'],'description'=>$data['description']??null,'updated_at'=>now()]);
+        return response()->json($this->item(DB::table('sensaciones_media')->find($id)));
     }
 
     public function store(Request $request) {
